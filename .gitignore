@@ -1,0 +1,20 @@
+## User settings
+xcuserdata/
+
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata
+
+.build/
+DerivedData/
+
+/build_output
+/wiki
+
+# OSX Temp
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# OSX Thumbnails
+._*
