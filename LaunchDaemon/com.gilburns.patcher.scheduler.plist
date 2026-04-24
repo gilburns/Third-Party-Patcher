@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ExitTimeOut</key>
+	<integer>60</integer>
+	<key>Label</key>
+	<string>com.gilburns.patcher.scheduler</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/tpp/patcherscheduler</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>SessionCreate</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/Patcher/scheduler_stderr.log</string>
+	<key>StandardOutPath</key>
+	<string>/dev/null</string>
+	<key>StartInterval</key>
+	<integer>600</integer>
+</dict>
+</plist>
