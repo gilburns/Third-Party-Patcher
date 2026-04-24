@@ -1,0 +1,431 @@
+//
+//  Preferences.swift
+//  patcher
+//
+//  Created by Gil Burns on 4/4/26.
+//
+
+import Foundation
+
+struct Preferences {
+    
+    private static let managedPrefsDomain = "com.gilburns.patcher.plist"
+    
+    private static let managedPrefsURL = FileManager.default
+        .urls(for: .libraryDirectory, in: .localDomainMask).first!
+        .appendingPathComponent("Managed Preferences")
+        .appendingPathComponent(managedPrefsDomain)
+    
+    private static let localPrefsURL = FileManager.default
+        .urls(for: .libraryDirectory, in: .localDomainMask).first!
+        .appendingPathComponent("Preferences")
+        .appending(component: managedPrefsDomain, directoryHint: .inferFromPath)
+
+    private let prefs: [String: Any]
+
+    /// Describes where the preferences were loaded from, for logging.
+    let source: String
+
+    /// For testing only — initialises directly from a dictionary without reading any plist.
+    init(testPrefs: [String: Any]) {
+        prefs  = testPrefs
+        source = "test"
+    }
+
+    init() {
+        let managed = NSDictionary(contentsOf: Preferences.managedPrefsURL) as? [String: Any]
+        let local   = NSDictionary(contentsOf: Preferences.localPrefsURL)   as? [String: Any]
+
+        switch (managed, local) {
+        case (let m?, let l?):
+            // Both present — merge with managed taking precedence on any shared key
+            prefs  = l.merging(m) { _, managed in managed }
+            source = "managed + local (managed takes precedence)"
+        case (let m?, nil):
+            prefs  = m
+            source = "managed (\(Preferences.managedPrefsURL.path().removingPercentEncoding ?? ""))"
+        case (nil, let l?):
+            prefs  = l
+            source = "local (\(Preferences.localPrefsURL.path().removingPercentEncoding ?? ""))"
+        case (nil, nil):
+            prefs  = [:]
+            source = "none (using defaults)"
+        }
+    }
+
+    // MARK: - Logging
+
+    /// When true, low-signal verbose output is included in the log (per-label key dumps, etc.).
+    /// Defaults to false.
+    var logVerbose: Bool {
+        prefs["LogVerbose"] as? Bool ?? false
+    }
+
+    // MARK: - Keys
+
+    /// Applications discovered in /Users/* are never updated and ignored if true.
+    /// Applications discovered in /Users/* are always updated if false
+    var ignoreAppsInHomeFolder: Bool {
+        prefs["IgnoreAppsInHomeFolder"] as? Bool ?? false
+    }
+
+    /// When true, applications discovered in /Users/* locations are relocated to /Applications.
+    /// Items relocated to the /Applications are managed and the previous user managed app is deleted.
+    /// If 'IgnoreAppsInHomeFolder' is set to 'true' this setting is also ignored.
+    var convertAppsInHomeFolder: Bool {
+        prefs["ConvertAppsInHomeFolder"] as? Bool ?? false
+    }
+
+    /// GitHub account hosting the Installomator repository. Defaults to "Installomator".
+    var installomatorGitHubAccount: String {
+        pref("InstallomatorGitHubAccount", default: "Installomator")
+    }
+
+    /// GitHub repository name for Installomator. Defaults to "Installomator".
+    var installomatorGitHubRepo: String {
+        pref("InstallomatorGitHubRepo", default: "Installomator")
+    }
+
+    /// Branch to pull Installomator labels from. Defaults to "main".
+    var installomatorGitHubBranch: String {
+        pref("InstallomatorGitHubBranch", default: "main")
+    }
+
+    /// When true, disables all Installomator label management: no initial download, no update checks,
+    /// and Installomator labels are never used during scan/check/stage. Managed labels (if present)
+    /// are the only source of labels. Defaults to false.
+    var installomatorLabelsDisable: Bool {
+        prefs["InstallomatorLabelsDisable"] as? Bool ?? false
+    }
+
+    /// When true, skips the routine Installomator label update check during a scan.
+    /// Has no effect on the initial download when no labels are present locally.
+    /// Ignored when InstallomatorLabelsDisable is true.
+    var installomatorUpdateDisable: Bool {
+        prefs["InstallomatorUpdateDisable"] as? Bool ?? false
+    }
+    
+    /// Space-separated list of label name patterns to ignore during a scan.
+    /// Supports `*` and `?` wildcards (e.g. `"google* microsoft*"`).
+    var ignoredLabels: [String] {
+        guard let value = prefs["IgnoredLabels"] as? String else { return [] }
+        return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// Space-separated list of label name patterns that are required.
+    /// Does NOT Support `*` and `?` wildcards (e.g. `"google* microsoft*"`).
+    var requiredLabels: [String] {
+        guard let value = prefs["RequiredLabels"] as? String else { return [] }
+        return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// Maximum download speed for staged downloads, in curl --limit-rate format.
+    /// Examples: "500K" (500 KB/s), "2M" (2 MB/s), "1G" (1 GB/s).
+    /// Empty or absent means no bandwidth limit. Defaults to no limit.
+    var downloadBandwidthLimit: String? {
+        guard let value = prefs["DownloadBandwidthLimit"] as? String, !value.isEmpty else { return nil }
+        return value
+    }
+
+    /// Number of consecutive download/verification failures before a label is marked broken for staging.
+    /// Defaults to 3.
+    var stageDownloadFailThreshold: Int {
+        prefs["StageDownloadFailThreshold"] as? Int ?? 3
+    }
+
+    /// When true, labels that produce no appNewVersion value are skipped entirely during staging.
+    /// Defaults to false.
+    var ignoreUnknownVersionLabels: Bool {
+        prefs["IgnoreUnknownVersionLabels"] as? Bool ?? false
+    }
+
+    /// Number of days to wait before re-downloading an unknown-version label that was last
+    /// checked and found up to date. Only applies when IgnoreUnknownVersionLabels is false.
+    /// Defaults to 7.
+    var unknownVersionCheckIntervalDays: Int {
+        prefs["UnknownVersionCheckIntervalDays"] as? Int ?? 7
+    }
+
+    /// Number of days to wait before re-downloading a label whose script-reported version
+    /// did not match the actual downloaded file (e.g. Spotify reporting a future version).
+    /// The throttle is invalidated automatically when appNewVersion changes.
+    /// Defaults to 3.
+    var versionMismatchThrottleDays: Int {
+        prefs["VersionMismatchThrottleDays"] as? Int ?? 3
+    }
+
+    /// When true, the scheduler waits a one-time random delay after first deployment
+    /// before running its first scan. Spreads fleet-wide first-scan load across the
+    /// initialScanDelayMaxSeconds window instead of all machines scanning simultaneously
+    /// when a LaunchDaemon is pushed. Defaults to true.
+    var initialScanDelayEnabled: Bool {
+        prefs["InitialScanDelayEnabled"] as? Bool ?? false
+    }
+
+    /// Maximum seconds for the one-time initial deployment delay.
+    /// The actual delay is chosen randomly in [0, initialScanDelayMaxSeconds] on first
+    /// launch and persisted — subsequent 10-minute wakes just check if it has elapsed.
+    /// Defaults to 86400 (24 hours).
+    var initialScanDelayMaxSeconds: Int {
+        prefs["InitialScanDelayMaxSeconds"] as? Int ?? 86400
+    }
+
+
+    // MARK: - Scheduler: per-subcommand cycle preferences
+
+    /// Days between full application scans. Scan rediscovers installed apps against
+    /// all Installomator labels.
+    /// Defaults to 30.
+    var scanIntervalDays: Int {
+        prefs["ScanIntervalDays"] as? Int ?? 30
+    }
+
+    /// When true, a scan is triggered immediately if the Installomator labels have
+    /// been updated since the last scan (regardless of ScanIntervalDays).
+    /// Defaults to true.
+    var scanOnLabelUpdate: Bool {
+        prefs["ScanOnLabelUpdate"] as? Bool ?? true
+    }
+
+    /// Hours between check runs. Check is fast (~60–90s) and reads installed versions
+    /// for already-discovered apps.
+    /// Defaults to 4.
+    var checkIntervalHours: Int {
+        prefs["CheckIntervalHours"] as? Int ?? 4
+    }
+
+    /// Hours between stage runs. Stage downloads pending updates.
+    /// Defaults to 4.
+    var stageIntervalHours: Int {
+        prefs["StageIntervalHours"] as? Int ?? 4
+    }
+
+    /// Minimum hours between apply runs when using deadline-based patching.
+    /// Prevents apply from running every 10-minute cycle once updates are pending.
+    /// Defaults to 24. (Not used in monthly mode — the patch-day window controls timing.)
+    var applyIntervalHours: Int {
+        prefs["ApplyIntervalHours"] as? Int ?? 24
+    }
+
+    // MARK: - Scheduler: apply schedule keys
+
+    /// When true, patching is restricted to the configured weekday/week-of-month window.
+    /// When false, deadline-based patching is used instead.
+    /// Defaults to false.
+    var monthlyPatchingCadenceEnabled: Bool {
+        prefs["MonthlyPatchingCadenceEnabled"] as? Bool ?? false
+    }
+
+    /// Day of the week for monthly patching. 1 = Sunday … 7 = Saturday.
+    /// Defaults to 3 (Tuesday).
+    var patchingWeekday: Int {
+        prefs["PatchingWeekday"] as? Int ?? 3
+    }
+
+    /// Which occurrence of the weekday in the month. 1 = first, 2 = second, etc.
+    /// Defaults to 2.
+    var patchingWeekOfMonth: Int {
+        prefs["PatchingWeekOfMonth"] as? Int ?? 2
+    }
+
+    /// Earliest time of day to begin patching, in "HH:MM" 24-hour format. Empty means no restriction.
+    var patchingStartTime: String {
+        pref("PatchingStartTime", default: "")
+    }
+
+    /// Latest time of day to attempt patching, in "HH:MM" 24-hour format. Empty means no restriction.
+    var patchingEndTime: String {
+        pref("PatchingEndTime", default: "")
+    }
+
+    /// Number of days a pending update must be present before Focus / DND is ignored.
+    /// 0 means Focus is always respected. Defaults to 4.
+    var deadlineDaysFocus: Int {
+        prefs["DeadlineDaysFocus"] as? Int ?? 4
+    }
+
+    /// Number of days a pending update must be present before no further deferrals are allowed.
+    /// 0 means no hard deadline. Defaults to 14.
+    var deadlineDaysHard: Int {
+        prefs["DeadlineDaysHard"] as? Int ?? 14
+    }
+
+    /// When false, Focus / DND and display assertions are never checked. Defaults to true.
+    var focusCheckEnabled: Bool {
+        prefs["FocusCheckEnabled"] as? Bool ?? true
+    }
+
+    // MARK: - swiftDialog UI
+
+    /// When true, swiftDialog is used to show apply progress and handle blocking processes.
+    /// Automatically disabled if swiftDialog is not installed. Defaults to true.
+    var swiftDialogEnabled: Bool {
+        prefs["SwiftDialogEnabled"] as? Bool ?? true
+    }
+
+    /// Title shown in the swiftDialog apply window.
+    /// Defaults to "3rd Party Patcher" when the key is absent.
+    var appTitle: String {
+        pref("AppTitle", default: "\(AppConstants.patcherFullName)")
+    }
+
+    /// When true, swiftDialog will stay on top of all other windows.
+    /// Defaults to true.
+    var dialogOnTop: Bool {
+        prefs["DialogOnTop"] as? Bool ?? false
+    }
+
+    /// Swift Dialog icon..
+    var dialogIcon: String {
+        pref("DialogIcon", default: "")
+    }
+
+    /// When true, swiftDialog will apply an Overlay Icon to the dialog.
+    /// Automatically disabled if swiftDialog is not installed.
+    /// Defaults to true.
+    var useOverlayIcon: Bool {
+        prefs["UseOverlayIcon"] as? Bool ?? true
+    }
+
+    /// Swift Dialog Overlay icon.
+    /// Defaults to "".
+    var overlayIcon: String {
+        pref("OverlayIcon", default: "")
+    }
+
+    /// Swift Dialog screen postion
+    /// Defaults to center
+    /// topleft | left | bottomleft | top | center/centre | bottom | topright | right | bottomright
+    var dialogScreenPosition: String {
+        pref("DialogScreenPosition", default: "center")
+    }
+    
+    // MARK: - swiftDialog blocking process UI
+
+    /// Action taken when a blocking process is running during apply.
+    /// Options: ignore | kill | notify | prompt | defer
+    ///   ignore — skip blocking process check entirely
+    ///   kill   — force-quit the blocking process silently
+    ///   notify — show a brief swiftDialog notification; skip label if still running
+    ///   prompt — show a timed swiftDialog prompt; user can quit app or skip label
+    ///   defer  — skip this label silently; retry on next apply cycle
+    /// Defaults to "prompt".
+    var blockingProcessAction: String {
+        pref("BlockingProcessAction", default: "prompt")
+    }
+
+    /// Seconds shown on the swiftDialog countdown timer for the blocking-process prompt.
+    /// When the timer expires, the blocking process is force-quit and patching proceeds.
+    /// Defaults to 120 (2 minutes).
+    var blockingProcessCountdownSeconds: Int {
+        prefs["BlockingProcessCountdownSeconds"] as? Int ?? 120
+    }
+
+    // MARK: - swiftDialog deferral process UI
+    
+    /// The number of seconds to show defer until automatic action is taken
+    /// Using this option overrides the default deferral countdown seconds.
+    /// Defaults to 300 seconds (5 minutes)
+    var deferralCountdownSeconds: Int {
+        prefs["DeferralCountdownSeconds"] as? Int ?? 300
+    }
+
+    /// Deferral action to automatically take when the "DeferralCountdownSeconds" reaches 0 and the dialog is not acknowledged
+    /// Options: ignore | kill | defer
+    ///   ignore — skip blocking process check entirely
+    ///   kill   — force-quit the blocking process silently
+    ///   defer  — skip this label silently; retry on next apply cycle
+    /// Defaults to "defer".
+    var deferralAutomaticAction: String {
+        pref("DeferralAutomaticAction", default: "defer")
+    }
+
+    /// The number of minutes to defer until the next update workflow attempt if a user chooses not to install updates
+    ///  Using this option overrides the default deferral time which is set to 1440 minutes (24 hours)
+    var deferralTimerDefault: Int {
+        prefs["DeferralTimerDefault"] as? Int ?? 1440
+    }
+
+    /// Display a deferral time pop-up menu in the install update dialog that allows the user to override the 'DeferralTimerDefault' timer.
+    var deferralTimerMenu: String {
+        pref("DeferralTimerMenu", default: "5,30,60,120,480,1440")
+    }
+
+    /// The number of minutes to defer automatically if the user has enabled Focus/Do Not Disturb
+    /// or when a process has requested that the display not go to sleep (for example, during an active meeting).
+    /// Defaults to 60 (1 hours).
+    var deferralTimerFocus: Int {
+        prefs["DeferralTimerFocus"] as? Int ?? 60
+    }
+
+    // MARK: - swiftDialog support info UI
+    
+    /// For the Support Team name that display in the Help Message.
+    /// Defaults to "IT Support Team".
+    var supportTeamName: String {
+        pref("SupportTeamName", default: "IT Support Team")
+    }
+
+    /// For the Support Team email address that display in the Help Message.
+    /// Defaults to "support@company.com".
+    var supportTeamEmail: String {
+        pref("SupportTeamEmail", default: "support@company.com")
+    }
+
+    /// For the Support Team phone number that display in the Help Message.
+    /// Defaults to "".
+    var supportTeamPhone: String {
+        pref("SupportTeamPhone", default: "None")
+    }
+
+    /// For the Support Team wesite that display in the Help Message.
+    /// Defaults to "support@company.com".
+    var supportTeamWebsite: String {
+        pref("SupportTeamWebsite", default: "None")
+    }
+    
+
+    // MARK: - PatcherMenu UI
+
+    /// Icon displayed in the menu bar status item.
+    /// Accepts an SF Symbol name (e.g. "gear") or an absolute path to a PNG file
+    /// (starting with / or ~). A template-mode PNG (black art on transparent background)
+    /// adapts automatically to the light/dark menu bar appearance.
+    /// When empty, the built-in default symbol is used. Defaults to "".
+    var menuBarIcon: String {
+        pref("MenuBarIcon", default: "")
+    }
+
+    /// When true, patcherscheduler installs and loads the PatcherMenu LaunchAgent
+    /// for the current console user. When false, the LaunchAgent is unloaded and
+    /// the plist removed. Managed automatically by patcherscheduler at each run.
+    /// Defaults to false (opt-in).
+    var showMenuBarApp: Bool {
+        prefs["ShowMenuBarApp"] as? Bool ?? false
+    }
+
+    /// When true, a Help (?) button is shown in the menu bar popover header.
+    /// Tapping it displays support contact information. Defaults to true.
+    var showHelpButton: Bool {
+        prefs["ShowHelpButton"] as? Bool ?? true
+    }
+
+    /// When true, the Last Activity section (scan / check / stage / apply dates)
+    /// is shown in the menu bar popover. Defaults to true.
+    var showActivitySection: Bool {
+        prefs["ShowActivitySection"] as? Bool ?? true
+    }
+
+    /// When true, a Quit button is shown in the menu bar popover footer.
+    /// Defaults to true.
+    var showQuitButton: Bool {
+        prefs["ShowQuitButton"] as? Bool ?? true
+    }
+
+    // MARK: - Private helpers
+
+    private func pref(_ key: String, default defaultValue: String) -> String {
+        guard let value = prefs[key] as? String, !value.isEmpty else { return defaultValue }
+        return value
+    }
+}
