@@ -157,11 +157,21 @@ struct LabelHistoryEvent: Codable {
                           deferralMinutes: nil, blockingProcessName: processName)
     }
 
+    static func selfServiceInstall(date: Date) -> LabelHistoryEvent {
+        LabelHistoryEvent(type: EventType.selfServiceInstall, date: date,
+                          installedVersion: nil, availableVersion: nil,
+                          downloadURL: nil, fileSizeBytes: nil,
+                          fromVersion: nil, toVersion: nil,
+                          deferralMinutes: nil, blockingProcessName: nil)
+    }
+
     enum EventType {
         static let discovered  = "discovered"
         static let updateFound = "updateFound"
         static let staged      = "staged"
         static let applied     = "applied"
+        // User-initiated self-service install via App Catalog
+        static let selfServiceInstall = "selfServiceInstall"
         // Dialog interaction outcomes
         static let userContinued           = "userContinued"
         static let userDeferred            = "userDeferred"
@@ -306,6 +316,14 @@ func recordApplied(label: String, fromVersion: String, toVersion: String, date: 
         label: label
     )
     Logger.log("📖 History: applied \(label) \(fromVersion) → \(toVersion)")
+}
+
+/// Records a "selfServiceInstall" event when the user initiates an install via the App Catalog.
+/// Written by patcherscheduler (not the patcher binary) so it captures user intent even when
+/// the label is brand-new and has no history file yet.
+func recordSelfServiceInstall(label: String, date: Date) {
+    LabelHistory.append(event: .selfServiceInstall(date: date), label: label)
+    Logger.log("📖 History: selfServiceInstall recorded for \(label)")
 }
 
 /// Records a blocking-process dialog outcome for a single label.
