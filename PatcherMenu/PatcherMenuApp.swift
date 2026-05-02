@@ -21,6 +21,9 @@ struct PatcherMenuApp: App {
                 .help(viewModel.preferences.appTitle)
         }
         .menuBarExtraStyle(.window)
+        .commands {
+            CommandGroup(replacing: .appTermination) { }
+        }
     }
 
 

@@ -15,6 +15,8 @@ struct MenuStatusView: View {
         VStack(alignment: .leading, spacing: 0) {
             headerSection
             Divider()
+            actionSection
+            Divider()
             VStack(alignment: .leading, spacing: 12) {
                 patchSection
                 if vm.preferences.showActivitySection {
@@ -61,21 +63,117 @@ struct MenuStatusView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
     }
+    
+    // MARK: - Action section
+    
+    private var actionSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            MenuSectionHeader("Actions")
+            
+            HStack {
+                if !vm.preferences.optionalLabels.isEmpty {
+                    Button {
+                        let config = NSWorkspace.OpenConfiguration()
+                        config.activates = true
+                        if let url = NSWorkspace.shared.urlForApplication(
+                            withBundleIdentifier: AppConstants.availableSoftwareBundleID
+                        ) {
+                            NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
+                        } else {
+                            NSWorkspace.shared.openApplication(
+                                at: AppConstants.availableSoftwareAppURL,
+                                configuration: config, completionHandler: nil
+                            )
+                        }
+                    } label: {
+                        Label("Available Software", systemImage: "app.gift")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .help("Open Available Software…")
+
+                    Spacer()
+                }
+
+                Menu {
+                    Button("Apply pending updates") { vm.triggerPhase("apply") }
+                        .disabled(!vm.hasPendingPatches)
+                        .help(vm.hasPendingPatches
+                              ? "Apply any staged pending updates"
+                              : "No staged updates — run Download first")
+                    if vm.preferences.showMenuDownloadAction
+                        || vm.preferences.showMenuCheckAction
+                        || vm.preferences.showMenuScanAction {
+                        Divider()
+                    }
+                    if vm.preferences.showMenuDownloadAction {
+                        Button("Download new Updates") { vm.triggerPhase("stage") }
+                            .disabled(!vm.hasDetectedUpdates)
+                            .help(vm.hasDetectedUpdates
+                                  ? "Download and verify any available updates"
+                                  : "No new updates detected — run Check or Scan first")
+                    }
+                    if vm.preferences.showMenuCheckAction {
+                        Button("Check for Updates") { vm.triggerPhase("check") }
+                            .help("Check for any available updates for previously discovered apps")
+                    }
+                    if vm.preferences.showMenuScanAction {
+                        Button("Full Discovery Scan") { vm.triggerPhase("scan") }
+                            .help("Runs a full discovery scan for installed applications. This can take a while.")
+                    }
+                } label: {
+                    Label("Run Now", systemImage: "play.circle")
+                        .font(.caption)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+                .help("Run actions…")
+
+                if vm.preferences.optionalLabels.isEmpty {
+                    Spacer()
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
 
     // MARK: - Patch status
 
     private var patchSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            MenuSectionHeader("Pending Updates")
+            HStack {
+                MenuSectionHeader("Pending Updates")
+                Spacer()
+                Text("Count: \(vm.stagedPatches.count)")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 2)
+            }
 
             if vm.stagedPatches.isEmpty {
                 Label("All apps up to date", systemImage: "checkmark.circle.fill")
                     .font(.subheadline)
                     .foregroundStyle(.green)
 
+                if !vm.detectedPatches.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle")
+                            .frame(width: 14)
+                        Text("\(vm.detectedPatches.count) update\(vm.detectedPatches.count == 1 ? "" : "s") available to download")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                }
+
                 // Monthly mode: show upcoming patch day even when nothing is pending
                 if vm.preferences.monthlyPatchingCadenceEnabled, let next = vm.nextPatchDay {
-                    Text("Next patch day: \(next, format: .dateTime.weekday(.wide).month(.abbreviated).day())")
+                    Text("Next patch cycle: \(next, format: .dateTime.weekday(.wide).month(.abbreviated).day())")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.top, 2)
@@ -107,6 +205,7 @@ struct MenuStatusView: View {
         if vm.deadlineReference != nil {
             Divider().padding(.vertical, 2)
             VStack(alignment: .leading, spacing: 4) {
+                MenuSectionHeader("Deadline details")
 
                 // Hard deadline
                 if let deadline = vm.hardDeadlineDate, let days = vm.daysUntilHardDeadline {
@@ -177,23 +276,34 @@ struct MenuStatusView: View {
     private var activitySection: some View {
         VStack(alignment: .leading, spacing: 4) {
             MenuSectionHeader("Last Activity")
-            activityRow("Scan",  date: vm.schedulerState?.lastScanDate)
-            activityRow("Check", date: vm.schedulerState?.lastCheckDate)
-            activityRow("Stage", date: vm.schedulerState?.lastStageDate)
-            activityRow("Apply", date: vm.schedulerState?.lastApplyDate)
+            activityRow("Scan",  phase: "scan",  date: vm.schedulerState?.lastScanDate)
+            activityRow("Check", phase: "check", date: vm.schedulerState?.lastCheckDate)
+            activityRow("Stage", phase: "stage", date: vm.schedulerState?.lastStageDate)
+            activityRow("Apply", phase: "apply", date: vm.schedulerState?.lastApplyDate)
         }
     }
 
-    private func activityRow(_ label: String, date: Date?) -> some View {
-        HStack(spacing: 0) {
+    private func activityRow(_ label: String, phase: String, date: Date?) -> some View {
+        let isRunning = vm.activePhase == phase
+        return HStack(spacing: 4) {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 38, alignment: .leading)
-            Text(date.map { formatDate($0) } ?? "Never")
-                .font(.caption)
-                .foregroundStyle(date == nil ? .tertiary : .primary)
+            if isRunning {
+                Text("Running")
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                ProgressView()
+                    .scaleEffect(0.40)
+                    .frame(width: 25, height: 6)
+            } else {
+                Text(date.map { formatDate($0) } ?? "Never")
+                    .font(.caption)
+                    .foregroundStyle(date == nil ? .tertiary : .primary)
+            }
         }
+        .animation(.default, value: isRunning)
     }
 
     // MARK: - Footer
@@ -212,6 +322,7 @@ struct MenuStatusView: View {
             Spacer()
 
             if vm.preferences.showQuitButton && !vm.preferences.showMenuBarApp {
+                Spacer()
                 Button("Quit") {
                     NSApplication.shared.terminate(nil)
                 }
@@ -244,7 +355,7 @@ struct MenuStatusView: View {
 
 // MARK: - Support info panel
 
-private struct SupportInfoView: View {
+struct SupportInfoView: View {
     let preferences: Preferences
 
     var body: some View {

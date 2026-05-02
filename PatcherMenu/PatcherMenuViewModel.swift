@@ -16,9 +16,12 @@ final class PatcherMenuViewModel: ObservableObject {
     @Published var schedulerState: SchedulerStateData?
     @Published var deferralState: DeferralStateData?
     @Published var stagedPatches: [StagedPatch] = []
+    @Published var detectedPatches: [DetectedPatch] = []
     @Published var preferences = Preferences()
     @Published var lastRefreshed = Date()
     @Published var isLoading = false
+    @Published var activePhase: String?
+    @Published var activeLabel: String?
 
     // MARK: - Data models (local read-only copies)
 
@@ -43,9 +46,17 @@ final class PatcherMenuViewModel: ObservableObject {
         let stagedDate: Date?
     }
 
+    struct DetectedPatch: Identifiable {
+        let id: String          // Installomator label key
+        let displayName: String
+        let availableVersion: String?
+    }
+
     // MARK: - Computed properties
 
     var hasPendingPatches: Bool { !stagedPatches.isEmpty }
+
+    var hasDetectedUpdates: Bool { !detectedPatches.isEmpty }
 
     var deferralCount: Int { deferralState?.count ?? schedulerState?.deferralCount ?? 0 }
 
@@ -109,12 +120,21 @@ final class PatcherMenuViewModel: ObservableObject {
     // MARK: - Init
 
     private var refreshTimer: Timer?
+    private var xpcConnection: NSXPCConnection?
+    private var configDirWatcher: DispatchSourceFileSystemObject?
+    private var configDirFD: Int32 = -1
 
     init() {
         refresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }
+        startConfigDirWatch()
+    }
+
+    deinit {
+        configDirWatcher?.cancel()
+        if configDirFD >= 0 { close(configDirFD) }
     }
 
     // MARK: - Refresh
@@ -125,8 +145,87 @@ final class PatcherMenuViewModel: ObservableObject {
         deferralState = loadDeferralState()
         preferences = Preferences()
         stagedPatches = loadStagedPatches()
+        detectedPatches = loadDetectedPatches(excluding: stagedPatches)
         lastRefreshed = Date()
         isLoading = false
+    }
+
+    // MARK: - Config directory watcher
+
+    private func startConfigDirWatch() {
+        let path = AppConstants.patcherConfigFolderURL.path
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        configDirFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: .write,
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in self?.reloadActivePhase() }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        configDirWatcher = source
+
+        reloadActivePhase()
+    }
+
+    private func reloadActivePhase() {
+        let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("active_phase.json")
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let phase = dict["phase"] as? String
+        else {
+            let wasActive = activePhase != nil
+            activePhase = nil
+            activeLabel = nil
+            if wasActive { refresh() }
+            return
+        }
+        activePhase = phase
+        activeLabel = dict["label"] as? String
+    }
+
+    // MARK: - XPC
+
+    /// Triggers a scheduler phase immediately via XPC, then refreshes state after a short delay.
+    func triggerPhase(_ phase: String) {
+        if xpcConnection == nil { setupXPCConnection() }
+        guard let proxy = xpcConnection?.remoteObjectProxyWithErrorHandler({ [weak self] error in
+            NSLog("PatcherMenu XPC error: %@", error.localizedDescription)
+            Task { @MainActor [weak self] in
+                self?.xpcConnection = nil
+                self?.isLoading = false
+            }
+        }) as? PatcherXPCProtocol else {
+            NSLog("PatcherMenu XPC: failed to obtain proxy for phase '\(phase)'")
+            return
+        }
+
+        isLoading = true
+        proxy.triggerPhase(phase) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                self?.refresh()
+            }
+        }
+    }
+
+    private func setupXPCConnection() {
+        let conn = NSXPCConnection(machServiceName: AppConstants.patcherXPCServiceName, options: .privileged)
+        conn.remoteObjectInterface = NSXPCInterface(with: PatcherXPCProtocol.self)
+        conn.invalidationHandler = {
+            NSLog("PatcherMenu XPC connection invalidated")
+            Task { @MainActor in }
+        }
+        conn.interruptionHandler = {
+            NSLog("PatcherMenu XPC connection interrupted")
+        }
+        conn.resume()
+        xpcConnection = conn
     }
 
     // MARK: - Loaders
@@ -188,6 +287,97 @@ final class PatcherMenuViewModel: ObservableObject {
         return patches.sorted {
             $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
         }
+    }
+
+    private func loadDetectedPatches(excluding staged: [StagedPatch]) -> [DetectedPatch] {
+        let stagedIDs = Set(staged.map(\.id))
+
+        // Load stage-level and apply-level exclusions from config.json so the count
+        // matches what the stage phase would actually attempt to download.
+        let configExcluded = loadStageExclusions()
+
+        let discoveredURL = AppConstants.patcherDiscoveredFolderURL
+        guard let plists = try? FileManager.default.contentsOfDirectory(
+            at: discoveredURL, includingPropertiesForKeys: nil
+        ) else { return [] }
+
+        let ignoreAppsInHomeFolder = preferences.ignoreAppsInHomeFolder
+
+        var patches: [DetectedPatch] = []
+        for plist in plists where plist.pathExtension == "plist" {
+            let label = plist.deletingPathExtension().lastPathComponent
+
+            guard !stagedIDs.contains(label) else { continue }
+            guard !configExcluded.contains(label) else { continue }
+            guard let data = try? Data(contentsOf: plist),
+                  let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let status = dict["updateStatus"] as? String, status == "updateRequired"
+            else { continue }
+
+            // Mirror stage phase: skip if all installs are in /Users/ and IgnoreAppsInHomeFolder is enabled
+            if ignoreAppsInHomeFolder,
+               let foundInstalls = dict["foundInstalls"] as? [[String: Any]],
+               !foundInstalls.isEmpty,
+               foundInstalls.allSatisfy({ ($0["path"] as? String ?? "").hasPrefix("/Users/") }) {
+                continue
+            }
+
+            // Mirror stage phase: skip if label is within the version-mismatch throttle window
+            let availableVersion = dict["appNewVersion"] as? String ?? ""
+            if isVersionMismatchThrottled(label: label, currentAppNewVersion: availableVersion,
+                                          intervalDays: preferences.versionMismatchThrottleDays) {
+                continue
+            }
+
+            // Also exclude apply-broken labels whose broken version matches the available version
+            if let brokenVersion = configExcluded.applyBrokenVersion(for: label),
+               availableVersion == brokenVersion || availableVersion.isEmpty {
+                continue
+            }
+
+            let version = dict["appNewVersion"] as? String
+            let name = dict["name"] as? String ?? label
+            patches.append(DetectedPatch(id: label, displayName: name, availableVersion: version))
+        }
+        return patches.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+
+    private func isVersionMismatchThrottled(label: String, currentAppNewVersion: String, intervalDays: Int) -> Bool {
+        let metadataURL = AppConstants.patcherCacheFolderURL
+            .appendingPathComponent(label)
+            .appendingPathComponent("metadata.json")
+        guard let data = try? Data(contentsOf: metadataURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let timestampStr = json["lastCheckedUpToDateTimestamp"] as? String
+        else { return false }
+        if !currentAppNewVersion.isEmpty,
+           let throttledAt = json["throttledAtAppNewVersion"] as? String,
+           throttledAt != currentAppNewVersion {
+            return false
+        }
+        let iso = ISO8601DateFormatter()
+        guard let lastChecked = iso.date(from: timestampStr) else { return false }
+        let daysSince = Calendar.current.dateComponents([.day], from: lastChecked, to: Date()).day ?? Int.max
+        return daysSince < intervalDays
+    }
+
+    private func loadStageExclusions() -> StageExclusions {
+        guard let data = try? Data(contentsOf: AppConstants.patcherConfigFileURL),
+              let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return StageExclusions(broken: [], applyBroken: [:]) }
+        let broken = config["stageBrokenLabels"] as? [String] ?? []
+        let applyBroken = config["applyBrokenVersions"] as? [String: String] ?? [:]
+        return StageExclusions(broken: broken, applyBroken: applyBroken)
+    }
+
+    private struct StageExclusions {
+        let broken: [String]
+        let applyBroken: [String: String]
+
+        func contains(_ label: String) -> Bool { broken.contains(label) }
+        func applyBrokenVersion(for label: String) -> String? { applyBroken[label] }
     }
 
     private func discoveredDisplayName(for label: String) -> String? {
