@@ -13,7 +13,7 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self],
+        subcommands: [Scan.self, Check.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self],
         defaultSubcommand: Scan.self
     )
 }
@@ -24,22 +24,22 @@ extension Patcher {
             abstract: "Discover installed applications and check for available updates."
         )
 
+        @Flag(name: .long, help: "Show a progress window (used when triggered from PatcherMenu).")
+        var userInitiated: Bool = false
+
         func run() throws {
             Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
             Logger.log("Process ID: \(AppConstants.currentPid)")
             configureLogging()
 
-            // Setup application support folders
             setupApplicationSupportFolders()
 
             let prefs = Preferences()
+
             if prefs.installomatorLabelsDisable {
                 Logger.log("ℹ️ Installomator labels disabled by preference — skipping label setup and updates.")
             } else {
-                // Ensure labels exist (handles first-run download)
                 setupInstallomatorLabels()
-
-                // Check for label updates unless separately disabled
                 if prefs.installomatorUpdateDisable {
                     Logger.log("ℹ️ Installomator label updates disabled by preference — skipping update check.")
                 } else {
@@ -50,12 +50,29 @@ extension Patcher {
                 }
             }
 
-            // Log Info (Verbose only)
             logEnvironmentVariables()
 
-            // Begin full discovery scan
-            scanAppsForUpdates()
+            let total = userInitiated ? countScanLabels() : 0
+            let dialog = userInitiated ? SwiftDialogController.launchProgressWindow(
+                title:   prefs.appTitle,
+                message: "Scanning \(total) application\(total == 1 ? "" : "s") for available updates…",
+                total:   total
+            ) : nil
 
+            scanAppsForUpdates { current, total, labelName in
+                dialog?.setProgress(current, of: total, label: "Scanning \(labelName)…")
+            }
+
+            if let dialog {
+                let updateCount = countPendingUpdates()
+                let summary = updateCount == 0
+                    ? "No updates available."
+                    : "\(updateCount) update\(updateCount == 1 ? "" : "s") available to download."
+                dialog.update(message: summary)
+                dialog.updateProgress("Complete")
+                Thread.sleep(forTimeInterval: 5.0)
+            }
+            dialog?.close()
             cleanupAfterRun()
         }
     }
@@ -67,22 +84,22 @@ extension Patcher {
             abstract: "Check previously discovered applications for available updates."
         )
 
+        @Flag(name: .long, help: "Show a progress window (used when triggered from PatcherMenu).")
+        var userInitiated: Bool = false
+
         func run() throws {
             Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
             Logger.log("Process ID: \(AppConstants.currentPid)")
             configureLogging()
 
-            // Setup application support folders
             setupApplicationSupportFolders()
 
             let prefs = Preferences()
+
             if prefs.installomatorLabelsDisable {
                 Logger.log("ℹ️ Installomator labels disabled by preference — skipping label setup and updates.")
             } else {
-                // Ensure labels exist (handles first-run download)
                 setupInstallomatorLabels()
-
-                // Check for label updates unless separately disabled
                 if prefs.installomatorUpdateDisable {
                     Logger.log("ℹ️ Installomator label updates disabled by preference — skipping update check.")
                 } else {
@@ -93,12 +110,29 @@ extension Patcher {
                 }
             }
 
-            // Log Info (Verbose only)
             logEnvironmentVariables()
 
-            // Check only previously discovered apps
-            checkDiscoveredAppsForUpdates()
+            let total = userInitiated ? countCheckLabels() : 0
+            let dialog = userInitiated ? SwiftDialogController.launchProgressWindow(
+                title:   prefs.appTitle,
+                message: "Checking \(total) application\(total == 1 ? "" : "s") for available updates…",
+                total:   total
+            ) : nil
 
+            checkDiscoveredAppsForUpdates { current, total, displayName in
+                dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)**…")
+            }
+
+            if let dialog {
+                let updateCount = countPendingUpdates()
+                let summary = updateCount == 0
+                    ? "No updates available."
+                    : "\(updateCount) update\(updateCount == 1 ? "" : "s") available to download."
+                dialog.update(message: summary)
+                dialog.updateProgress("Complete")
+                Thread.sleep(forTimeInterval: 5.0)
+            }
+            dialog?.close()
             cleanupAfterRun()
         }
     }
@@ -245,6 +279,28 @@ extension Patcher {
 }
 
 extension Patcher {
+    struct RepairPermissions: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "repairPermissions",
+            abstract: "Reset ownership (root:wheel) and permissions (dirs 755, files 644) on all patcher data folders."
+        )
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+
+            // Setup application support folders
+            setupApplicationSupportFolders()
+
+            repairPermissions()
+            
+            cleanupAfterRun()
+        }
+    }
+}
+
+extension Patcher {
     struct EnsureTool: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "ensure",
@@ -273,13 +329,16 @@ extension Patcher {
 
             Logger.log("🔧 Ensuring '\(label)' is current…")
 
+            writeEnsureStatus("Scanning…")
             guard scanSingleLabel(label) else {
                 Logger.log("❌ ensure: scan failed for '\(label)' — aborting.")
                 cleanupAfterRun()
                 return
             }
 
+            writeEnsureStatus("Downloading…")
             downloadAndStageUpdates(bypassBandwidthLimit: true, labelFilter: label)
+            writeEnsureStatus("Installing…")
             applyUpdates(labelFilter: label, suppressDialog: true)
 
             cleanupAfterRun()

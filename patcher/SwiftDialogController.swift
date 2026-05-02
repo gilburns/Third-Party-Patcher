@@ -206,6 +206,52 @@ struct SwiftDialogController {
         sendCommand("quit:")
     }
 
+    // MARK: - User-initiated progress window (scan / check)
+
+    /// Launches a non-interactive "please wait" progress window for user-initiated
+    /// scan/check phases. Returns a `UserProgressDialog` for updating and closing it.
+    static func launchProgressWindow(title: String, message: String, total: Int = 0) -> UserProgressDialog? {
+        guard let uid = consoleUserUID, uid > 0 else { return nil }
+
+        let cmdURL = AppConstants.swiftDialogProgressCommandFileURL
+        try? FileManager.default.removeItem(at: cmdURL)
+
+        let prefs      = Preferences()
+        let dialogIcon = resolveDialogIcon(prefs: prefs)
+
+        var jsonDict: [String: Any] = [
+            "title":           title,
+            "titlefont":       "size=18",
+            "icon":            dialogIcon,
+            "message":         message,
+            "messagefont":     "size=14",
+            "progress":        total > 0 ? total : 0,
+            "progresstext":    "",
+            "commandfile":     cmdURL.path,
+            "button1disabled": true,
+            "moveable":        true,
+            "mini":            true,
+            "ontop":           prefs.dialogOnTop,
+            "position":        prefs.dialogScreenProgressPosition,
+            "width":           500,
+            "height":          220,
+        ]
+        if let overlay = resolveOverlayIcon(prefs: prefs) { jsonDict["overlayicon"] = overlay }
+
+        guard let jsonData   = try? JSONSerialization.data(withJSONObject: jsonDict),
+              let jsonString = String(data: jsonData, encoding: .utf8) else { return nil }
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments     = ["asuser", "\(uid)", AppConstants.swiftDialogBinaryURL.path,
+                           "--jsonstring", jsonString]
+        p.standardError = Pipe()
+        guard (try? p.run()) != nil else { return nil }
+
+        Thread.sleep(forTimeInterval: 1.0)
+        return UserProgressDialog(process: p, commandFileURL: cmdURL)
+    }
+
     /// Waits for the dialog process to exit, however it exits.
     /// If the user clicks Done the process exits immediately.
     /// If they ignore it, a background timer fires `quit:` via the command file
@@ -513,6 +559,57 @@ struct SwiftDialogController {
             Logger.log("❌ SwiftDialogController: failed to launch swiftDialog: \(error)")
         }
         return p
+    }
+}
+
+
+// MARK: - User progress dialog handle
+
+struct UserProgressDialog {
+    private let process: Process
+    private let commandFileURL: URL
+
+    init(process: Process, commandFileURL: URL) {
+        self.process = process
+        self.commandFileURL = commandFileURL
+    }
+
+    func update(message: String) {
+        send("message: \(message)")
+    }
+
+    func updateProgress(_ text: String) {
+        send("progresstext: \(text)")
+    }
+
+    func setProgress(_ current: Int, of total: Int, label: String) {
+        send("message: \(label)")
+        send("progress: \(current)")
+        send("progresstext: \(current) of \(total)")
+    }
+
+    func close() {
+        send("message: Check completed")
+        Thread.sleep(forTimeInterval: 3.0)
+        
+        send("quit:")
+        // Give swiftDialog a moment to process the quit command.
+        Thread.sleep(forTimeInterval: 1.0)
+        if process.isRunning { process.terminate() }
+        try? FileManager.default.removeItem(at: commandFileURL)
+    }
+
+    private func send(_ command: String) {
+        let line = command.hasSuffix("\n") ? command : command + "\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if FileManager.default.fileExists(atPath: commandFileURL.path),
+           let handle = try? FileHandle(forWritingTo: commandFileURL) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: commandFileURL, options: .atomic)
+        }
     }
 }
 

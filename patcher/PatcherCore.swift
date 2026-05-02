@@ -22,6 +22,8 @@ func setupApplicationSupportFolders() {
         AppConstants.patcherDiscoveredFolderURL.path,
         AppConstants.installomatorFolderURL.path,
         AppConstants.managedLabelsFolderURL.path,
+        AppConstants.managedIconsFolderURL.path,
+        AppConstants.managedMetadataFolderURL.path,
         AppConstants.patcherTempFolderURL.path
     ]
     
@@ -29,12 +31,72 @@ func setupApplicationSupportFolders() {
     for folder in folders {
         if !FileManager.default.fileExists(atPath: folder) {
             do {
-                try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true, attributes: nil)
+                try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true, attributes: [
+                    .posixPermissions: 0o755,
+                    .ownerAccountID: NSNumber(value: 0),
+                    .groupOwnerAccountID: NSNumber(value: 0)
+                ])
                 Logger.log("Created folder: \(folder)")
             } catch {
                 Logger.log("Failed to create folder: \(folder), error: \(error)")
             }
         }
+    }
+}
+
+// MARK: - Repair Permissions
+
+func repairPermissions() {
+    let root = AppConstants.patcherFolderURL
+    let fm = FileManager.default
+
+    guard fm.fileExists(atPath: root.path) else {
+        Logger.log("❌ Patcher data folder not found: \(root.path)")
+        return
+    }
+
+    Logger.log("🔧 Repairing ownership and permissions under \(root.path)…")
+
+    var fixedCount = 0
+    var errorCount = 0
+
+    func applyAttributes(to url: URL, isDirectory: Bool) {
+        let mode: Int = isDirectory ? 0o755 : 0o644
+        do {
+            try fm.setAttributes([
+                .posixPermissions: mode,
+                .ownerAccountID: NSNumber(value: 0),
+                .groupOwnerAccountID: NSNumber(value: 0)
+            ], ofItemAtPath: url.path)
+            Logger.verbose("  \(isDirectory ? "755" : "644") root:wheel  \(url.path)")
+            fixedCount += 1
+        } catch {
+            Logger.log("⚠️ Could not repair \(url.lastPathComponent): \(error.localizedDescription)")
+            errorCount += 1
+        }
+    }
+
+    // Apply to the root folder itself
+    applyAttributes(to: root, isDirectory: true)
+
+    guard let enumerator = fm.enumerator(
+        at: root,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: []
+    ) else {
+        Logger.log("❌ Failed to enumerate \(root.path)")
+        return
+    }
+
+    for case let url as URL in enumerator {
+        let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        applyAttributes(to: url, isDirectory: isDir)
+    }
+
+    if errorCount == 0 {
+        Logger.log("✅ Repair complete — \(fixedCount) items set to root:wheel (dirs 755, files 644).")
+    } else {
+        Logger.log("⚠️ Repair complete — \(fixedCount) items updated, \(errorCount) errors.")
     }
 }
 
@@ -84,8 +146,75 @@ func logEnvironmentVariables() {
     }
 }
 
+/// MARK: - Progress pre-count helpers
+
+/// Returns the number of label files that scan will process (for progress bar sizing).
+func countScanLabels() -> Int { buildLabelFileList().count }
+
+/// Returns the number of discovered plists that check will process (for progress bar sizing).
+func countCheckLabels() -> Int {
+    (try? FileManager.default.contentsOfDirectory(
+        at: AppConstants.patcherDiscoveredFolderURL, includingPropertiesForKeys: nil
+    ).filter { $0.pathExtension == "plist" }.count) ?? 0
+}
+
+/// Returns the number of discovered plists with updateStatus == "updateRequired".
+func countPendingUpdates() -> Int {
+    let fm = FileManager.default
+    guard let plists = try? fm.contentsOfDirectory(
+        at: AppConstants.patcherDiscoveredFolderURL, includingPropertiesForKeys: nil
+    ) else { return 0 }
+
+    let prefs = Preferences()
+    let stageBroken = Set(loadStageBrokenState().labels)
+    let applyBrokenVersions = loadApplyBrokenState().brokenVersions
+    let ignoreHomeFolder = prefs.ignoreAppsInHomeFolder
+    let throttleDays = prefs.versionMismatchThrottleDays
+
+    // Load staged labels so we don't double-count items already downloaded
+    let stagedLabels: Set<String> = {
+        guard let dirs = try? fm.contentsOfDirectory(
+            at: AppConstants.patcherCacheFolderURL, includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return [] }
+        return Set(dirs.compactMap { url -> String? in
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { return nil }
+            let meta = url.appendingPathComponent("metadata.json")
+            guard let data = try? Data(contentsOf: meta),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  json["stagedTimestamp"] != nil else { return nil }
+            return url.lastPathComponent
+        })
+    }()
+
+    return plists.filter { $0.pathExtension == "plist" }.filter { url in
+        let label = url.deletingPathExtension().lastPathComponent
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let status = dict["updateStatus"] as? String, status == "updateRequired"
+        else { return false }
+
+        guard !stagedLabels.contains(label) else { return false }
+        guard !stageBroken.contains(label) else { return false }
+
+        let appNewVersion = dict["appNewVersion"] as? String ?? ""
+
+        if let brokenVersion = applyBrokenVersions[label],
+           appNewVersion == brokenVersion || appNewVersion.isEmpty { return false }
+
+        if ignoreHomeFolder,
+           let foundInstalls = dict["foundInstalls"] as? [[String: Any]],
+           !foundInstalls.isEmpty,
+           foundInstalls.allSatisfy({ ($0["path"] as? String ?? "").hasPrefix("/Users/") }) { return false }
+
+        if unknownVersionThrottleActive(label: label, intervalDays: throttleDays, currentAppNewVersion: appNewVersion) { return false }
+
+        return true
+    }.count
+}
+
 // MARK: - Start Scanning
-func scanAppsForUpdates() {
+func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     let scanStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔍 Scan started at \(iso.string(from: scanStart))")
@@ -159,6 +288,7 @@ func scanAppsForUpdates() {
             }
 
             scannedCount += 1
+            progressHandler?(scannedCount, shFiles.count, label)
             let filePath = fileURL.path
             Logger.log("--------------------------------------------------")
             Logger.log("📜 Processing script: \(fileURL.lastPathComponent)")
@@ -251,8 +381,8 @@ func scanSingleLabel(_ labelName: String) -> Bool {
 }
 
 
-// MARK: - Check Discovered Apps
-func checkDiscoveredAppsForUpdates() {
+/// MARK: - Check Discovered Apps
+func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     let checkStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔎 Update check started at \(iso.string(from: checkStart))")
@@ -335,6 +465,14 @@ func checkDiscoveredAppsForUpdates() {
             }
 
             checkedCount += 1
+            let displayName: String = {
+                let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+                if let data = try? Data(contentsOf: plistURL),
+                   let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                   let name = dict["name"] as? String, !name.isEmpty { return name }
+                return label
+            }()
+            progressHandler?(checkedCount, discoveredLabels.count, displayName)
             Logger.log("--------------------------------------------------")
             Logger.log("🔎 Checking: \(label).sh")
 
@@ -611,6 +749,16 @@ func loadStageBrokenState() -> (labels: [String], installomatorVersion: String, 
     let version = config["stageInstallomatorVersion"] as? String ?? ""
     let failedAttempts = config["stageFailedAttempts"] as? [String: Int] ?? [:]
     return (labels, version, failedAttempts)
+}
+
+func loadApplyBrokenState() -> (failedAttempts: [String: Int], brokenVersions: [String: String]) {
+    guard let data = try? Data(contentsOf: AppConstants.patcherConfigFileURL),
+          let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return ([:], [:])
+    }
+    let failedAttempts = config["applyFailedAttempts"] as? [String: Int] ?? [:]
+    let brokenVersions = config["applyBrokenVersions"] as? [String: String] ?? [:]
+    return (failedAttempts, brokenVersions)
 }
 
 
@@ -912,6 +1060,11 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
     Logger.log("🔧 Apply started at \(iso.string(from: applyStart))")
 
     let prefs = Preferences()
+
+    let applyBrokenState = loadApplyBrokenState()
+    var applyFailedAttempts = applyBrokenState.failedAttempts
+    var applyBrokenVersions = applyBrokenState.brokenVersions
+    let applyFailThreshold  = prefs.applyFailThreshold
 
     // In monthly patching mode, daysPending counts from the patch day this month
     // (day 0 on the target date, +1 each subsequent day) rather than from when
@@ -1229,10 +1382,21 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 dialog?.setSuccess(item: dialogItem, toVersion: appNewVersion)
                 Logger.log("✅ Successfully installed \(label)")
                 appliedCount += 1
+                applyFailedAttempts.removeValue(forKey: label)
+                applyBrokenVersions.removeValue(forKey: label)
             } else {
                 dialog?.setFailed(item: dialogItem)
                 Logger.log("❌ Failed to install \(label)")
                 failedCount += 1
+                let attempts = (applyFailedAttempts[label] ?? 0) + 1
+                applyFailedAttempts[label] = attempts
+                Logger.log("   Apply failure count for \(label): \(attempts)/\(applyFailThreshold)")
+                if attempts >= applyFailThreshold {
+                    Logger.log("🚫 \(label) reached apply failure threshold — staged file deleted, v\(appNewVersion) will not be re-staged")
+                    try? fileManager.removeItem(at: stagedFileURL)
+                    applyBrokenVersions[label] = appNewVersion
+                    applyFailedAttempts.removeValue(forKey: label)
+                }
             }
         }
 
@@ -1278,7 +1442,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 "lastApplyCount": appliedCount,
                 "lastApplyNothingToInstallCount": nothingToInstallCount,
                 "lastApplySkippedCount": skippedCount,
-                "lastApplyFailedCount": failedCount
+                "lastApplyFailedCount": failedCount,
+                "applyFailedAttempts": applyFailedAttempts,
+                "applyBrokenVersions": applyBrokenVersions
             ])
         }
 
@@ -1674,6 +1840,10 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
     let versionMismatchThrottleDays = prefs.versionMismatchThrottleDays
     let currentInstallomatorVersion = loadEffectiveLabelsVersion()
 
+    // Load previous apply broken state (versions abandoned after install failures)
+    let previousApplyBrokenState = loadApplyBrokenState()
+    var applyBrokenVersions = previousApplyBrokenState.brokenVersions
+
     // Load previous stage broken state
     let previousStageState = loadStageBrokenState()
     let stageBrokenAutoSkip: Set<String>
@@ -1768,6 +1938,20 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
             }
 
             let appNewVersion = plist["appNewVersion"] as? String ?? ""
+
+            // Skip labels whose last-attempted install version was abandoned after repeated failures.
+            // If a newer version is now available, clear the broken state and allow staging to proceed.
+            if let brokenVersion = applyBrokenVersions[label] {
+                if appNewVersion == brokenVersion || appNewVersion.isEmpty {
+                    Logger.log("--------------------------------------------------")
+                    Logger.log("🚫 Skipping \(label) — v\(brokenVersion) was abandoned after \(prefs.applyFailThreshold) install failures")
+                    brokenSkippedCount += 1
+                    continue
+                } else {
+                    Logger.log("ℹ️ \(label) has new version v\(appNewVersion) (was broken at v\(brokenVersion)) — clearing apply-broken state")
+                    applyBrokenVersions.removeValue(forKey: label)
+                }
+            }
 
             // Throttle re-downloads for labels where a previous download found the script-reported
             // version didn't match the actual packaged version. Invalidated automatically when
@@ -1967,7 +2151,8 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
             "lastStageFailedCount": failedCount,
             "stageBrokenLabels": updatedStageBrokenLabels,
             "stageInstallomatorVersion": currentInstallomatorVersion,
-            "stageFailedAttempts": stageFailedAttempts
+            "stageFailedAttempts": stageFailedAttempts,
+            "applyBrokenVersions": applyBrokenVersions
         ])
 
     } catch {
@@ -2825,7 +3010,7 @@ private func writeUnknownCheckMetadata(label: String, timestamp: String, appNewV
 /// Checks `managedLabelsFolderURL/<name>.sh` first, falls back to
 /// `installomatorLabelsFolderURL/<name>.sh`. Returns nil if neither exists.
 func resolveLabel(name: String) -> URL? {
-    let managed = AppConstants.managedLabelsLabelsFolderURL.appendingPathComponent("\(name).sh")
+    let managed = AppConstants.managedLabelsFolderURL.appendingPathComponent("\(name).sh")
     if FileManager.default.fileExists(atPath: managed.path) {
         return managed
     }
@@ -2858,9 +3043,9 @@ func buildLabelFileList() -> [URL] {
     var overrideNames: [String] = []
     var additionNames: [String] = []
 
-    if fm.fileExists(atPath: AppConstants.managedLabelsLabelsFolderURL.path),
+    if fm.fileExists(atPath: AppConstants.managedLabelsFolderURL.path),
        let managedFiles = try? fm.contentsOfDirectory(
-           at: AppConstants.managedLabelsLabelsFolderURL, includingPropertiesForKeys: nil
+           at: AppConstants.managedLabelsFolderURL, includingPropertiesForKeys: nil
        ) {
         for url in managedFiles where url.pathExtension == "sh" {
             let name = url.deletingPathExtension().lastPathComponent
@@ -2924,6 +3109,24 @@ func recordDeferralOutcome(labels: [String], result: DeferralPromptResult, date:
     Logger.verbose("📖 History: deferral outcome '\(event.type)' recorded for \(labels.count) label(s)")
 }
 
+
+// MARK: - Ensure status
+
+/// Updates the `status` field in `active_phase.json` during a `patcher ensure` run.
+/// The scheduler writes the file before launching patcher and removes it after; this
+/// function updates it in-place so the UI can show granular progress.
+func writeEnsureStatus(_ status: String) {
+    let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("active_phase.json")
+    var dict: [String: Any] = [:]
+    if let data = try? Data(contentsOf: url),
+       let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        dict = existing
+    }
+    dict["status"] = status
+    if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
+        try? data.write(to: url, options: .atomic)
+    }
+}
 
 // MARK: - Cleanup after run
 func cleanupAfterRun() {
