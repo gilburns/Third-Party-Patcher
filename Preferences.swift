@@ -61,7 +61,7 @@ struct Preferences {
         prefs["LogVerbose"] as? Bool ?? false
     }
 
-    // MARK: - Keys
+    // MARK: - App Handling
 
     /// Applications discovered in /Users/* are never updated and ignored if true.
     /// Applications discovered in /Users/* are always updated if false
@@ -76,6 +76,8 @@ struct Preferences {
         prefs["ConvertAppsInHomeFolder"] as? Bool ?? false
     }
 
+    // MARK: - Installomator Repo Connections
+    
     /// GitHub account hosting the Installomator repository. Defaults to "Installomator".
     var installomatorGitHubAccount: String {
         pref("InstallomatorGitHubAccount", default: "Installomator")
@@ -91,6 +93,24 @@ struct Preferences {
         pref("InstallomatorGitHubBranch", default: "main")
     }
 
+    // MARK: - Installomator Metadata Repo Connections
+
+    /// GitHub account hosting the Installomator Metadata repository. Defaults to "Installomator".
+    var installomatorGitHubMetadataAccount: String {
+        pref("InstallomatorGitHubMetadataAccount", default: "gilburns")
+    }
+
+    /// GitHub repository name for Installomator Metadata. Defaults to "Installomator".
+    var installomatorGitHubMetadataRepo: String {
+        pref("InstallomatorGitHubMetadataRepo", default: "Installomator-Metadata")
+    }
+
+    /// Branch to pull Installomator Metadata from. Defaults to "main".
+    var installomatorGitHubMetadataBranch: String {
+        pref("InstallomatorGitHubMetadataBranch", default: "main")
+    }
+
+    // MARK: - Installomator Handling
     /// When true, disables all Installomator label management: no initial download, no update checks,
     /// and Installomator labels are never used during scan/check/stage. Managed labels (if present)
     /// are the only source of labels. Defaults to false.
@@ -119,20 +139,16 @@ struct Preferences {
         return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
     }
 
-    /// Maximum download speed for staged downloads, in curl --limit-rate format.
-    /// Examples: "500K" (500 KB/s), "2M" (2 MB/s), "1G" (1 GB/s).
-    /// Empty or absent means no bandwidth limit. Defaults to no limit.
-    var downloadBandwidthLimit: String? {
-        guard let value = prefs["DownloadBandwidthLimit"] as? String, !value.isEmpty else { return nil }
-        return value
+    /// Space-separated list of Installomator label names approved for self-service
+    /// installation via Available Software catalog. Does not support wildcards.
+    /// The default sort order of labels in the App Catalog matches the order you supply here.
+    /// This allows you to prioritize featured labels to the start of the list.
+    /// Example: "microsoftword zoom slack"
+    var optionalLabels: [String] {
+        guard let value = prefs["OptionalLabels"] as? String else { return [] }
+        return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
     }
-
-    /// Number of consecutive download/verification failures before a label is marked broken for staging.
-    /// Defaults to 3.
-    var stageDownloadFailThreshold: Int {
-        prefs["StageDownloadFailThreshold"] as? Int ?? 3
-    }
-
+    
     /// When true, labels that produce no appNewVersion value are skipped entirely during staging.
     /// Defaults to false.
     var ignoreUnknownVersionLabels: Bool {
@@ -152,6 +168,29 @@ struct Preferences {
     /// Defaults to 3.
     var versionMismatchThrottleDays: Int {
         prefs["VersionMismatchThrottleDays"] as? Int ?? 3
+    }
+
+    // MARK: - Download Handling
+
+    /// Maximum download speed for staged downloads, in curl --limit-rate format.
+    /// Examples: "500K" (500 KB/s), "2M" (2 MB/s), "1G" (1 GB/s).
+    /// Empty or absent means no bandwidth limit. Defaults to no limit.
+    var downloadBandwidthLimit: String? {
+        guard let value = prefs["DownloadBandwidthLimit"] as? String, !value.isEmpty else { return nil }
+        return value
+    }
+
+    /// Number of consecutive download/verification failures before a label is marked broken for staging.
+    /// Defaults to 3.
+    var stageDownloadFailThreshold: Int {
+        prefs["StageDownloadFailThreshold"] as? Int ?? 3
+    }
+
+    /// Number of consecutive install failures before a staged update is abandoned and that version
+    /// is blocked from being re-staged. Staging resumes when a newer version becomes available.
+    /// Defaults to 3.
+    var applyFailThreshold: Int {
+        prefs["ApplyFailThreshold"] as? Int ?? 3
     }
 
     /// When true, the scheduler waits a one-time random delay after first deployment
@@ -189,22 +228,22 @@ struct Preferences {
 
     /// Hours between check runs. Check is fast (~60–90s) and reads installed versions
     /// for already-discovered apps.
-    /// Defaults to 4.
+    /// Defaults to 12.
     var checkIntervalHours: Int {
-        prefs["CheckIntervalHours"] as? Int ?? 4
+        prefs["CheckIntervalHours"] as? Int ?? 12
     }
 
     /// Hours between stage runs. Stage downloads pending updates.
-    /// Defaults to 4.
+    /// Defaults to 12.
     var stageIntervalHours: Int {
-        prefs["StageIntervalHours"] as? Int ?? 4
+        prefs["StageIntervalHours"] as? Int ?? 12
     }
 
     /// Minimum hours between apply runs when using deadline-based patching.
     /// Prevents apply from running every 10-minute cycle once updates are pending.
-    /// Defaults to 24. (Not used in monthly mode — the patch-day window controls timing.)
+    /// Defaults to 4. (Not used in monthly mode — the patch-day window controls timing.)
     var applyIntervalHours: Int {
-        prefs["ApplyIntervalHours"] as? Int ?? 24
+        prefs["ApplyIntervalHours"] as? Int ?? 4
     }
 
     // MARK: - Scheduler: apply schedule keys
@@ -263,6 +302,12 @@ struct Preferences {
         prefs["SwiftDialogEnabled"] as? Bool ?? true
     }
 
+    /// Company or organization name shown in the Available Software app sidebar.
+    /// Defaults to "".
+    var companyName: String {
+        pref("CompanyName", default: "ABCDE Corp., Inc.")
+    }
+
     /// Title shown in the swiftDialog apply window.
     /// Defaults to "3rd Party Patcher" when the key is absent.
     var appTitle: String {
@@ -299,7 +344,14 @@ struct Preferences {
     var dialogScreenPosition: String {
         pref("DialogScreenPosition", default: "center")
     }
-    
+
+    /// Swift Dialog progress window screen postion
+    /// Defaults to bottomright
+    /// topleft | left | bottomleft | top | center/centre | bottom | topright | right | bottomright
+    var dialogScreenProgressPosition: String {
+        pref("DialogScreenProgressPosition", default: "bottomright")
+    }
+
     // MARK: - swiftDialog blocking process UI
 
     /// Action taken when a blocking process is running during apply.
@@ -341,14 +393,14 @@ struct Preferences {
     }
 
     /// The number of minutes to defer until the next update workflow attempt if a user chooses not to install updates
-    ///  Using this option overrides the default deferral time which is set to 1440 minutes (24 hours)
+    ///  Using this option overrides the default deferral time which is set to 240 minutes (4 hours)
     var deferralTimerDefault: Int {
-        prefs["DeferralTimerDefault"] as? Int ?? 1440
+        prefs["DeferralTimerDefault"] as? Int ?? 240
     }
 
     /// Display a deferral time pop-up menu in the install update dialog that allows the user to override the 'DeferralTimerDefault' timer.
     var deferralTimerMenu: String {
-        pref("DeferralTimerMenu", default: "5,30,60,120,480,1440")
+        pref("DeferralTimerMenu", default: "5,30,60,120,240,480,1440")
     }
 
     /// The number of minutes to defer automatically if the user has enabled Focus/Do Not Disturb
@@ -384,7 +436,6 @@ struct Preferences {
         pref("SupportTeamWebsite", default: "None")
     }
     
-
     // MARK: - PatcherMenu UI
 
     /// Icon displayed in the menu bar status item.
@@ -420,6 +471,30 @@ struct Preferences {
     /// Defaults to true.
     var showQuitButton: Bool {
         prefs["ShowQuitButton"] as? Bool ?? true
+    }
+
+    /// When true, the "Download new Updates" option is shown in the Run Now menu.
+    /// Defaults to true.
+    var showMenuDownloadAction: Bool {
+        prefs["ShowMenuDownloadAction"] as? Bool ?? true
+    }
+
+    /// When true, the "Check for Updates" option is shown in the Run Now menu.
+    /// Defaults to true.
+    var showMenuCheckAction: Bool {
+        prefs["ShowMenuCheckAction"] as? Bool ?? true
+    }
+
+    /// When true, the "Full Discovery Scan" option is shown in the Run Now menu.
+    /// Defaults to true.
+    var showMenuScanAction: Bool {
+        prefs["ShowMenuScanAction"] as? Bool ?? true
+    }
+
+    /// When true, patcherscheduler passes --user-initiated to patcher for XPC-triggered scan/check,
+    /// causing a swiftDialog progress window to appear. Defaults to true.
+    var showScanCheckProgressDialog: Bool {
+        prefs["ShowScanCheckProgressDialog"] as? Bool ?? true
     }
 
     // MARK: - Private helpers
