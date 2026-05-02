@@ -13,7 +13,7 @@ struct AppConstants {
     static let randomGUID = UUID().uuidString
 
     static let patcherFullName = "Third Party Patcher"
-    static let patcherVersion = "0.1.2"
+    static let patcherVersion = "0.2.2"
 
     // MARK: - Binary paths
 
@@ -26,10 +26,14 @@ struct AppConstants {
     static let patcherBinaryURL    = URL(fileURLWithPath: "\(installPrefix)/patcher")
     static let schedulerBinaryURL  = URL(fileURLWithPath: "\(installPrefix)/patcherscheduler")
     static let reportBinaryURL     = URL(fileURLWithPath: "\(installPrefix)/patcherreport")
-    static let patcherMenuAppURL   = URL(fileURLWithPath: "\(installPrefix)/PatcherMenu.app")
+    static let patcherMenuAppURL             = URL(fileURLWithPath: "\(installPrefix)/PatcherMenu.app")
+    static let availableSoftwareAppURL       = URL(fileURLWithPath: "/Applications/Available Software.app")
+    static let availableSoftwareBundleID     = "com.gilburns.AvailableSoftware"
 
     static let patcherMenuLaunchAgentLabel = "com.gilburns.patcher.menu"
     static let patcherMenuLaunchAgentURL   = URL(fileURLWithPath: "/Library/LaunchAgents/com.gilburns.patcher.menu.plist")
+
+    static let patcherXPCServiceName = "com.gilburns.patcher.xpc"
 
     static let applicationSupportURL: URL = {
         FileManager.default.urls(for: .libraryDirectory, in: .localDomainMask)
@@ -73,18 +77,28 @@ struct AppConstants {
             .appendingPathComponent("Labels")
     }()
 
-    static let managedLabelsFolderURL: URL = {
+    static let managedFolderURL: URL = {
         patcherFolderURL
             .appendingPathComponent("Managed")
     }()
 
-    static let managedLabelsLabelsFolderURL: URL = {
-        managedLabelsFolderURL
+    static let managedLabelsFolderURL: URL = {
+        managedFolderURL
             .appendingPathComponent("Labels")
     }()
 
+    static let managedIconsFolderURL: URL = {
+        managedFolderURL
+            .appendingPathComponent("Icons")
+    }()
+
+    static let managedMetadataFolderURL: URL = {
+        managedFolderURL
+            .appendingPathComponent("Metadata")
+    }()
+
     static let managedLabelsVersionFileURL: URL = {
-        managedLabelsFolderURL
+        managedFolderURL
             .appendingPathComponent("Version.txt")
     }()
 
@@ -100,8 +114,9 @@ struct AppConstants {
     
     // MARK: - swiftDialog
 
-    static let swiftDialogBinaryURL     = URL(fileURLWithPath: "/usr/local/bin/dialog")
-    static let swiftDialogCommandFileURL = URL(fileURLWithPath: "/var/tmp/com.gilburns.patcher.dialog.command")
+    static let swiftDialogBinaryURL              = URL(fileURLWithPath: "/usr/local/bin/dialog")
+    static let swiftDialogCommandFileURL         = URL(fileURLWithPath: "/var/tmp/com.gilburns.patcher.dialog.command")
+    static let swiftDialogProgressCommandFileURL = URL(fileURLWithPath: "/var/tmp/com.gilburns.patcher.progress.command")
 
     static let patcherTempFolderURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("patcher_\(currentPid)_\((randomGUID)[(randomGUID).startIndex..<(randomGUID).index((randomGUID).startIndex, offsetBy: 8)])")
