@@ -13,10 +13,13 @@ struct PatcherScheduler {
 
     let prefs: Preferences
 
-    func run() {
+    func runCycle() {
 
         // 1. One-time initial deployment delay.
-        guard initialDeploymentDelayElapsed() else { exit(0) }
+        guard initialDeploymentDelayElapsed() else {
+            Logger.log("ℹ️ Initial deployment delay has not elapsed — skipping cycle.")
+            return
+        }
 
         // 2. MenuBar app LaunchAgent management.
         manageMenuBarApp()
@@ -61,7 +64,9 @@ struct PatcherScheduler {
         // Scan discovers apps AND checks versions — no separate check needed after.
         // Silent and read-only — no Focus check.
         if scanDue && networkOK {
+            writeActivePhase("scan")
             runSubcommand("scan")
+            clearActivePhase()
             state.lastScanDate   = now
             state.lastCheckDate  = now   // scan includes the check — reset check timer too
             state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
@@ -73,7 +78,9 @@ struct PatcherScheduler {
         // Short interval (default 24 h). Checks versions for already-discovered apps.
         // Skipped when scan ran this cycle — scan already performed the same work.
         if checkDue && networkOK {
+            writeActivePhase("check")
             runSubcommand("check")
+            clearActivePhase()
             state.lastCheckDate = now
             dirty = true
         } else if scanRan {
@@ -90,7 +97,9 @@ struct PatcherScheduler {
                let presenter = FocusDetector.activeDisplayAssertion() {
                 Logger.log("⏸️ Stage deferred — display assertion held by '\(presenter)'")
             } else {
+                writeActivePhase("stage")
                 runSubcommand("stage")
+                clearActivePhase()
                 state.lastStageDate = now
                 // Track when updates first appeared so daysPending is accurate at apply time.
                 if hasStagedUpdates() {
@@ -129,7 +138,9 @@ struct PatcherScheduler {
                     Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
                 } ?? 0
                 let applyArgs = daysPending > 0 ? ["--days-pending", "\(daysPending)"] : []
+                writeActivePhase("apply")
                 runSubcommand("apply", args: applyArgs)
+                clearActivePhase()
                 state.lastApplyDate = now
                 // Clear firstPendingDate once all staged updates have been installed.
                 if !hasStagedUpdates() {
@@ -588,5 +599,156 @@ struct PatcherScheduler {
             if hasStagedFile { return true }
         }
         return false
+    }
+
+
+    // MARK: - On-demand phase (XPC-triggered)
+
+    /// Runs a single phase immediately, bypassing cadence checks.
+    /// Called from the XPC handler on the serial work queue.
+    func runOnDemand(phase: String) {
+        Logger.log("▶️ On-demand '\(phase)' triggered via XPC.")
+        var state = SchedulerState.load()
+        let now   = Date()
+        var dirty = false
+
+        let showProgress = Preferences().showScanCheckProgressDialog
+
+        switch phase {
+        case "scan":
+            writeActivePhase("scan", triggeredBy: "xpc")
+            runSubcommand("scan", args: showProgress ? ["--user-initiated"] : [])
+            clearActivePhase()
+            state.lastScanDate  = now
+            state.lastCheckDate = now
+            state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
+            dirty = true
+
+        case "check":
+            writeActivePhase("check", triggeredBy: "xpc")
+            runSubcommand("check", args: showProgress ? ["--user-initiated"] : [])
+            clearActivePhase()
+            state.lastCheckDate = now
+            dirty = true
+
+        case "stage":
+            writeActivePhase("stage", triggeredBy: "xpc")
+            runSubcommand("stage")
+            clearActivePhase()
+            state.lastStageDate = now
+            if hasStagedUpdates() {
+                if state.firstPendingDate == nil {
+                    state.firstPendingDate = now
+                    Logger.log("ℹ️ Pending updates detected — firstPendingDate set.")
+                }
+            } else {
+                state.firstPendingDate = nil
+            }
+            dirty = true
+
+        case "apply":
+            // On-demand apply bypasses cadence and deadline checks — user explicitly requested it.
+            let daysPending = state.firstPendingDate.map {
+                Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
+            } ?? 0
+            let applyArgs = daysPending > 0 ? ["--days-pending", "\(daysPending)"] : []
+            writeActivePhase("apply", triggeredBy: "xpc")
+            runSubcommand("apply", args: applyArgs)
+            clearActivePhase()
+            state.lastApplyDate = now
+            if !hasStagedUpdates() {
+                state.firstPendingDate = nil
+                Logger.log("ℹ️ All updates applied — firstPendingDate cleared.")
+            }
+            dirty = true
+
+        default:
+            Logger.log("⚠️ runOnDemand: unrecognized phase '\(phase)'")
+        }
+
+        if dirty { state.save() }
+    }
+
+
+    // MARK: - Active phase status file
+
+    private func writeActivePhase(_ phase: String, label: String? = nil, triggeredBy: String = "scheduled") {
+        let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("active_phase.json")
+        var dict: [String: Any] = [
+            "phase": phase,
+            "startedAt": ISO8601DateFormatter().string(from: Date()),
+            "triggeredBy": triggeredBy
+        ]
+        if let label { dict["label"] = label }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) else { return }
+        try? FileManager.default.createDirectory(at: AppConstants.patcherConfigFolderURL,
+                                                  withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    /// Installs a single label via `patcher ensure <label>`. Generalized form of ensureSwiftDialog().
+    func ensureLabel(_ label: String) {
+        Logger.log("ℹ️ Self-service install: starting 'patcher ensure \(label)'")
+        // Record intent before running so the event is captured even if patcher exits non-zero.
+        recordSelfServiceInstall(label: label, date: Date())
+        writeActivePhase("install", label: label, triggeredBy: "xpc")
+        runSubcommand("ensure", args: [label])
+        clearActivePhase()
+        // If apply failed the staged file and metadata.json stagedTimestamp remain.
+        // Clean them up so patcher doesn't treat this as a pending update on the next cycle.
+        cleanupFailedSelfServiceStage(label)
+        Logger.log("✅ Self-service install complete for label '\(label)'")
+    }
+
+    private func cleanupFailedSelfServiceStage(_ label: String) {
+        let labelCacheURL = AppConstants.patcherCacheFolderURL.appendingPathComponent(label)
+        let fm = FileManager.default
+
+        // If metadata.json no longer has stagedTimestamp, apply succeeded — nothing to do.
+        let metaURL = labelCacheURL.appendingPathComponent("metadata.json")
+        guard let data = try? Data(contentsOf: metaURL),
+              var meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              meta["stagedTimestamp"] != nil
+        else { return }
+
+        Logger.log("⚠️ Self-service install for '\(label)' failed — cleaning up staged files.")
+
+        // Delete staged files (anything that isn't metadata.json or history.json).
+        if let contents = try? fm.contentsOfDirectory(at: labelCacheURL, includingPropertiesForKeys: nil) {
+            for file in contents where file.lastPathComponent != "metadata.json"
+                                   && file.lastPathComponent != "history.json" {
+                do {
+                    try fm.removeItem(at: file)
+                    Logger.log("🗑️ Removed staged file: \(file.lastPathComponent)")
+                } catch {
+                    Logger.log("❌ Failed to remove staged file \(file.lastPathComponent): \(error)")
+                }
+            }
+        }
+
+        // Strip staged-file keys from metadata.json, matching what appendCacheInstallTimestamp does on success.
+        meta.removeValue(forKey: "stagedTimestamp")
+        meta.removeValue(forKey: "appNewVersion")
+        meta.removeValue(forKey: "downloadURL")
+        if let updated = try? JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]) {
+            try? updated.write(to: metaURL, options: .atomic)
+        }
+
+        // Remove the discovered plist so patcher doesn't see this as a pending update.
+        // scanSingleLabel (called by patcher ensure) creates it; on failure it must be removed.
+        let discoveredURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+        if fm.fileExists(atPath: discoveredURL.path) {
+            do {
+                try fm.removeItem(at: discoveredURL)
+                Logger.log("🗑️ Removed discovered plist for '\(label)' after failed self-service install.")
+            } catch {
+                Logger.log("❌ Failed to remove discovered plist for '\(label)': \(error)")
+            }
+        }
+    }
+
+    private func clearActivePhase() {
+        let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("active_phase.json")
+        try? FileManager.default.removeItem(at: url)
     }
 }

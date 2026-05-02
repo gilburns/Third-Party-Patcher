@@ -2,11 +2,9 @@
 //  main.swift
 //  patcherscheduler
 //
-//  Created by Gil Burns on 4/10/26.
-//
-//  Called by a LaunchDaemon on a fixed interval (e.g. every 10 minutes).
-//  Each wake independently checks whether scan / check / stage / apply is due,
-//  based on per-subcommand interval preferences and last-run timestamps.
+//  Persistent LaunchDaemon. Manages patching cadence via an internal 600-second
+//  timer and exposes a named Mach XPC service so PatcherMenu can trigger phases
+//  on-demand without waiting for the next timer wake.
 //
 
 import Foundation
@@ -16,7 +14,7 @@ import Foundation
 // activeChildProcess holds the patcher subcommand Process currently being waited
 // on.  The SIGTERM handler forwards the signal to it so patcher can finish its
 // current installation before exiting, then exits the scheduler itself.
-// Written only on the main thread; read on the GCD signal-handler thread.
+// Written only on the work queue; read on the GCD signal-handler thread.
 var activeChildProcess: Process?
 
 private func installSigtermHandler() {
@@ -24,29 +22,29 @@ private func installSigtermHandler() {
     let src = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
     src.setEventHandler {
         Logger.log("⚠️ SIGTERM received — forwarding to active subcommand and exiting.")
-        activeChildProcess?.terminate()   // patcher's own handler lets current install finish
+        activeChildProcess?.terminate()
         Logger.log("⚠️ patcherscheduler exiting on SIGTERM.")
         exit(0)
     }
     src.resume()
-    // src is captured by the closure via the global DispatchSource retain path;
-    // assigning to _ suppresses the unused-variable warning without releasing it.
+    // Top-level binding keeps src alive for the process lifetime.
     _ = src
 }
 
 
 // MARK: - Entry point
 
-// Handle read-only subcommands before acquiring the instance lock — they don't
-// modify any state so there's no need to block on another running instance.
+// Handle read-only subcommands before acquiring the instance lock.
 let cliArgs = Array(CommandLine.arguments.dropFirst())
 if cliArgs.first == "status" {
     StatusReporter().run(args: cliArgs)
     exit(0)
 }
 
-// Acquire a single-instance lock — if another patcherscheduler is already
-// running (e.g. a previous scan hasn't finished) we exit without doing any work.
+// Acquire a single-instance lock as a safety net during package-upgrade races.
+// KeepAlive in the LaunchDaemon plist guarantees at most one persistent instance,
+// but the lock prevents a brief overlap if launchd restarts before the old
+// instance has fully exited.
 guard acquireSingleInstanceLock() else {
     fputs("patcherscheduler: another instance is already running — exiting.\n", stderr)
     exit(0)
@@ -56,9 +54,53 @@ installSigtermHandler()
 
 Logger.log("patcherscheduler \(AppConstants.patcherVersion) started (pid \(AppConstants.currentPid))")
 
-let prefs = Preferences()
-let scheduler = PatcherScheduler(prefs: prefs)
-scheduler.run()
+
+// MARK: - Serial work queue
+//
+// All phase runs (scheduled or on-demand) execute on this queue so they never
+// overlap.  XPC-triggered work queues behind any in-progress cycle automatically.
+
+let workQueue = DispatchQueue(label: "com.gilburns.patcher.work", qos: .utility)
+
+
+// MARK: - XPC listener
+
+let xpcDelegate = PatcherXPCDelegate(workQueue: workQueue)
+let xpcListener = NSXPCListener(machServiceName: AppConstants.patcherXPCServiceName)
+xpcListener.delegate = xpcDelegate
+xpcListener.resume()
+Logger.log("ℹ️ XPC listener active on '\(AppConstants.patcherXPCServiceName)'.")
+
+
+// MARK: - Scheduled cycle timer
+
+let cycleInterval: TimeInterval = 600
+
+let cycleTimer: DispatchSourceTimer = {
+    let t = DispatchSource.makeTimerSource(queue: .global())
+    t.schedule(deadline: .now() + cycleInterval, repeating: cycleInterval)
+    t.setEventHandler {
+        workQueue.async {
+            PatcherScheduler(prefs: Preferences()).runCycle()
+        }
+    }
+    t.resume()
+    return t
+}()
+// Top-level binding keeps the timer alive for the process lifetime.
+_ = cycleTimer
+
+
+// MARK: - Initial cycle
+
+workQueue.async {
+    PatcherScheduler(prefs: Preferences()).runCycle()
+}
+
+
+// MARK: - Run forever
+
+RunLoop.main.run()
 
 
 // MARK: - Single-instance lock
