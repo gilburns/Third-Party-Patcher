@@ -89,8 +89,9 @@ struct MenuStatusView: View {
                         Label("Available Software", systemImage: "app.gift")
                             .font(.caption)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
+                    .buttonStyle(.accessoryBar)
+                    .foregroundStyle(.foreground)
+                    .controlSize(.small)
                     .help("Open Available Software…")
 
                     Spacer()
@@ -127,8 +128,9 @@ struct MenuStatusView: View {
                         .font(.caption)
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
-                .foregroundStyle(.tint)
+                .buttonStyle(.accessoryBar)
+                .foregroundStyle(.foreground)
+                .controlSize(.small)
                 .help("Run actions…")
 
                 if vm.preferences.optionalLabels.isEmpty {
@@ -316,8 +318,8 @@ struct MenuStatusView: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
                     .font(.caption)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.tint)
+            .buttonStyle(.accessoryBar)
+            .foregroundStyle(.foreground)
 
             Spacer()
 
@@ -326,9 +328,9 @@ struct MenuStatusView: View {
                 Button("Quit") {
                     NSApplication.shared.terminate(nil)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.accessoryBar)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.foreground)
             }
         }
         .padding(.horizontal, 12)
