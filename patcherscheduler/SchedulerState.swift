@@ -29,6 +29,7 @@ struct SchedulerState: Codable {
 
     // Per-subcommand last-run timestamps
     var lastScanDate: Date?
+    var lastLightScanDate: Date?
     var lastCheckDate: Date?
     var lastStageDate: Date?
     var lastApplyDate: Date?
@@ -39,6 +40,9 @@ struct SchedulerState: Codable {
     // Pending update tracking (for deadline-based apply scheduling)
     var firstPendingDate: Date?
     var deferralCount: Int = 0
+
+    // Webhook report tracking
+    var lastWebhookReportDate: Date?
 
     private static let url = AppConstants.patcherConfigFolderURL
         .appendingPathComponent("scheduler_state.json")
