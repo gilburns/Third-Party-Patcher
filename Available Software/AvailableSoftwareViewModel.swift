@@ -16,6 +16,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
     @Published var activePhase: String?
     @Published var activeLabel: String?
     @Published var activeStatus: String?
+    @Published var queuedLabel: String?
 
     private var xpcConnection: NSXPCConnection?
     private var configDirWatcher: DispatchSourceFileSystemObject?
@@ -59,29 +60,48 @@ final class AvailableSoftwareViewModel: ObservableObject {
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let phase = dict["phase"] as? String
         else {
+            // No active phase — all activity has stopped; clear any queued state
             activePhase = nil
             activeLabel = nil
             activeStatus = nil
+            queuedLabel = nil
             return
         }
         activePhase = phase
         activeLabel = dict["label"] as? String
         activeStatus = dict["status"] as? String
+        // Transition: label moved from queued → actively running
+        if let activeLabel, activeLabel == queuedLabel {
+            queuedLabel = nil
+        }
     }
 
     // MARK: - XPC
 
     func installLabel(_ label: String) {
+        // Prevent double-tap: already queued or actively running
+        guard queuedLabel == nil && activeLabel == nil else { return }
+
+        // Optimistically mark as queued immediately so the button disables before XPC reply
+        queuedLabel = label
+
         if xpcConnection == nil { setupXPCConnection() }
         guard let proxy = xpcConnection?.remoteObjectProxyWithErrorHandler({ [weak self] error in
             NSLog("AvailableSoftware XPC error: %@", error.localizedDescription)
-            Task { @MainActor [weak self] in self?.xpcConnection = nil }
+            Task { @MainActor [weak self] in
+                self?.xpcConnection = nil
+                self?.queuedLabel = nil   // XPC failed — allow retry
+            }
         }) as? PatcherXPCProtocol else {
             NSLog("AvailableSoftware XPC: failed to obtain proxy for installLabel '\(label)'")
+            queuedLabel = nil
             return
         }
-        proxy.installLabel(label) { success, message in
+        proxy.installLabel(label) { [weak self] success, message in
             NSLog("AvailableSoftware XPC installLabel reply: success=%d message=%@", success, message)
+            if !success {
+                Task { @MainActor [weak self] in self?.queuedLabel = nil }
+            }
         }
     }
 
