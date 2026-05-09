@@ -370,6 +370,7 @@ private struct CatalogGridItem: View {
     @EnvironmentObject var vm: AvailableSoftwareViewModel
 
     private var isInstalling: Bool { vm.activeLabel == item.id }
+    private var isQueued: Bool     { vm.queuedLabel == item.id }
     private var anyActive: Bool    { vm.activeLabel != nil }
 
     var body: some View {
@@ -437,6 +438,10 @@ private struct CatalogGridItem: View {
                 ProgressView().scaleEffect(0.65).frame(width: 14, height: 14)
                 Text(vm.activeStatus ?? "Installing…").font(.caption).foregroundStyle(.secondary)
             }
+        } else if isQueued {
+            Text("Queued…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         } else {
             Button(item.installedVersion != nil ? "Installed" : "Install") {
                 vm.installLabel(item.id)
@@ -457,6 +462,7 @@ private struct ItemDetailView: View {
     @EnvironmentObject var vm: AvailableSoftwareViewModel
 
     private var isInstalling: Bool { vm.activeLabel == item.id }
+    private var isQueued: Bool     { vm.queuedLabel == item.id }
     private var anyActive: Bool    { vm.activeLabel != nil }
 
     var body: some View {
@@ -679,6 +685,9 @@ private struct ItemDetailView: View {
         if isInstalling {
             Label(vm.activeStatus ?? "Installing…", systemImage: "arrow.down.circle")
                 .font(.caption).foregroundStyle(.secondary)
+        } else if isQueued {
+            Label("Queued — waiting for another operation to complete…", systemImage: "clock")
+                .font(.caption).foregroundStyle(.secondary)
         } else if let version = item.installedVersion {
             Label("Version \(version) installed", systemImage: "checkmark.circle.fill")
                 .font(.caption).foregroundStyle(.green)
@@ -695,6 +704,10 @@ private struct ItemDetailView: View {
                 ProgressView().scaleEffect(0.8)
                 Text(vm.activeStatus ?? "Installing…").font(.callout).foregroundStyle(.secondary)
             }
+        } else if isQueued {
+            Label("Queued…", systemImage: "clock")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         } else {
             Button(item.installedVersion != nil ? "Installed" : "Install") {
                 vm.installLabel(item.id)
