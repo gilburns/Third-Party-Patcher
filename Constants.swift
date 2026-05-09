@@ -97,6 +97,11 @@ struct AppConstants {
             .appendingPathComponent("Metadata")
     }()
 
+    static let patcherScannedFolderURL: URL = {
+        patcherFolderURL
+            .appendingPathComponent("Scanned")
+    }()
+
     static let managedLabelsVersionFileURL: URL = {
         managedFolderURL
             .appendingPathComponent("Version.txt")
@@ -105,6 +110,13 @@ struct AppConstants {
     static let patcherConfigFileURL: URL = {
         patcherConfigFolderURL
             .appendingPathComponent("config.json")
+    }()
+
+    /// Accumulates stage/apply results between scheduled webhook notification sends.
+    /// Cleared automatically after each successful sendReport run.
+    static let webhookReportLogURL: URL = {
+        patcherConfigFolderURL
+            .appendingPathComponent("webhook_report.json")
     }()
 
     static let installomatorVersionFileURL: URL = {
