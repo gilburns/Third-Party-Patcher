@@ -24,6 +24,7 @@ func setupApplicationSupportFolders() {
         AppConstants.managedLabelsFolderURL.path,
         AppConstants.managedIconsFolderURL.path,
         AppConstants.managedMetadataFolderURL.path,
+        AppConstants.patcherScannedFolderURL.path,
         AppConstants.patcherTempFolderURL.path
     ]
     
@@ -150,6 +151,13 @@ func logEnvironmentVariables() {
 
 /// Returns the number of label files that scan will process (for progress bar sizing).
 func countScanLabels() -> Int { buildLabelFileList().count }
+
+/// Returns the number of scanned plists (uninstalled labels eligible for light scan).
+func countLightScanLabels() -> Int {
+    (try? FileManager.default.contentsOfDirectory(
+        at: AppConstants.patcherScannedFolderURL, includingPropertiesForKeys: nil
+    ).filter { $0.pathExtension == "plist" }.count) ?? 0
+}
 
 /// Returns the number of discovered plists that check will process (for progress bar sizing).
 func countCheckLabels() -> Int {
@@ -347,6 +355,71 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
 }
 
 // MARK: - Scan Single Label (used by EnsureTool)
+
+// MARK: - Light Scan
+
+/// Lightweight discovery pass over previously-uninstalled labels.
+/// Reads each <label>.plist from the Scanned folder, performs the same local
+/// install check (app path / pkg receipt) as the full scan — no label scripts,
+/// no network requests — and calls scanSingleLabel only for labels now found installed.
+func checkScannedAppsForInstall() {
+    let fm = FileManager.default
+    guard let plistURLs = (try? fm.contentsOfDirectory(
+        at: AppConstants.patcherScannedFolderURL, includingPropertiesForKeys: nil
+    ).filter { $0.pathExtension == "plist" }), !plistURLs.isEmpty else {
+        Logger.log("ℹ️ Light scan: no uninstalled labels to check.")
+        return
+    }
+
+    Logger.log("🔍 Light scan: checking \(plistURLs.count) uninstalled label(s) for new installs…")
+    var checkedCount  = 0
+    var newlyFound: [String] = []
+
+    for plistURL in plistURLs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+        let label = plistURL.deletingPathExtension().lastPathComponent
+        checkedCount += 1
+
+        guard let plistData = try? Data(contentsOf: plistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
+        else {
+            Logger.log("⚠️ Light scan: failed to read scanned plist for '\(label)' — skipping.")
+            continue
+        }
+
+        guard let version = lightScanDetectInstall(plist: plist, label: label) else { continue }
+
+        Logger.log("✅ Light scan: '\(label)' is now installed (v\(version)) — running full label scan…")
+        scanSingleLabel(label)
+        newlyFound.append(label)
+    }
+
+    if newlyFound.isEmpty {
+        Logger.log("🔍 Light scan complete: \(checkedCount) checked, nothing newly installed.")
+    } else {
+        Logger.log("🔍 Light scan complete: \(checkedCount) checked, \(newlyFound.count) newly installed: \(newlyFound.joined(separator: ", "))")
+    }
+}
+
+/// Checks whether the app or package described by a cached scanned plist is currently installed.
+/// Mirrors the install-detection logic in processScriptData without re-running any label scripts.
+/// Returns the installed version string, or nil if the app/pkg is still not present.
+private func lightScanDetectInstall(plist: [String: Any], label: String) -> String? {
+    let packageID  = plist["packageID"]  as? String ?? ""
+    let appName    = plist["appName"]    as? String ?? ""
+    let name       = plist["name"]       as? String ?? ""
+    let versionKey = plist["versionKey"] as? String
+    let targetDir  = plist["targetDir"]  as? String
+
+    if !packageID.isEmpty {
+        return getPackageVersion(packageID: packageID)
+    }
+    let appWithExtension = appName.isEmpty ? "\(name).app" : appName
+    return getApplicationVersion(appWithExtension: appWithExtension,
+                                  versionKey: versionKey,
+                                  targetDir: targetDir)?.first?.version
+}
+
+// MARK: - Scan Single Label (used by EnsureTool and Light Scan)
 
 /// Evaluates one Installomator label and writes its discovered plist.
 /// Does NOT update scan-phase config.json stats or touch the broken-label list.
@@ -656,6 +729,11 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
                 writeDiscoveredPlist(label: label, jsonDict: cleanDict,
                                      installedVersion: "", updateStatus: .updateRequired,
                                      foundInstalls: nil)
+            } else {
+                // App/pkg not installed — retain scan metadata for future use.
+                var cleanDict = jsonDict
+                cleanDict["appNewVersion"] = appNewVersion
+                writeScannedPlist(label: label, jsonDict: cleanDict)
             }
             return
         }
@@ -817,6 +895,25 @@ func writeDiscoveredPlist(label: String, jsonDict: [String: Any], installedVersi
         Logger.log("❌ Failed to write discovered plist for \(label): \(error)")
     }
     recordDiscoveredIfNeeded(label: label, installedVersion: installedVersion, date: Date())
+
+    // Remove any stale scanned plist — label is now installed/discovered
+    let scannedURL = AppConstants.patcherScannedFolderURL.appendingPathComponent("\(label).plist")
+    try? FileManager.default.removeItem(at: scannedURL)
+}
+
+/// Writes scan metadata for a label whose app/pkg was not found installed.
+/// Saves to the Scanned folder so downstream tools can access label metadata
+/// without re-running the full scan. Uses verbose logging to avoid log noise
+/// at the scale of 1000+ labels per scan.
+func writeScannedPlist(label: String, jsonDict: [String: Any]) {
+    let plistURL = AppConstants.patcherScannedFolderURL.appendingPathComponent("\(label).plist")
+    do {
+        let data = try PropertyListSerialization.data(fromPropertyList: jsonDict, format: .xml, options: 0)
+        try data.write(to: plistURL, options: .atomic)
+        Logger.verbose("💾 Wrote scanned plist: \(plistURL.lastPathComponent)")
+    } catch {
+        Logger.log("❌ Failed to write scanned plist for \(label): \(error)")
+    }
 }
 
 
@@ -1379,12 +1476,20 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 try? fileManager.removeItem(at: stagedFileURL)
                 appendCacheInstallTimestamp(label: label, timestamp: iso.string(from: Date()), labelCacheURL: labelDirURL)
                 recordApplied(label: label, fromVersion: priorInstalledVersion, toVersion: appNewVersion, date: Date())
+                appendWebhookApplyResult(label: label, displayName: dialogItem.displayName,
+                                         fromVersion: priorInstalledVersion.isEmpty ? nil : priorInstalledVersion,
+                                         toVersion: appNewVersion.isEmpty ? nil : appNewVersion,
+                                         success: true)
                 dialog?.setSuccess(item: dialogItem, toVersion: appNewVersion)
                 Logger.log("✅ Successfully installed \(label)")
                 appliedCount += 1
                 applyFailedAttempts.removeValue(forKey: label)
                 applyBrokenVersions.removeValue(forKey: label)
             } else {
+                appendWebhookApplyResult(label: label, displayName: dialogItem.displayName,
+                                         fromVersion: priorInstalledVersion.isEmpty ? nil : priorInstalledVersion,
+                                         toVersion: nil, success: false,
+                                         reason: "Installation failed")
                 dialog?.setFailed(item: dialogItem)
                 Logger.log("❌ Failed to install \(label)")
                 failedCount += 1
@@ -1409,7 +1514,8 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         // Wait for the user to click Done (or for the auto-dismiss timer to fire).
         // waitForDialog() returns as soon as swiftDialog exits, so clicking Done
         // is immediate — no fixed sleep delay.
-        dialog?.waitForDialog()
+        let timeout: TimeInterval? = prefs.unattendedExit ? TimeInterval(prefs.unattendedExitSeconds) : nil
+        dialog?.waitForDialog(timeout: timeout)
 
         // If any label was skipped due to a blocking process, count that as a deferral.
         // This keeps the deadline counter accurate even when the user didn't see the prompt.
@@ -2028,6 +2134,11 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
                 let attempts = (stageFailedAttempts[label] ?? 0) + 1
                 stageFailedAttempts[label] = attempts
                 Logger.log("   Failure count for \(label): \(attempts)/\(failThreshold)")
+                if attempts >= prefs.webhookStageFailureThreshold {
+                    let displayName = plist["name"] as? String ?? label
+                    appendWebhookStageFailure(label: label, displayName: displayName,
+                                              reason: "Download failed", consecutiveFailures: attempts)
+                }
                 if attempts >= failThreshold {
                     Logger.log("🚫 \(label) reached failure threshold — marking as stage-broken")
                     newlyStageBrokenLabels.append(label)
@@ -2045,6 +2156,11 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
                 let attempts = (stageFailedAttempts[label] ?? 0) + 1
                 stageFailedAttempts[label] = attempts
                 Logger.log("   Failure count for \(label): \(attempts)/\(failThreshold)")
+                if attempts >= prefs.webhookStageFailureThreshold {
+                    let displayName = plist["name"] as? String ?? label
+                    appendWebhookStageFailure(label: label, displayName: displayName,
+                                              reason: "Team ID verification failed", consecutiveFailures: attempts)
+                }
                 if attempts >= failThreshold {
                     Logger.log("🚫 \(label) reached failure threshold — marking as stage-broken")
                     newlyStageBrokenLabels.append(label)
@@ -2199,7 +2315,7 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
     }
 
     if let curlOptions, !curlOptions.isEmpty {
-        args += shellSplit(curlOptions)
+        args += parseCurlOptions(curlOptions)
     }
 
     args.append(url.absoluteString)
@@ -2223,6 +2339,54 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
         return false
     }
     return FileManager.default.fileExists(atPath: destination.path)
+}
+
+/// Parses a curl options string into Process arguments.
+/// Two-pass approach:
+///   1. shellSplit — handles shell-style quoting (single/double quotes, backslash escapes)
+///   2. Rejoin pass — for known argument-taking flags, collects subsequent non-flag tokens
+///      into a single value, fixing labels that omit inner quoting around multi-word values
+///      (e.g. --user-agent Mozilla/5.0 (Macintosh; ...) stored without quotes).
+private func parseCurlOptions(_ string: String) -> [String] {
+    let tokens = shellSplit(string)
+
+    // Flags that consume exactly one following argument
+    let flagsTakingArg: Set<String> = [
+        "-H", "--header",
+        "-A", "--user-agent",
+        "-e", "--referer",
+        "-x", "--proxy",
+        "-b", "--cookie",
+        "-u", "--user",
+        "--limit-rate",
+        "--connect-timeout", "--max-time",
+        "--cacert", "--cert", "--key",
+        "--resolve", "--interface",
+    ]
+
+    var result: [String] = []
+    var i = tokens.startIndex
+    while i < tokens.endIndex {
+        let token = tokens[i]
+        let next = tokens.index(after: i)
+        if flagsTakingArg.contains(token), next < tokens.endIndex {
+            result.append(token)
+            i = next
+            // Collect value tokens until we hit another flag or run out of tokens.
+            // Tokens that start with '-' are treated as new flags, not part of the value.
+            var valueParts: [String] = [tokens[i]]
+            i = tokens.index(after: i)
+            while i < tokens.endIndex, !tokens[i].hasPrefix("-") {
+                valueParts.append(tokens[i])
+                i = tokens.index(after: i)
+            }
+            result.append(valueParts.joined(separator: " "))
+        } else {
+            result.append(token)
+            i = tokens.index(after: i)
+        }
+    }
+    return result
 }
 
 /// Tokenizes a shell-style string into individual arguments, respecting single and double quotes.
