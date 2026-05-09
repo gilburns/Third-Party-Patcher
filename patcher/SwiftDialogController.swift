@@ -126,19 +126,21 @@ struct SwiftDialogController {
             "title":           prefs.appTitle,
             "titlefont":       "size=18",
             "icon":            dialogIcon,
-            "message":         "There are **\(listItemsCount) updates** waiting.\n\nThe following updates are being applied:",
+//            "message":         "There are **\(listItemsCount) updates** waiting.\n\nThe following updates are being applied:",
+            "infobox":         "\(prefs.appTitle)\n\nThere are **\(listItemsCount) updates** waiting.\n\nThe following updates are being applied:",
             "helpmessage":     helpMessage,
-            "infobox":         infoboxMessage,
+//            "infobox":         infoboxMessage,
             "progress":        items.count,
             "progresstext":    "Preparing…",
             "commandfile":     commandFileURL.path,
-            "button1text":     "Running…",
+            "button1text":     "Updating…",
             "button1disabled": true,
             "moveable":        true,
+            "presentation":    true,
             "ontop":           prefs.dialogOnTop,
-            "width":           640,
-            "height":          min(550, max(520, 220 + items.count * 60)),
-            "messagefont":     "size=16",
+//            "width":           640,
+//            "height":          min(550, max(520, 220 + items.count * 60)),
+//            "messagefont":     "size=16",
             "listitem":        listItems,
         ]
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
@@ -199,10 +201,12 @@ struct SwiftDialogController {
         sendCommand("button1text: Done")
         sendCommand("button1: enable")
         sendCommand("activate:")
+        sendCommand("activate:")
     }
 
     /// Sends a quit command to close the dialog immediately.
     func dismiss() {
+        
         sendCommand("quit:")
     }
 
@@ -228,13 +232,10 @@ struct SwiftDialogController {
             "progress":        total > 0 ? total : 0,
             "progresstext":    "",
             "commandfile":     cmdURL.path,
-            "button1disabled": true,
             "moveable":        true,
             "mini":            true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenProgressPosition,
-            "width":           500,
-            "height":          220,
         ]
         if let overlay = resolveOverlayIcon(prefs: prefs) { jsonDict["overlayicon"] = overlay }
 
@@ -248,15 +249,22 @@ struct SwiftDialogController {
         p.standardError = Pipe()
         guard (try? p.run()) != nil else { return nil }
 
-        Thread.sleep(forTimeInterval: 1.0)
+        Thread.sleep(forTimeInterval: 3.0)
         return UserProgressDialog(process: p, commandFileURL: cmdURL)
     }
 
     /// Waits for the dialog process to exit, however it exits.
     /// If the user clicks Done the process exits immediately.
-    /// If they ignore it, a background timer fires `quit:` via the command file
-    /// after `timeout` seconds, which causes swiftDialog to close.
-    func waitForDialog(timeout: TimeInterval = 60) {
+    /// Pass a timeout to auto-dismiss via `quit:` after that many seconds.
+    /// Pass `nil` to detach: patcher returns immediately and swiftDialog keeps
+    /// running in the user's login session until the user clicks Done.
+    func waitForDialog(timeout: TimeInterval?) {
+        guard let timeout else {
+            // Detach — swiftDialog was launched under the user's launchd session
+            // via `launchctl asuser` and will outlive this process.
+            return
+        }
+
         let process = dialogProcess  // Process is a class — shared reference
         let cmdURL  = commandFileURL // URL is a struct — copied by value
 
@@ -563,7 +571,7 @@ struct SwiftDialogController {
 }
 
 
-// MARK: - User progress dialog handle
+// MARK: - User progress dialog handle for scan or check
 
 struct UserProgressDialog {
     private let process: Process
@@ -589,9 +597,10 @@ struct UserProgressDialog {
     }
 
     func close() {
+        send("progress: complete")
         send("message: Check completed")
         Thread.sleep(forTimeInterval: 3.0)
-        
+         
         send("quit:")
         // Give swiftDialog a moment to process the quit command.
         Thread.sleep(forTimeInterval: 1.0)
