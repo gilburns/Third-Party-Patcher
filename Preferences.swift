@@ -226,6 +226,13 @@ struct Preferences {
         prefs["ScanOnLabelUpdate"] as? Bool ?? true
     }
 
+    /// Hours between light scan runs. Light scan checks uninstalled labels for apps
+    /// installed by other means, without re-running label scripts or hitting the network
+    /// for non-installed labels. Defaults to 4.
+    var lightScanIntervalHours: Int {
+        prefs["LightScanIntervalHours"] as? Int ?? 4
+    }
+
     /// Hours between check runs. Check is fast (~60–90s) and reads installed versions
     /// for already-discovered apps.
     /// Defaults to 12.
@@ -351,7 +358,21 @@ struct Preferences {
     var dialogScreenProgressPosition: String {
         pref("DialogScreenProgressPosition", default: "bottomright")
     }
+    
+    /// Deterines if swift dialog should automatically close after completion
+    /// if there is no response from the end-user.
+    /// Defaults to true.
+    var unattendedExit: Bool {
+        prefs["UnattendedExit"] as? Bool ?? true
+    }
 
+    /// The number of seconds the swift dialog will automatically close
+    /// if UnattendedExit is set to TRUE
+    /// Defaults to 60.
+    var unattendedExitSeconds: Int {
+        prefs["UnattendedExitSeconds"] as? Int ?? 60
+    }
+    
     // MARK: - swiftDialog blocking process UI
 
     /// Action taken when a blocking process is running during apply.
@@ -495,6 +516,80 @@ struct Preferences {
     /// causing a swiftDialog progress window to appear. Defaults to true.
     var showScanCheckProgressDialog: Bool {
         prefs["ShowScanCheckProgressDialog"] as? Bool ?? true
+    }
+
+    // MARK: - Webhooks
+    
+    /// Determines if Webhooks are sent when patching is completed.
+    /// Options include:
+    /// FALSE = don't send anything
+    /// FALURES = Notify on failures only
+    /// ALL = Notify on success and failure
+    ///
+    /// Defaults to "FALSE".
+    var webhookFeature: String {
+        pref("WebhookFeature", default: "FALSE")
+    }
+
+    /// The Microsoft Teams Webhook URL to use if WebhookFeature is set to TRUE.
+    /// Defaults to "".
+    var webhookURLTeams: String {
+        pref("WebhookURLTeams", default: "")
+    }
+
+    /// The Slack Webhook URL to use if WebhookFeature is set to TRUE.
+    /// Defaults to "".
+    var webhookURLSlack: String {
+        pref("WebhookURLSlack", default: "")
+    }
+
+    /// Comma-separated list of device attributes to include in webhook notifications,
+    /// in the order they should appear. MDM info is always appended if detected.
+    /// Supported keys: deviceName, hostname, serial, osVersion, osBuild, osName,
+    ///                  model, hardwareModel, user, patcherVersion, installomatorVersion
+    /// Defaults to "deviceName,serial,osVersion,user".
+    var webhookAttributes: [String] {
+        pref("WebhookAttributes", default: "deviceName,serial,osVersion,user")
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// When to send the accumulated webhook report.
+    /// Options: immediate, daily, weekly, monthly, patchDay
+    /// Defaults to "immediate".
+    var webhookSchedule: String {
+        pref("WebhookSchedule", default: "immediate")
+    }
+
+    /// For weekly schedule: day of week to send (0=Sunday … 6=Saturday). Defaults to 1 (Monday).
+    var webhookScheduleWeekday: Int {
+        prefs["WebhookScheduleWeekday"] as? Int ?? 1
+    }
+
+    /// For monthly schedule: day of month to send (1–31). Defaults to 1.
+    var webhookScheduleMonthDay: Int {
+        prefs["WebhookScheduleMonthDay"] as? Int ?? 1
+    }
+
+    /// For daily, weekly, and monthly schedules: hour of day (0–23) at which to send. Defaults to 8.
+    var webhookScheduleHour: Int {
+        prefs["WebhookScheduleHour"] as? Int ?? 8
+    }
+
+    /// Minimum consecutive stage failures for a label before it appears in webhook notifications.
+    /// Defaults to 2.
+    var webhookStageFailureThreshold: Int {
+        prefs["WebhookStageFailureThreshold"] as? Int ?? 2
+    }
+
+    /// Determines whether an immediate webhook notification is sent after a user-initiated
+    /// install from the Available Software catalog (regardless of WebhookSchedule).
+    /// Options:
+    /// FALSE    — never send (default)
+    /// FAILURES — send only when the install failed
+    /// ALL      — send on success and failure
+    /// Defaults to "FALSE".
+    var webhookSelfServiceFeature: String {
+        pref("WebhookSelfServiceFeature", default: "FAILURES")
     }
 
     // MARK: - Private helpers
