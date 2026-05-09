@@ -45,6 +45,10 @@
 		1BAFE4ED2F9D424300E18CFB /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3193B82F8100A000860CB7 /* Preferences.swift */; };
 		1BAFE4EE2F9D43B100E18CFB /* SystemInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B319C612F948B7700860CB7 /* SystemInfo.swift */; };
 		1BAFE4F82F9F10A300E18CFB /* LabelHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B319BC22F8BE89C00860CB7 /* LabelHistory.swift */; };
+		1BE8B27C2FA7AEE600D4F9C6 /* Webhooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */; };
+		1BE8B27D2FA7AEE600D4F9C6 /* Webhooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */; };
+		1BE8B27E2FA7AEF800D4F9C6 /* Webhooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */; };
+		1BE8B27F2FA7B5E000D4F9C6 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3193B82F8100A000860CB7 /* Preferences.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -92,6 +96,7 @@
 		1BAFE1DB2F98ED4E00E18CFB /* PatcherMenu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PatcherMenu.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1BAFE20D2F9B8A7800E18CFB /* PatcherXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatcherXPCProtocol.swift; sourceTree = "<group>"; };
 		1BAFE4DF2F9D421600E18CFB /* Available Software.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Available Software.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Webhooks.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -222,6 +227,7 @@
 				1BAFE20D2F9B8A7800E18CFB /* PatcherXPCProtocol.swift */,
 				1B3193B82F8100A000860CB7 /* Preferences.swift */,
 				1B319C612F948B7700860CB7 /* SystemInfo.swift */,
+				1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */,
 				1B3193A42F7F478400860CB7 /* patcher */,
 				1BAFE18C2F96F13700E18CFB /* patcherscheduler */,
 				1B319BD62F8BEE1200860CB7 /* patcherreport */,
@@ -458,10 +464,10 @@
 				1B3193A12F7F478400860CB7 /* patcher */,
 				1BAFE18A2F96F13700E18CFB /* patcherscheduler */,
 				1B319BD42F8BEE1100860CB7 /* patcherreport */,
+				1BAFE4DE2F9D421600E18CFB /* Available Software */,
+				1BAFE1DA2F98ED4E00E18CFB /* PatcherMenu */,
 				1B319C062F90650200860CB7 /* patcherschedulerTests */,
 				1B319C342F925CD300860CB7 /* patcherTests */,
-				1BAFE1DA2F98ED4E00E18CFB /* PatcherMenu */,
-				1BAFE4DE2F9D421600E18CFB /* Available Software */,
 			);
 		};
 /* End PBXProject section */
@@ -508,6 +514,7 @@
 				1B3193B12F7F47CA00860CB7 /* Constants.swift in Sources */,
 				1B319BC72F8BE89C00860CB7 /* LabelHistory.swift in Sources */,
 				1B319C652F948B7C00860CB7 /* SystemInfo.swift in Sources */,
+				1BE8B27C2FA7AEE600D4F9C6 /* Webhooks.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -517,7 +524,9 @@
 			files = (
 				1B319C662F948B7C00860CB7 /* SystemInfo.swift in Sources */,
 				1B319BDC2F8BF00B00860CB7 /* LabelHistory.swift in Sources */,
+				1BE8B27F2FA7B5E000D4F9C6 /* Preferences.swift in Sources */,
 				1B319BDD2F8BF01800860CB7 /* Constants.swift in Sources */,
+				1BE8B27D2FA7AEE600D4F9C6 /* Webhooks.swift in Sources */,
 				1B319BDE2F8BF02000860CB7 /* Logging.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -557,6 +566,7 @@
 				1BAFE19D2F96F18700E18CFB /* Logging.swift in Sources */,
 				1BAFE4F82F9F10A300E18CFB /* LabelHistory.swift in Sources */,
 				1BAFE19E2F96F19400E18CFB /* SystemInfo.swift in Sources */,
+				1BE8B27E2FA7AEF800D4F9C6 /* Webhooks.swift in Sources */,
 				1BAFE20E2F9B8A7800E18CFB /* PatcherXPCProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -774,7 +784,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G4MQ57TVLE;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.patcherschedulerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -793,7 +803,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G4MQ57TVLE;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.patcherschedulerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -812,7 +822,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G4MQ57TVLE;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.patcherTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -831,7 +841,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G4MQ57TVLE;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.patcherTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
