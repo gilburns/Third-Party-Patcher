@@ -32,19 +32,23 @@ struct PatcherScheduler {
         // ── Pre-evaluate which network-dependent phases are due ───────────────
         // Computed upfront so we can perform one connectivity check before
         // touching the network, rather than failing mid-run.
-        let scanDue   = shouldRunScan(state: state, now: now)
+        let scanDue      = shouldRunScan(state: state, now: now)
+        // Light scan is only relevant when full scan won't already cover it this cycle.
+        // It needs the network only when it finds newly-installed labels (scanSingleLabel).
+        let lightScanDue = !scanDue && shouldRunLightScan(state: state, now: now)
         // Check is only relevant when scan won't already cover it this cycle.
-        let checkDue  = !scanDue && shouldRunCheck(state: state, now: now)
-        let stageDue  = shouldRunStage(state: state, now: now)
-        let dialogDue = prefs.swiftDialogEnabled &&
-                        !FileManager.default.fileExists(atPath: AppConstants.swiftDialogBinaryURL.path)
+        let checkDue     = !scanDue && shouldRunCheck(state: state, now: now)
+        let stageDue     = shouldRunStage(state: state, now: now)
+        let dialogDue    = prefs.swiftDialogEnabled &&
+                           !FileManager.default.fileExists(atPath: AppConstants.swiftDialogBinaryURL.path)
 
         // ── Internet connectivity check ───────────────────────────────────────
         // Performed once, only when at least one phase requires the network.
         // Verifies real internet access AND rules out captive-portal situations
         // by confirming the response body from captive.apple.com says "Success".
         // apply is intentionally excluded — it runs from already-staged files.
-        let networkPhaseDue = scanDue || checkDue || stageDue || dialogDue
+        // lightScan is included because scanSingleLabel (called on hits) needs the network.
+        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || dialogDue
         let networkOK: Bool
         if networkPhaseDue {
             networkOK = isInternetAvailable()
@@ -72,6 +76,21 @@ struct PatcherScheduler {
             state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
             scanRan = true
             dirty   = true
+        }
+
+        // ── Light Scan ────────────────────────────────────────────────────────
+        // Short interval (default 4 h). Checks scanned-folder plists for apps that
+        // have since been installed by other means (MDM, user install, etc.).
+        // No label scripts run; network only needed when a new install is found.
+        // Skipped when a full scan ran this cycle (full scan already covered everything).
+        if lightScanDue && networkOK {
+            writeActivePhase("lightScan")
+            runSubcommand("lightScan")
+            clearActivePhase()
+            state.lastLightScanDate = now
+            dirty = true
+        } else if scanRan {
+            Logger.log("ℹ️ Light scan: skipped — full scan ran this cycle.")
         }
 
         // ── Check ─────────────────────────────────────────────────────────────
@@ -147,8 +166,23 @@ struct PatcherScheduler {
                     state.firstPendingDate = nil
                     Logger.log("ℹ️ All updates applied — firstPendingDate cleared.")
                 }
+                if prefs.webhookSchedule.lowercased() == "immediate" {
+                    runSubcommand("sendReport")
+                    state.lastWebhookReportDate = now
+                }
                 dirty = true
             }
+        }
+
+        // ── Webhook report (scheduled modes) ─────────────────────────────────
+        // "immediate" is handled inline after each apply run above.
+        // All other schedules (daily, weekly, monthly, patchDay) are evaluated here
+        // so they fire on any scheduler tick, even cycles where apply didn't run.
+        if prefs.webhookSchedule.lowercased() != "immediate",
+           isWebhookReportDue(state: state, now: now) {
+            runSubcommand("sendReport")
+            state.lastWebhookReportDate = now
+            dirty = true
         }
 
         if dirty { state.save() }
@@ -219,6 +253,39 @@ struct PatcherScheduler {
         return false
     }
 
+    func shouldRunLightScan(state: SchedulerState, now: Date) -> Bool {
+        // Light scan requires at least one full scan to have run first.
+        // This covers the initial deployment delay case — if scan hasn't run yet,
+        // neither has the scanned folder been populated, so light scan has nothing to do.
+        guard state.lastScanDate != nil else {
+            Logger.log("ℹ️ Light scan: full scan has never run — skipping until first scan completes.")
+            return false
+        }
+        guard countLightScanLabels() > 0 else {
+            Logger.log("ℹ️ Light scan: no uninstalled labels in Scanned folder — skipping.")
+            return false
+        }
+        guard let lastLightScan = state.lastLightScanDate else {
+            Logger.log("ℹ️ Light scan: never run — scheduling now.")
+            return true
+        }
+        let intervalHours = prefs.lightScanIntervalHours
+        let hoursSince = Int(now.timeIntervalSince(lastLightScan) / 3600)
+        if hoursSince >= intervalHours {
+            Logger.log("ℹ️ Light scan: due (\(hoursSince)h since last, interval \(intervalHours)h).")
+            return true
+        }
+        Logger.log("ℹ️ Light scan: not due (\(hoursSince)/\(intervalHours)h since last).")
+        return false
+    }
+
+    /// Returns the number of scanned plists (uninstalled labels eligible for light scan).
+    func countLightScanLabels() -> Int {
+        (try? FileManager.default.contentsOfDirectory(
+            at: AppConstants.patcherScannedFolderURL, includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "plist" }.count) ?? 0
+    }
+
     func shouldRunCheck(state: SchedulerState, now: Date) -> Bool {
         guard let lastCheck = state.lastCheckDate else {
             Logger.log("ℹ️ Check: never run — scheduling now.")
@@ -255,6 +322,51 @@ struct PatcherScheduler {
     /// Returns an ApplySchedule when apply should run this cycle, nil otherwise.
     /// The monthly cadence gates apply to a specific day/time window; deadline mode
     /// runs apply once per applyIntervalHours once pending updates are known.
+    // MARK: - Webhook report schedule
+
+    /// Returns true when the accumulated webhook report should be sent.
+    /// "immediate" is handled inline after each apply run and never reaches this function.
+    func isWebhookReportDue(state: SchedulerState, now: Date = Date()) -> Bool {
+        let cal  = Calendar.current
+        let hour = cal.component(.hour, from: now)
+
+        switch prefs.webhookSchedule.lowercased() {
+
+        case "daily":
+            guard hour >= prefs.webhookScheduleHour else { return false }
+            guard let last = state.lastWebhookReportDate else { return true }
+            return !cal.isDateInToday(last)
+
+        case "weekly":
+            // weekday component: 1=Sun … 7=Sat; preference is 0=Sun … 6=Sat
+            let todayWeekday = cal.component(.weekday, from: now) - 1
+            guard todayWeekday == prefs.webhookScheduleWeekday,
+                  hour >= prefs.webhookScheduleHour else { return false }
+            guard let last = state.lastWebhookReportDate else { return true }
+            let days = cal.dateComponents([.day], from: last, to: now).day ?? 0
+            return days >= 7
+
+        case "monthly":
+            guard hour >= prefs.webhookScheduleHour else { return false }
+            let lastDayOfMonth = cal.range(of: .day, in: .month, for: now)?.count ?? 31
+            let targetDay = min(prefs.webhookScheduleMonthDay, lastDayOfMonth)
+            guard cal.component(.day, from: now) == targetDay else { return false }
+            guard let last = state.lastWebhookReportDate else { return true }
+            let days = cal.dateComponents([.day], from: last, to: now).day ?? 0
+            return days >= 28
+
+        case "patchday":
+            // Send once per apply run: fires on the next scheduler cycle after apply completes
+            // (or later if the scheduler is not running frequently).
+            guard let lastApply = state.lastApplyDate else { return false }
+            guard let lastReport = state.lastWebhookReportDate else { return true }
+            return lastApply > lastReport
+
+        default:
+            return false  // "immediate" and unrecognised values: not handled here
+        }
+    }
+
     private func resolveApplySchedule(state: SchedulerState, now: Date) -> ApplySchedule? {
         if prefs.monthlyPatchingCadenceEnabled {
             return resolveMonthlyApplySchedule(state: state, now: now)
@@ -660,6 +772,10 @@ struct PatcherScheduler {
                 state.firstPendingDate = nil
                 Logger.log("ℹ️ All updates applied — firstPendingDate cleared.")
             }
+            if Preferences().webhookSchedule.lowercased() == "immediate" {
+                runSubcommand("sendReport")
+                state.lastWebhookReportDate = now
+            }
             dirty = true
 
         default:
@@ -697,6 +813,7 @@ struct PatcherScheduler {
         // If apply failed the staged file and metadata.json stagedTimestamp remain.
         // Clean them up so patcher doesn't treat this as a pending update on the next cycle.
         cleanupFailedSelfServiceStage(label)
+        sendSelfServiceWebhook(label: label, prefs: prefs)
         Logger.log("✅ Self-service install complete for label '\(label)'")
     }
 
