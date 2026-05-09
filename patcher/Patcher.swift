@@ -13,7 +13,7 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self],
+        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self, SendReport.self, TestWebhook.self],
         defaultSubcommand: Scan.self
     )
 }
@@ -133,6 +133,25 @@ extension Patcher {
                 Thread.sleep(forTimeInterval: 5.0)
             }
             dialog?.close()
+            cleanupAfterRun()
+        }
+    }
+}
+
+extension Patcher {
+    struct LightScan: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "lightScan",
+            abstract: "Check uninstalled labels for apps installed by other means, without re-running label scripts."
+        )
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+
+            setupApplicationSupportFolders()
+            checkScannedAppsForInstall()
             cleanupAfterRun()
         }
     }
@@ -342,6 +361,113 @@ extension Patcher {
             applyUpdates(labelFilter: label, suppressDialog: true)
 
             cleanupAfterRun()
+        }
+    }
+}
+
+extension Patcher {
+    struct SendReport: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "sendReport",
+            abstract: "Send the accumulated webhook report and clear the report log."
+        )
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+
+            let log = loadWebhookReportLog()
+            guard !log.isEmpty else {
+                Logger.log("ℹ️ Webhook report: nothing accumulated — skipping send.")
+                return
+            }
+
+            let prefs     = Preferences()
+            let threshold = prefs.webhookStageFailureThreshold
+
+            // Apply stage-failure threshold at send time
+            let reportableStageFailures = log.stageFailures.filter {
+                $0.consecutiveFailures >= threshold
+            }
+
+            let successful = log.applyResults.filter(\.success).map {
+                WebhookLabelResult(label: $0.label, displayName: $0.displayName,
+                                   fromVersion: $0.fromVersion, toVersion: $0.toVersion,
+                                   failureReason: nil)
+            }
+            let applyFailed = log.applyResults.filter { !$0.success }.map {
+                WebhookLabelResult(label: $0.label, displayName: $0.displayName,
+                                   fromVersion: $0.fromVersion, toVersion: nil,
+                                   failureReason: $0.reason ?? "Installation failed")
+            }
+            let stageFailed = reportableStageFailures.map {
+                WebhookLabelResult(label: $0.label, displayName: $0.displayName,
+                                   fromVersion: nil, toVersion: nil,
+                                   failureReason: "Stage failed (\($0.consecutiveFailures)×): \($0.reason)")
+            }
+            let failed = applyFailed + stageFailed
+
+            guard !successful.isEmpty || !failed.isEmpty else {
+                Logger.log("ℹ️ Webhook report: no reportable events after filtering — skipping send.")
+                clearWebhookReportLog()
+                return
+            }
+
+            Logger.log("📊 Webhook report: \(successful.count) applied, \(applyFailed.count) apply-failed, \(stageFailed.count) stage-failed (threshold \(threshold)×).")
+
+            let device = collectWebhookDeviceInfo()
+            sendWebhooks(device: device, successful: successful, failed: failed, prefs: prefs)
+            clearWebhookReportLog()
+        }
+    }
+}
+
+extension Patcher {
+    struct TestWebhook: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "testWebhook",
+            abstract: "Send a test webhook notification to validate connectivity and message format."
+        )
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+
+            let prefs = Preferences()
+
+            guard !prefs.webhookURLTeams.isEmpty || !prefs.webhookURLSlack.isEmpty else {
+                Logger.log("⚠️ No webhook URLs configured (WebhookURLTeams / WebhookURLSlack) — nothing to send.")
+                return
+            }
+
+            Logger.log("🔍 Collecting device info…")
+            let device = collectWebhookDeviceInfo()
+            Logger.log("   Computer : \(device.computerName)")
+            Logger.log("   Hostname : \(device.hostname)")
+            Logger.log("   Serial   : \(device.serialNumber)")
+            Logger.log("   User     : \(device.consoleUser.isEmpty ? "(none)" : device.consoleUser)")
+            Logger.log("   MDM      : \(device.mdmName)\(device.mdmConsoleURL.map { " — \($0)" } ?? "")")
+
+            let fakeSuccessful: [WebhookLabelResult] = [
+                WebhookLabelResult(label: "firefox",   displayName: "Firefox",
+                                   fromVersion: "124.0.2",       toVersion: "125.0.1",      failureReason: nil),
+                WebhookLabelResult(label: "slack",     displayName: "Slack",
+                                   fromVersion: "4.38.2",        toVersion: "4.39.0",       failureReason: nil),
+                WebhookLabelResult(label: "zoom",      displayName: "Zoom",
+                                   fromVersion: "6.1.5.26030",   toVersion: "6.2.0.31085",  failureReason: nil),
+            ]
+            let fakeFailed: [WebhookLabelResult] = [
+                WebhookLabelResult(label: "microsoftteams", displayName: "Microsoft Teams",
+                                   fromVersion: "24065.903.2907", toVersion: nil,
+                                   failureReason: "Download failed — teamID mismatch"),
+            ]
+
+            Logger.log("📣 Sending test webhook(s)…")
+            sendWebhooks(device: device, successful: fakeSuccessful, failed: fakeFailed,
+                         prefs: prefs, forceTest: true)
+            Logger.log("✅ Test complete.")
         }
     }
 }
