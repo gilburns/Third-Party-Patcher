@@ -763,8 +763,10 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
             recordUpdateFoundIfNeeded(label: label, installedVersion: installedVersion, availableVersion: appNewVersion, date: Date())
         case .upToDate:
             Logger.log("👍 Up to date: \(installedVersion)")
+            discardSupersededStagedUpdate(label: label, installedVersion: installedVersion)
         case .wouldDowngrade:
             Logger.log("⏬ Skipping \(label) — available \(appNewVersion) is older than installed \(installedVersion)")
+            discardSupersededStagedUpdate(label: label, installedVersion: installedVersion)
         case .unknown:
             Logger.log("❓ Update status unknown — no latest version info available")
         }
@@ -1151,7 +1153,7 @@ func daysSinceMonthlyPatchDay(prefs: Preferences, now: Date = Date()) -> Int {
     return max(0, cal.dateComponents([.day], from: targetDate, to: now).day ?? 0)
 }
 
-func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int = 0) {
+func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int = 0, userInitiated: Bool = false) {
     let applyStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔧 Apply started at \(iso.string(from: applyStart))")
@@ -1230,43 +1232,46 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         // ── Deferral gate + progress dialog ────────────────────────────────────
         if !suppressDialog, !dialogItems.isEmpty, let controller = SwiftDialogController.makeIfAvailable() {
 
-            // Check for an unexpired deferral recorded in a previous run.
-            var deferralState = DeferralState.load()
-//            if deferralState.isActive() {
-//                let remaining = deferralState.remainingMinutes()
-//                Logger.log("⏸️ Apply: active deferral — \(formatDeferralDuration(remaining)) remaining. Exiting.")
-//                return
-//            }
+            if userInitiated {
+                // User explicitly chose to apply from PatcherMenu — skip the deferral prompt
+                // entirely and go straight to the patching window.
+                Logger.log("▶️ Apply: user-initiated — skipping deferral prompt.")
+            } else {
+                // Check for an unexpired deferral recorded in a previous run.
+                var deferralState = DeferralState.load()
 
-            // Show the pre-install deferral prompt.
-            let hardDeadline = prefs.deadlineDaysHard > 0 && effectiveDaysPending >= prefs.deadlineDaysHard
-            let promptResult = controller.showDeferralPrompt(
-                itemCount:           dialogItems.count,
-                daysPending:         effectiveDaysPending,
-                hardDeadlineReached: hardDeadline,
-                prefs:               prefs
-            )
+                // Show the pre-install deferral prompt.
+                let hardDeadline = prefs.deadlineDaysHard > 0 && effectiveDaysPending >= prefs.deadlineDaysHard
+                let schedule     = PatchSchedule(prefs: prefs)
+                let promptResult = controller.showDeferralPrompt(
+                    itemCount:              dialogItems.count,
+                    daysPending:            effectiveDaysPending,
+                    hardDeadlineReached:    hardDeadline,
+                    allowedDeferralMinutes: schedule.allowedDeferralMinutes(daysPending: effectiveDaysPending),
+                    prefs:                  prefs
+                )
 
-            let pendingLabels = dialogItems.map(\.label)
-            switch promptResult {
-            case .deferred(let minutes):
-                recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
-                deferralState.recordDeferral(minutes: minutes)
-                deferralState.save()
-                Logger.log("⏸️ Apply deferred for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count)). Exiting.")
-                return
-            case .timedOutDeferred(let minutes):
-                recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
-                deferralState.recordDeferral(minutes: minutes)
-                deferralState.save()
-                Logger.log("⏸️ Apply auto-deferred (timer) for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count)). Exiting.")
-                return
-            case .deadlineForced:
-                recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
-                Logger.log("▶️ Apply: hard deadline reached — proceeding")
-            case .proceed:
-                recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
-                Logger.log("▶️ Apply: user chose to continue")
+                let pendingLabels = dialogItems.map(\.label)
+                switch promptResult {
+                case .deferred(let minutes):
+                    recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
+                    deferralState.recordDeferral(minutes: minutes)
+                    deferralState.save()
+                    Logger.log("⏸️ Apply deferred for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count)). Exiting.")
+                    return
+                case .timedOutDeferred(let minutes):
+                    recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
+                    deferralState.recordDeferral(minutes: minutes)
+                    deferralState.save()
+                    Logger.log("⏸️ Apply auto-deferred (timer) for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count)). Exiting.")
+                    return
+                case .deadlineForced:
+                    recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
+                    Logger.log("▶️ Apply: hard deadline reached — proceeding")
+                case .proceed:
+                    recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
+                    Logger.log("▶️ Apply: user chose to continue")
+                }
             }
 
             dialog = controller
@@ -1296,7 +1301,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
             // A cache dir with only metadata.json (or empty) means nothing is staged
             guard let stagedFileURL = findStagedFile(in: labelDirURL) else {
-                Logger.log("📭 \(label) — nothing staged to install")
+                Logger.verbose("📭 \(label) — nothing staged to install")
                 nothingToInstallCount += 1
                 continue
             }
@@ -1342,6 +1347,8 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 effectiveBlockers = rawBlockers
             }
 
+            var shouldRelaunchBlockedApp = false
+
             if blockingAction != .ignore,
                let runningBlocker = effectiveBlockers.first(where: { isProcessRunning($0) }) {
                 Logger.log("⏸️ \(label) — '\(runningBlocker)' is running (action: \(prefs.blockingProcessAction))")
@@ -1371,7 +1378,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     blockedSkipOccurred = true
                     continue
                 }
-                // .proceed falls through to install below
+                // User explicitly clicked "Quit <App>" — reopen the app after a successful install.
+                if response == .proceedRelaunch { shouldRelaunchBlockedApp = true }
+                // .proceed and .proceedRelaunch both fall through to install below
             }
 
             dialog?.setInProgress(item: dialogItem, current: currentItemIndex, total: dialogItems.count)
@@ -1485,6 +1494,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 appliedCount += 1
                 applyFailedAttempts.removeValue(forKey: label)
                 applyBrokenVersions.removeValue(forKey: label)
+                if shouldRelaunchBlockedApp, let uid = consoleUserUID {
+                    relaunchApp(foundInstalls: foundInstalls, uid: uid)
+                }
             } else {
                 appendWebhookApplyResult(label: label, displayName: dialogItem.displayName,
                                          fromVersion: priorInstalledVersion.isEmpty ? nil : priorInstalledVersion,
@@ -2308,6 +2320,8 @@ private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: St
 }
 
 private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate: String?, curlOptions: String?) -> Bool {
+    Logger.log("🔻 using downloadFileWithCurl to retrieve \(url.lastPathComponent)")
+
     var args: [String] = ["-L", "-o", destination.path, "--silent", "--show-error"]
 
     if let limitRate {
@@ -2331,11 +2345,13 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
         process.waitUntilExit()
     } catch {
         Logger.log("❌ curl launch error: \(error)")
+        try? FileManager.default.removeItem(at: destination)
         return false
     }
     guard process.terminationStatus == 0 else {
         let msg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         Logger.log("❌ curl failed (exit \(process.terminationStatus)): \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
+        try? FileManager.default.removeItem(at: destination)
         return false
     }
     return FileManager.default.fileExists(atPath: destination.path)
@@ -2951,11 +2967,26 @@ private func extractVersionFromDistributionXML(atPath path: String, packageID: S
 
     let key = (versionKey?.isEmpty == false) ? versionKey! : "CFBundleShortVersionString"
 
-    // Try the matching pkg-ref first
+    // Try: version attribute on <pkg-ref> elements.
+    if let pkgID = packageID, !pkgID.isEmpty {
+        let xpathPkgRef = "//pkg-ref[@id='\(pkgID)']/@version"
+        if let nodes = try? doc.nodes(forXPath: xpathPkgRef) {
+            for node in nodes {
+                let value = node.stringValue ?? ""
+                if !value.isEmpty, !value.split(separator: ".").allSatisfy({ $0 == "0" }) {
+                    Logger.verbose("ℹ️ Found version from pkg-ref[@version] for '\(pkgID)' in Distribution for \(label)")
+                    return value
+                }
+            }
+        }
+    }
+
+    // Fallback: matching pkg-ref first
     if let pkgID = packageID, !pkgID.isEmpty {
         let xpath = "//pkg-ref[@id='\(pkgID)']/bundle-version/bundle/@\(key)"
         if let nodes = try? doc.nodes(forXPath: xpath),
            let value = nodes.first?.stringValue, !value.isEmpty {
+            Logger.verbose("ℹ️ Found version from pkg-ref/bundle-version/bundle for '\(pkgID)' in Distribution for \(label)")
             return value
         }
         Logger.log("ℹ️ No bundle version for packageID '\(pkgID)' in Distribution for \(label) — trying any pkg-ref")
@@ -2965,21 +2996,8 @@ private func extractVersionFromDistributionXML(atPath path: String, packageID: S
     let xpath = "//bundle-version/bundle/@\(key)"
     if let nodes = try? doc.nodes(forXPath: xpath),
        let value = nodes.first?.stringValue, !value.isEmpty {
+        Logger.verbose("ℹ️ Found version from bundle-version/bundle for '\(key)' in Distribution for \(label)")
         return value
-    }
-
-    // Fallback: version attribute on <pkg-ref> elements.
-    if let pkgID = packageID, !pkgID.isEmpty {
-        let xpathPkgRef = "//pkg-ref[@id='\(pkgID)']/@version"
-        if let nodes = try? doc.nodes(forXPath: xpathPkgRef) {
-            for node in nodes {
-                let value = node.stringValue ?? ""
-                if !value.isEmpty, !value.split(separator: ".").allSatisfy({ $0 == "0" }) {
-                    Logger.log("ℹ️ Found version from pkg-ref[@version] for '\(pkgID)' in Distribution for \(label)")
-                    return value
-                }
-            }
-        }
     }
 
     // Last resort: any pkg-ref with a non-zero version attribute
@@ -2988,7 +3006,7 @@ private func extractVersionFromDistributionXML(atPath path: String, packageID: S
         for node in nodes {
             let value = node.stringValue ?? ""
             if !value.isEmpty, !value.split(separator: ".").allSatisfy({ $0 == "0" }) {
-                Logger.log("ℹ️ Found version from any pkg-ref[@version] in Distribution for \(label)")
+                Logger.verbose("ℹ️ Found version from any pkg-ref[@version] in Distribution for \(label)")
                 return value
             }
         }
@@ -3061,6 +3079,98 @@ private func extractVersionFromFullyExpandedPkg(pkgPath: String, appName: String
     guard let resolvedAppPath = appPath else { return nil }
     Logger.log("   Found app bundle at: \(resolvedAppPath)")
     return readAppBundleVersion(atPath: resolvedAppPath, versionKey: versionKey)
+}
+
+
+/// Discards a staged update when the installed version has caught up outside of patcher's
+/// apply phase (e.g. MDM push, manual user update, or another tool).
+///
+/// Called from processScriptData for upToDate and wouldDowngrade results. In both cases
+/// the installed version is ≥ the latest available from the label script, so any staged
+/// file waiting in the cache is superseded and can be removed.
+///
+/// Includes a safety check: if the staged version is somehow newer than the installed
+/// version (unusual but theoretically possible if the label script reports a different
+/// version than what was staged), the staged update is left intact.
+private func discardSupersededStagedUpdate(label: String, installedVersion: String) {
+    let labelCacheURL = AppConstants.patcherCacheFolderURL.appendingPathComponent(label)
+    let metaURL       = labelCacheURL.appendingPathComponent("metadata.json")
+    let fm            = FileManager.default
+
+    guard let contents = try? fm.contentsOfDirectory(at: labelCacheURL, includingPropertiesForKeys: nil),
+          contents.contains(where: {
+              $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != LabelHistory.fileName
+          })
+    else { return }
+
+    let stagedVersion: String = {
+        guard let data = try? Data(contentsOf: metaURL),
+              let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let v = meta["appNewVersion"] as? String, !v.isEmpty
+        else { return "" }
+        return v
+    }()
+
+    if !stagedVersion.isEmpty,
+       installedVersion.compare(stagedVersion, options: .numeric) == .orderedAscending {
+        Logger.log("ℹ️ Staged \(stagedVersion) is newer than installed \(installedVersion) for '\(label)' — keeping staged update.")
+        return
+    }
+
+    let desc = stagedVersion.isEmpty ? "version unknown" : "staged: \(stagedVersion)"
+    Logger.log("🗑️ '\(label)': discarding superseded staged update (installed: \(installedVersion), \(desc)).")
+
+    for file in contents where file.lastPathComponent != "metadata.json"
+                             && file.lastPathComponent != LabelHistory.fileName {
+        do {
+            try fm.removeItem(at: file)
+        } catch {
+            Logger.log("❌ Failed to remove staged file '\(file.lastPathComponent)' for '\(label)': \(error)")
+        }
+    }
+
+    if let data = try? Data(contentsOf: metaURL),
+       var meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        meta.removeValue(forKey: "stagedTimestamp")
+        meta.removeValue(forKey: "appNewVersion")
+        meta.removeValue(forKey: "downloadURL")
+        if let updated = try? JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]) {
+            try? updated.write(to: metaURL, options: .atomic)
+        }
+    }
+}
+
+
+/// Relaunches the primary app from a discovered plist's foundInstalls list as the console user.
+///
+/// Called after a successful install when the user explicitly clicked "Quit <App>" in the
+/// blocking-process prompt. Prefers the first non-/Users/ .app path (system-level install),
+/// falling back to the first .app path if all installs are user-scoped.
+/// pkg-only labels have no .app in foundInstalls and are silently skipped.
+private func relaunchApp(foundInstalls: [[String: Any]], uid: uid_t) {
+    let appPaths = foundInstalls
+        .compactMap { $0["path"] as? String }
+        .filter { $0.hasSuffix(".app") }
+
+    guard !appPaths.isEmpty else {
+        Logger.log("ℹ️ Relaunch: no .app path in foundInstalls — skipping.")
+        return
+    }
+
+    let appPath = appPaths.first(where: { !$0.hasPrefix("/Users/") }) ?? appPaths[0]
+    Logger.log("🚀 Relaunching '\(appPath)' as uid \(uid)…")
+
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+    p.arguments     = ["asuser", "\(uid)", "/usr/bin/open", appPath]
+    p.standardOutput = Pipe()
+    p.standardError  = Pipe()
+    try? p.run()
+    p.waitUntilExit()
+
+    Logger.log(p.terminationStatus == 0
+        ? "✅ Relaunch: '\((appPath as NSString).lastPathComponent)' opened."
+        : "⚠️ Relaunch: open exited \(p.terminationStatus) for '\(appPath)'.")
 }
 
 
@@ -3291,6 +3401,44 @@ func writeEnsureStatus(_ status: String) {
         try? data.write(to: url, options: .atomic)
     }
 }
+
+// MARK: - Log maintenance
+
+/// Deletes log files in /Library/Logs/Patcher older than `days` days.
+/// Returns the number of files deleted.
+@discardableResult
+func cleanLogs(olderThanDays days: Int) -> Int {
+    let logDir = Logger.logDirectory
+    guard let entries = try? FileManager.default.contentsOfDirectory(
+        at: logDir, includingPropertiesForKeys: [.contentModificationDateKey]
+    ) else {
+        Logger.log("⚠️ cleanLogs: could not list log directory '\(logDir.path)'.")
+        return 0
+    }
+
+    let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
+    var deleted = 0
+    var errors  = 0
+
+    for entry in entries where entry.pathExtension == "log" {
+        guard let modified = try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+              modified < cutoff
+        else { continue }
+
+        do {
+            try FileManager.default.removeItem(at: entry)
+            Logger.log("🗑️ cleanLogs: removed '\(entry.lastPathComponent)'.")
+            deleted += 1
+        } catch {
+            Logger.log("❌ cleanLogs: failed to remove '\(entry.lastPathComponent)': \(error).")
+            errors += 1
+        }
+    }
+
+    Logger.log("✅ cleanLogs: \(deleted) file(s) removed, \(errors) error(s) (threshold: \(days) days).")
+    return deleted
+}
+
 
 // MARK: - Cleanup after run
 func cleanupAfterRun() {
