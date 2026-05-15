@@ -9,6 +9,7 @@ import SwiftUI
 
 struct MenuStatusView: View {
     @EnvironmentObject private var vm: PatcherMenuViewModel
+    @Environment(\.dismissWindow) private var dismissWindow
     @State private var showingHelp = false
 
     var body: some View {
@@ -71,34 +72,11 @@ struct MenuStatusView: View {
             MenuSectionHeader("Actions")
             
             HStack {
-                if !vm.preferences.optionalLabels.isEmpty {
-                    Button {
-                        let config = NSWorkspace.OpenConfiguration()
-                        config.activates = true
-                        if let url = NSWorkspace.shared.urlForApplication(
-                            withBundleIdentifier: AppConstants.availableSoftwareBundleID
-                        ) {
-                            NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
-                        } else {
-                            NSWorkspace.shared.openApplication(
-                                at: AppConstants.availableSoftwareAppURL,
-                                configuration: config, completionHandler: nil
-                            )
-                        }
-                    } label: {
-                        Label("Available Software", systemImage: "app.gift")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.accessoryBar)
-                    .foregroundStyle(.foreground)
-                    .controlSize(.small)
-                    .help("Open Available Software…")
-
-                    Spacer()
-                }
-
                 Menu {
-                    Button("Apply pending updates") { vm.triggerPhase("apply") }
+                    Button("Apply pending updates") {
+                        vm.triggerPhase("apply")
+                        dismissWindow()
+                    }
                         .disabled(!vm.hasPendingPatches)
                         .help(vm.hasPendingPatches
                               ? "Apply any staged pending updates"
@@ -116,7 +94,10 @@ struct MenuStatusView: View {
                                   : "No new updates detected — run Check or Scan first")
                     }
                     if vm.preferences.showMenuCheckAction {
-                        Button("Check for Updates") { vm.triggerPhase("check") }
+                        Button("Check for Updates") {
+                            vm.triggerPhase("check")
+                            dismissWindow()
+                        }
                             .help("Check for any available updates for previously discovered apps")
                     }
                     if vm.preferences.showMenuScanAction {
@@ -133,7 +114,33 @@ struct MenuStatusView: View {
                 .controlSize(.small)
                 .help("Run actions…")
 
-                if vm.preferences.optionalLabels.isEmpty {
+                Spacer()
+
+                if !vm.preferences.optionalLabels.isEmpty {
+                    Button {
+                        let config = NSWorkspace.OpenConfiguration()
+                        config.activates = true
+                        if let url = NSWorkspace.shared.urlForApplication(
+                            withBundleIdentifier: AppConstants.availableSoftwareBundleID
+                        ) {
+                            NSWorkspace.shared.openApplication(at: url, configuration: config, completionHandler: nil)
+                        } else {
+                            NSWorkspace.shared.openApplication(
+                                at: AppConstants.availableSoftwareAppURL,
+                                configuration: config, completionHandler: nil
+                            )
+                        }
+                        dismissWindow()
+                    } label: {
+                        Label("Available Software", systemImage: "app.gift")
+                            .font(.caption)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.accessoryBar)
+                    .foregroundStyle(.foreground)
+                    .controlSize(.small)
+                    .help("Open Available Software…")
+                } else {
                     Spacer()
                 }
             }
