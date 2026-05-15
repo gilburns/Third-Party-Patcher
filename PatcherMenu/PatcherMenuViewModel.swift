@@ -65,25 +65,21 @@ final class PatcherMenuViewModel: ObservableObject {
         return expiry
     }
 
-    /// Reference date from which deadlines are measured:
-    /// firstPendingDate in deadline-based mode, most recent patch day in monthly mode.
+    private var schedule: PatchSchedule { PatchSchedule(prefs: preferences) }
+
+    /// Reference date from which deadlines are measured.
+    /// Monthly mode: this month's patch day — nil until it has passed (no active deadline yet).
+    /// Deadline mode: firstPendingDate.
     var deadlineReference: Date? {
-        guard schedulerState?.firstPendingDate != nil else { return nil }
-        return preferences.monthlyPatchingCadenceEnabled
-            ? mostRecentPatchDay()
-            : schedulerState?.firstPendingDate
+        schedule.deadlineReference(firstPendingDate: schedulerState?.firstPendingDate)
     }
 
     var hardDeadlineDate: Date? {
-        deadlineReference.flatMap {
-            Calendar.current.date(byAdding: .day, value: preferences.deadlineDaysHard, to: $0)
-        }
+        schedule.hardDeadlineDate(firstPendingDate: schedulerState?.firstPendingDate)
     }
 
     var focusDeadlineDate: Date? {
-        deadlineReference.flatMap {
-            Calendar.current.date(byAdding: .day, value: preferences.deadlineDaysFocus, to: $0)
-        }
+        schedule.focusDeadlineDate(firstPendingDate: schedulerState?.firstPendingDate)
     }
 
     var daysUntilHardDeadline: Int? {
@@ -95,20 +91,7 @@ final class PatcherMenuViewModel: ObservableObject {
     /// Next upcoming patch day (monthly mode only; nil in deadline-based mode or if none found).
     var nextPatchDay: Date? {
         guard preferences.monthlyPatchingCadenceEnabled else { return nil }
-        let cal = Calendar.current
-        let now = Date()
-        let y = cal.component(.year, from: now)
-        let m = cal.component(.month, from: now)
-        for offset in 0...1 {
-            var mo = m + offset, yr = y
-            if mo > 12 { mo -= 12; yr += 1 }
-            var c = DateComponents()
-            c.year = yr; c.month = mo
-            c.weekday = preferences.patchingWeekday
-            c.weekdayOrdinal = preferences.patchingWeekOfMonth
-            if let d = cal.date(from: c), d >= now { return d }
-        }
-        return nil
+        return schedule.nextPatchDay()
     }
 
     var refreshedAgo: String {
@@ -390,22 +373,4 @@ final class PatcherMenuViewModel: ObservableObject {
         return name
     }
 
-    // MARK: - Monthly patch day calculation
-
-    func mostRecentPatchDay() -> Date? {
-        let cal = Calendar.current
-        let now = Date()
-        let y = cal.component(.year, from: now)
-        let m = cal.component(.month, from: now)
-        for offset in 0...1 {
-            var mo = m - offset, yr = y
-            if mo <= 0 { mo += 12; yr -= 1 }
-            var c = DateComponents()
-            c.year = yr; c.month = mo
-            c.weekday = preferences.patchingWeekday
-            c.weekdayOrdinal = preferences.patchingWeekOfMonth
-            if let d = cal.date(from: c), d <= now { return d }
-        }
-        return nil
-    }
 }
