@@ -13,8 +13,8 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self, SendReport.self, TestWebhook.self],
-        defaultSubcommand: Scan.self
+        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self],
+//        defaultSubcommand: Scan.self
     )
 }
 
@@ -145,13 +145,23 @@ extension Patcher {
             abstract: "Check uninstalled labels for apps installed by other means, without re-running label scripts."
         )
 
+        @Option(name: .long, help: "Scan only this specific label (used by the Applications folder watcher).")
+        var label: String?
+
         func run() throws {
             Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
             Logger.log("Process ID: \(AppConstants.currentPid)")
             configureLogging()
 
             setupApplicationSupportFolders()
-            checkScannedAppsForInstall()
+
+            if let label {
+                Logger.log("🔍 Watcher-triggered scan for '\(label)'")
+                scanSingleLabel(label)
+            } else {
+                checkScannedAppsForInstall()
+            }
+
             cleanupAfterRun()
         }
     }
@@ -209,13 +219,16 @@ extension Patcher {
         @Option(name: .long, help: "Days the oldest pending update has been staged (used for deadline enforcement).")
         var daysPending: Int = 0
 
+        @Flag(name: .long, help: "Skip the deferral prompt and go straight to the patching window (used when triggered from PatcherMenu).")
+        var userInitiated: Bool = false
+
         func run() throws {
             Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
             Logger.log("Process ID: \(AppConstants.currentPid)")
             configureLogging()
 
             setupApplicationSupportFolders()
-            applyUpdates(labelFilter: label, daysPending: daysPending)
+            applyUpdates(labelFilter: label, daysPending: daysPending, userInitiated: userInitiated)
             cleanupAfterRun()
         }
     }
@@ -419,6 +432,32 @@ extension Patcher {
             let device = collectWebhookDeviceInfo()
             sendWebhooks(device: device, successful: successful, failed: failed, prefs: prefs)
             clearWebhookReportLog()
+        }
+    }
+}
+
+extension Patcher {
+    struct CleanLogs: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "cleanLogs",
+            abstract: "Delete log files in /Library/Logs/Patcher older than a specified number of days."
+        )
+
+        @Option(name: .long, help: "Delete log files older than this many days. Defaults to the LogRetentionDays preference (default 90). Pass 0 to skip.")
+        var days: Int?
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+
+            let retention = days ?? Preferences().logRetentionDays
+            guard retention > 0 else {
+                Logger.log("ℹ️ cleanLogs: retention set to 0 — skipping.")
+                return
+            }
+            Logger.log("ℹ️ cleanLogs: removing logs older than \(retention) days…")
+            cleanLogs(olderThanDays: retention)
         }
     }
 }
