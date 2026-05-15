@@ -49,6 +49,11 @@
 		1BE8B27D2FA7AEE600D4F9C6 /* Webhooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */; };
 		1BE8B27E2FA7AEF800D4F9C6 /* Webhooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */; };
 		1BE8B27F2FA7B5E000D4F9C6 /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3193B82F8100A000860CB7 /* Preferences.swift */; };
+		1BE8B2852FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */; };
+		1BE8B2862FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */; };
+		1BE8B2872FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */; };
+		1BE8B2882FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */; };
+		1BE8B2892FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -97,6 +102,7 @@
 		1BAFE20D2F9B8A7800E18CFB /* PatcherXPCProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatcherXPCProtocol.swift; sourceTree = "<group>"; };
 		1BAFE4DF2F9D421600E18CFB /* Available Software.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Available Software.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Webhooks.swift; sourceTree = "<group>"; };
+		1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchSchedule.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -224,6 +230,7 @@
 				1B319BE22F8D989600860CB7 /* DeferralState.swift */,
 				1B319BC22F8BE89C00860CB7 /* LabelHistory.swift */,
 				1B3193B22F7F47E800860CB7 /* Logging.swift */,
+				1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */,
 				1BAFE20D2F9B8A7800E18CFB /* PatcherXPCProtocol.swift */,
 				1B3193B82F8100A000860CB7 /* Preferences.swift */,
 				1B319C612F948B7700860CB7 /* SystemInfo.swift */,
@@ -514,6 +521,7 @@
 				1B3193B12F7F47CA00860CB7 /* Constants.swift in Sources */,
 				1B319BC72F8BE89C00860CB7 /* LabelHistory.swift in Sources */,
 				1B319C652F948B7C00860CB7 /* SystemInfo.swift in Sources */,
+				1BE8B2852FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */,
 				1BE8B27C2FA7AEE600D4F9C6 /* Webhooks.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -538,6 +546,7 @@
 				1B319C1F2F9070E300860CB7 /* Constants.swift in Sources */,
 				1B319C202F9070EC00860CB7 /* Logging.swift in Sources */,
 				1B319C192F90653700860CB7 /* DeferralState.swift in Sources */,
+				1BE8B2862FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */,
 				1B319C1B2F90654400860CB7 /* Preferences.swift in Sources */,
 				1B319C642F948B7C00860CB7 /* SystemInfo.swift in Sources */,
 			);
@@ -549,6 +558,7 @@
 			files = (
 				1B319C3F2F925D2900860CB7 /* DeferralState.swift in Sources */,
 				1B319C412F925D3500860CB7 /* Preferences.swift in Sources */,
+				1BE8B2872FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */,
 				1B319C632F948B7C00860CB7 /* SystemInfo.swift in Sources */,
 				1B319C3E2F925D2300860CB7 /* Constants.swift in Sources */,
 				1B319C402F925D3000860CB7 /* Logging.swift in Sources */,
@@ -567,6 +577,7 @@
 				1BAFE4F82F9F10A300E18CFB /* LabelHistory.swift in Sources */,
 				1BAFE19E2F96F19400E18CFB /* SystemInfo.swift in Sources */,
 				1BE8B27E2FA7AEF800D4F9C6 /* Webhooks.swift in Sources */,
+				1BE8B2892FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */,
 				1BAFE20E2F9B8A7800E18CFB /* PatcherXPCProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -578,6 +589,7 @@
 				1BAFE20F2F9B8A7800E18CFB /* PatcherXPCProtocol.swift in Sources */,
 				1BAFE2062F998A0700E18CFB /* Preferences.swift in Sources */,
 				1BAFE2082F998D9500E18CFB /* Logging.swift in Sources */,
+				1BE8B2882FAFB0A100D4F9C6 /* PatchSchedule.swift in Sources */,
 				1BAFE2072F998A7A00E18CFB /* Constants.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
