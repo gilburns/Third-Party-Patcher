@@ -76,6 +76,12 @@ struct PatcherScheduler {
             state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
             scanRan = true
             dirty   = true
+
+            // Piggyback log cleanup on the scan cadence (~30 days).
+            // Runs after the scan so slow log I/O doesn't delay the scan itself.
+            if prefs.logRetentionDays > 0 {
+                runSubcommand("cleanLogs")
+            }
         }
 
         // ── Light Scan ────────────────────────────────────────────────────────
@@ -397,19 +403,35 @@ struct PatcherScheduler {
                 return nil
             }
             // Don't re-trigger on every 10-minute wake if apply already ran today.
+            // Exception: if the user deferred on patch day and the timer has now expired,
+            // prompt again even though apply already ran today.
             if let lastApply = state.lastApplyDate, cal.isDate(lastApply, inSameDayAs: now) {
-                Logger.log("ℹ️ Apply: monthly — already applied today.")
-                return nil
+                let deferral = DeferralState.load()
+                let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
+                if deferralExpired {
+                    Logger.log("ℹ️ Apply: monthly — deferral expired on patch day, prompting again.")
+                } else {
+                    Logger.log("ℹ️ Apply: monthly — already applied today.")
+                    return nil
+                }
             }
         } else {
             // After the patch day: updates remain pending (e.g. deferred or blocked).
             // Retry every applyIntervalHours rather than every 10-minute wake.
+            // Exception: if a deferral timer has just expired, prompt immediately
+            // regardless of the interval — the user is waiting for the next prompt.
             if let lastApply = state.lastApplyDate {
                 let hoursSince    = Int(now.timeIntervalSince(lastApply) / 3600)
                 let intervalHours = prefs.applyIntervalHours
                 if hoursSince < intervalHours {
-                    Logger.log("ℹ️ Apply: monthly — not due (\(hoursSince)/\(intervalHours)h since last apply).")
-                    return nil
+                    let deferral = DeferralState.load()
+                    let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
+                    if deferralExpired {
+                        Logger.log("ℹ️ Apply: monthly — deferral expired, bypassing \(intervalHours)h interval.")
+                    } else {
+                        Logger.log("ℹ️ Apply: monthly — not due (\(hoursSince)/\(intervalHours)h since last apply).")
+                        return nil
+                    }
                 }
             }
         }
@@ -427,12 +449,19 @@ struct PatcherScheduler {
         }
 
         // Respect applyIntervalHours — don't apply every 10-minute wake.
+        // Exception: if a deferral timer has just expired, prompt immediately.
         if let lastApply = state.lastApplyDate {
             let hoursSince = Int(now.timeIntervalSince(lastApply) / 3600)
             let intervalHours = prefs.applyIntervalHours
             if hoursSince < intervalHours {
-                Logger.log("ℹ️ Apply: not due (\(hoursSince)/\(intervalHours)h since last apply).")
-                return nil
+                let deferral = DeferralState.load()
+                let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
+                if deferralExpired {
+                    Logger.log("ℹ️ Apply: deferral expired, bypassing \(intervalHours)h interval.")
+                } else {
+                    Logger.log("ℹ️ Apply: not due (\(hoursSince)/\(intervalHours)h since last apply).")
+                    return nil
+                }
             }
         }
 
@@ -445,28 +474,11 @@ struct PatcherScheduler {
     }
 
     func isFocusDeadlineReached(state: SchedulerState, now: Date) -> Bool {
-        let limit = prefs.deadlineDaysFocus
-        guard limit > 0 else { return false }
-        return daysPendingForDeadline(state: state, now: now) >= limit
+        PatchSchedule(prefs: prefs).isFocusDeadlineReached(firstPendingDate: state.firstPendingDate, now: now)
     }
 
     func isHardDeadlineReached(state: SchedulerState, now: Date) -> Bool {
-        let limit = prefs.deadlineDaysHard
-        guard limit > 0 else { return false }
-        return daysPendingForDeadline(state: state, now: now) >= limit
-    }
-
-    /// Days elapsed for deadline calculations.
-    /// Monthly mode: days since this month's patch day.
-    /// Deadline mode: days since the first pending update was staged.
-    private func daysPendingForDeadline(state: SchedulerState, now: Date) -> Int {
-        if prefs.monthlyPatchingCadenceEnabled {
-            guard let targetDate = monthlyTargetDate(for: now), targetDate <= now else { return 0 }
-            return Calendar.current.dateComponents([.day], from: targetDate, to: now).day ?? 0
-        } else {
-            guard let firstPending = state.firstPendingDate else { return 0 }
-            return Calendar.current.dateComponents([.day], from: firstPending, to: now).day ?? 0
-        }
+        PatchSchedule(prefs: prefs).isHardDeadlineReached(firstPendingDate: state.firstPendingDate, now: now)
     }
 
 
@@ -555,12 +567,7 @@ struct PatcherScheduler {
     }
 
     func monthlyTargetDate(for date: Date) -> Date? {
-        var cal = Calendar.current
-        cal.locale = Locale(identifier: "en_US_POSIX")
-        var comps = cal.dateComponents([.year, .month], from: date)
-        comps.weekday        = prefs.patchingWeekday
-        comps.weekdayOrdinal = prefs.patchingWeekOfMonth
-        return cal.date(from: comps)
+        PatchSchedule(prefs: prefs).monthlyTargetDate(for: date)
     }
 
     func isWithinPatchingWindow(now: Date) -> Bool {
@@ -760,10 +767,12 @@ struct PatcherScheduler {
 
         case "apply":
             // On-demand apply bypasses cadence and deadline checks — user explicitly requested it.
+            // --user-initiated suppresses the deferral prompt so patching begins immediately.
             let daysPending = state.firstPendingDate.map {
                 Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
             } ?? 0
-            let applyArgs = daysPending > 0 ? ["--days-pending", "\(daysPending)"] : []
+            var applyArgs = ["--user-initiated"]
+            if daysPending > 0 { applyArgs += ["--days-pending", "\(daysPending)"] }
             writeActivePhase("apply", triggeredBy: "xpc")
             runSubcommand("apply", args: applyArgs)
             clearActivePhase()
@@ -800,6 +809,16 @@ struct PatcherScheduler {
         try? FileManager.default.createDirectory(at: AppConstants.patcherConfigFolderURL,
                                                   withIntermediateDirectories: true)
         try? data.write(to: url, options: .atomic)
+    }
+
+    /// Runs a targeted label scan triggered by the Applications folder watcher.
+    /// Calls `patcher lightScan --label <label>` to get fresh version info for a
+    /// single label without running the full light scan.
+    /// Does NOT update lastLightScanDate — watcher triggers are independent of the
+    /// scheduled light scan cadence.
+    func runWatcherTriggeredScan(_ label: String) {
+        Logger.log("▶️ AppWatcher: scanning '\(label)'…")
+        runSubcommand("lightScan", args: ["--label", label])
     }
 
     /// Installs a single label via `patcher ensure <label>`. Generalized form of ensureSwiftDialog().
