@@ -228,9 +228,9 @@ struct Preferences {
 
     /// Hours between light scan runs. Light scan checks uninstalled labels for apps
     /// installed by other means, without re-running label scripts or hitting the network
-    /// for non-installed labels. Defaults to 4.
+    /// for non-installed labels. Defaults to 24.
     var lightScanIntervalHours: Int {
-        prefs["LightScanIntervalHours"] as? Int ?? 4
+        prefs["LightScanIntervalHours"] as? Int ?? 24
     }
 
     /// Hours between check runs. Check is fast (~60–90s) and reads installed versions
@@ -299,6 +299,17 @@ struct Preferences {
     /// When false, Focus / DND and display assertions are never checked. Defaults to true.
     var focusCheckEnabled: Bool {
         prefs["FocusCheckEnabled"] as? Bool ?? true
+    }
+
+    // MARK: - Aggressive patch-day deferral
+
+    /// When true, deferral options are progressively capped on patch day (monthly mode)
+    /// or hard deadline day (deadline mode) based on how much time remains in the
+    /// patching window. Caps shrink from 2 h early in the day to 5 min near window end,
+    /// then no deferral is offered after the window closes.
+    /// When false, the full DeferralTimerMenu list is always used. Defaults to true.
+    var aggressivePatchDayDeferral: Bool {
+        prefs["AggressivePatchDayDeferral"] as? Bool ?? true
     }
 
     // MARK: - swiftDialog UI
@@ -589,7 +600,17 @@ struct Preferences {
     /// ALL      — send on success and failure
     /// Defaults to "FALSE".
     var webhookSelfServiceFeature: String {
-        pref("WebhookSelfServiceFeature", default: "FAILURES")
+        pref("WebhookSelfServiceFeature", default: "FALSE")
+    }
+
+    // MARK: - Log maintenance
+
+    /// Number of days to retain log files in /Library/Logs/Patcher.
+    /// Log files older than this are deleted during the cleanLogs run.
+    /// Set to 0 to disable automatic log cleanup.
+    /// Defaults to 90.
+    var logRetentionDays: Int {
+        prefs["LogRetentionDays"] as? Int ?? 90
     }
 
     // MARK: - Private helpers
