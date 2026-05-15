@@ -48,17 +48,27 @@ final class CatalogViewModel: ObservableObject {
     func loadItems(preferences: Preferences) {
         let preferred = Locale.preferredLanguages.first ?? "en"
         detectedLangCode = preferred.components(separatedBy: "-").first ?? "en"
-        
+
         let rawBase = "https://raw.githubusercontent.com/"
             + "\(preferences.installomatorGitHubMetadataAccount)/"
             + "\(preferences.installomatorGitHubMetadataRepo)/"
             + "refs/heads/"
             + "\(preferences.installomatorGitHubMetadataBranch)/"
-        
+
         metadataBase = rawBase + "Metadata/"
         iconBase     = rawBase + "Icons/"
 
-        items = preferences.optionalLabels.map { label in
+        // Discard any label names that have no corresponding label file on disk.
+        // This prevents stale or mistyped OptionalLabels entries from appearing in the grid.
+        let validLabels = preferences.optionalLabels.filter { label in
+            guard labelFileExists(label) else {
+                NSLog("Available Software: label '%@' not found in label folders — skipping.", label)
+                return false
+            }
+            return true
+        }
+
+        items = validLabels.map { label in
             // Prefer a local managed icon; fall back to the remote URL
             let localIconURL = AppConstants.managedIconsFolderURL.appendingPathComponent("\(label).png")
             let iconURL: URL? = FileManager.default.fileExists(atPath: localIconURL.path)
@@ -76,7 +86,7 @@ final class CatalogViewModel: ObservableObject {
             return item
         }
         // Fetch metadata only for labels not yet cached
-        for label in preferences.optionalLabels where metadataCache[label] == nil {
+        for label in validLabels where metadataCache[label] == nil {
             Task { await fetchMetadata(for: label) }
         }
     }
@@ -247,6 +257,13 @@ final class CatalogViewModel: ObservableObject {
               let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
         else { return nil }
         return dict[key]
+    }
+
+    /// Returns true if a label file exists in either the Installomator or managed labels folder.
+    private func labelFileExists(_ label: String) -> Bool {
+        let fm = FileManager.default
+        return fm.fileExists(atPath: AppConstants.installomatorLabelsFolderURL.appendingPathComponent("\(label).sh").path)
+            || fm.fileExists(atPath: AppConstants.managedLabelsFolderURL.appendingPathComponent("\(label).sh").path)
     }
 
     private func parsedLabelName(for label: String, in folder: URL) -> String? {
