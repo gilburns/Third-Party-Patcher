@@ -91,6 +91,21 @@ let cycleTimer: DispatchSourceTimer = {
 _ = cycleTimer
 
 
+// MARK: - Applications folder watcher
+//
+// Watches /Applications and /Applications/Utilities for newly-added .app bundles.
+// When a new untracked bundle is detected, triggers a targeted single-label scan
+// via the work queue — queues behind any in-progress cycle automatically.
+
+let appWatcher = ApplicationsFolderWatcher { label in
+    workQueue.async {
+        PatcherScheduler(prefs: Preferences()).runWatcherTriggeredScan(label)
+    }
+}
+// Top-level binding keeps the watcher alive for the process lifetime.
+_ = appWatcher
+
+
 // MARK: - Initial cycle
 
 workQueue.async {
