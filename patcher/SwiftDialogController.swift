@@ -40,8 +40,9 @@ enum BlockingProcessAction {
 }
 
 enum BlockingActionResponse {
-    case proceed   // blocker was quit; install can continue
-    case skip      // user or policy chose to skip this label
+    case proceed         // blocker was quit; install can continue (no relaunch)
+    case proceedRelaunch // user explicitly clicked "Quit <App>"; relaunch after install
+    case skip            // user or policy chose to skip this label
 }
 
 enum DeferralPromptResult {
@@ -291,15 +292,14 @@ struct SwiftDialogController {
     /// Returns immediately with `.proceed` if the hard deadline is reached.
     /// Uses `--outputfile` to capture the dropdown selection without stdout issues.
     func showDeferralPrompt(
-        itemCount:           Int,
-        daysPending:         Int,
-        hardDeadlineReached: Bool,
-        prefs:               Preferences
+        itemCount:              Int,
+        daysPending:            Int,
+        hardDeadlineReached:    Bool,
+        allowedDeferralMinutes: [Int],
+        prefs:                  Preferences
     ) -> DeferralPromptResult {
 
-        let deferMenu    = prefs.deferralTimerMenu
-                            .split(separator: ",")
-                            .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        let deferMenu    = allowedDeferralMinutes
         let defaultMins  = prefs.deferralTimerDefault
         let countdown    = prefs.deferralCountdownSeconds
         let autoAction   = prefs.deferralAutomaticAction.lowercased()
@@ -314,6 +314,13 @@ struct SwiftDialogController {
         } else if daysPending > 0 {
             message += "\n\nThese \(itemWord) have been pending for **\(daysPending) day\(daysPending == 1 ? "" : "s")**."
         }
+                
+        var checkBox: [String: Any] = [
+            "checkbox": [
+                "label" : "Relaunch after update…",
+                "checked" : true,
+                "disabled" : false ]
+        ]
 
         var jsonDict: [String: Any] = [
             "title":           prefs.appTitle,
@@ -323,6 +330,7 @@ struct SwiftDialogController {
             "messagefont":     "size=16",
             "button2text":     "Continue",
             "infobox":         infoboxMessage,
+            "checkbox":        checkBox,
             "moveable":        true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenPosition,
@@ -516,14 +524,15 @@ struct SwiftDialogController {
             return .proceed
 
         default:
-            // Exit 2 = User clicked "Quit <App>" — force-quit and install
+            // Exit 2 = User clicked "Quit <App>" — force-quit and install.
+            // Return .proceedRelaunch so the apply loop can reopen the app after the update.
             Logger.log("ℹ️ User chose to quit '\(processName)' — force-quitting")
             recordBlockingProcessEvent(label: item.label,
                                        type: LabelHistoryEvent.EventType.blockingProcessQuit,
                                        processName: processName, date: Date())
             killProcess(named: processName)
             Thread.sleep(forTimeInterval: 2.0)
-            return .proceed
+            return .proceedRelaunch
 
         }
     }
