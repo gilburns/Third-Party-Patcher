@@ -139,9 +139,9 @@ struct SwiftDialogController {
             "moveable":        true,
             "presentation":    true,
             "ontop":           prefs.dialogOnTop,
-//            "width":           640,
-//            "height":          min(550, max(520, 220 + items.count * 60)),
-//            "messagefont":     "size=16",
+            "width":           750,
+            "height":          min(450, max(520, 220 + items.count * 60)),
+            "messagefont":     "size=16",
             "listitem":        listItems,
         ]
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
@@ -727,9 +727,9 @@ private func resolveOverlayIcon(prefs: Preferences) -> String? {
         "/Library/Application Support/JAMF/Jamf.app/Contents/Resources/AppIcon.icns",
         "/Applications/Self Service.app/Contents/Resources/AppIcon.icns",
         "/Applications/Self-Service.app/Contents/Resources/AppIcon.icns",
+        "/Library/Intune/Microsoft Intune Agent.app/Contents/Resources/AppIcon.icns",
         "/Applications/Manager.app/Contents/Resources/AppIcon.icns",
         "/Library/Addigy/macmanage/MacManage.app/Contents/Resources/atom.icns",
-        "/Library/Intune/Microsoft Intune Agent.app/Contents/Resources/AppIcon.icns",
         "/Applications/Company Portal.app/Contents/Resources/AppIcon.icns",
         "/Applications/Workspace ONE Intelligent Hub.app/Contents/Resources/AppIcon.icns",
         "/Applications/Kandji Self Service.app/Contents/Resources/AppIcon.icns",
