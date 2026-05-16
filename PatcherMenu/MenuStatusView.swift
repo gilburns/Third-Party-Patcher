@@ -261,7 +261,7 @@ struct MenuStatusView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.uturn.backward")
                         .frame(width: 14)
-                    Text("Deferred \(vm.deferralCount) time\(vm.deferralCount == 1 ? "" : "s")")
+                    Text("Deferred \(vm.deferralCount) time\(vm.deferralCount == 1 ? "" : "s") (Includes auto-deferrals)")
                         .font(.caption)
                 }
                 .foregroundStyle(.secondary)
@@ -285,10 +285,10 @@ struct MenuStatusView: View {
     private var activitySection: some View {
         VStack(alignment: .leading, spacing: 4) {
             MenuSectionHeader("Last Activity")
-            activityRow("Scan",  phase: "scan",  date: vm.schedulerState?.lastScanDate)
-            activityRow("Check", phase: "check", date: vm.schedulerState?.lastCheckDate)
-            activityRow("Stage", phase: "stage", date: vm.schedulerState?.lastStageDate)
             activityRow("Apply", phase: "apply", date: vm.schedulerState?.lastApplyDate)
+            activityRow("Stage", phase: "stage", date: vm.schedulerState?.lastStageDate)
+            activityRow("Check", phase: "check", date: vm.schedulerState?.lastCheckDate)
+            activityRow("Scan",  phase: "scan",  date: vm.schedulerState?.lastScanDate)
         }
     }
 
@@ -397,7 +397,7 @@ struct SupportInfoView: View {
             }
         }
         .padding(14)
-        .frame(width: 250)
+        .frame(width: 280)
     }
 
     private func contactRow(icon: String, text: String, url: URL?) -> some View {
