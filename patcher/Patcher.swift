@@ -120,7 +120,7 @@ extension Patcher {
             ) : nil
 
             checkDiscoveredAppsForUpdates { current, total, displayName in
-                dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)**…")
+                dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)** for updates…")
             }
 
             if let dialog {
