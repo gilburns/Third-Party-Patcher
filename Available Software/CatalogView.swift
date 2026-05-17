@@ -77,10 +77,16 @@ struct CatalogView: View {
     @State private var sortOrder      = SortOrder.arrayOrder
     @State private var filterMode     = FilterMode.all
     @State private var selectedItem: CatalogViewModel.CatalogItem? = nil
+    @State private var selectedStagedPatch: AvailableSoftwareViewModel.StagedPatch? = nil
+    @State private var selectedManagedApp: AvailableSoftwareViewModel.ManagedApp? = nil
+    @State private var selectedHistoryLabel: String? = nil
     @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     enum SortOrder  { case arrayOrder, alphabetical }
-    enum FilterMode: Hashable { case all, installed, notInstalled, category(String) }
+    enum FilterMode: Hashable {
+        case all, installed, notInstalled, category(String)
+        case pendingUpdates, managedSoftware, updateHistory
+    }
 
     private var filteredItems: [CatalogViewModel.CatalogItem] {
         var result = catalog.items
@@ -90,6 +96,7 @@ struct CatalogView: View {
         case .installed:         result = result.filter { $0.installedVersion != nil }
         case .notInstalled:      result = result.filter { $0.installedVersion == nil }
         case .category(let cat): result = result.filter { $0.category == cat }
+        default:                 result = []   // My Software modes use their own data sources
         }
 
         if !searchText.isEmpty {
@@ -194,51 +201,103 @@ struct CatalogView: View {
             Divider()
                 .padding(.bottom, 8)
 
-            List(selection: $filterMode) {
+            // Using explicit Button rows instead of List(selection:) so that
+            // tapping the already-selected item still fires an action and can
+            // dismiss the detail view, returning to the grid.
+            List {
                 Section {
-                    Label("All Applications", systemImage: "square.grid.2x2")
-                        .badge(catalog.items.count)
-                        .tag(FilterMode.all)
-
-                    Label("Installed", systemImage: "checkmark.circle.fill")
-                        .badge(installedCount)
-                        .tag(FilterMode.installed)
-
-                    Label("Not Installed", systemImage: "arrow.down.circle")
-                        .badge(notInstalledCount)
-                        .tag(FilterMode.notInstalled)
+                    sidebarRow(.all,          label: "All Applications", icon: "square.grid.2x2",       badge: catalog.items.count)
+                    sidebarRow(.installed,    label: "Installed",        icon: "checkmark.circle.fill",  badge: installedCount)
+                    sidebarRow(.notInstalled, label: "Not Installed",    icon: "arrow.down.circle",      badge: notInstalledCount)
                 }
 
                 if !sortedCategories.isEmpty {
                     Section("Categories") {
                         ForEach(sortedCategories, id: \.name) { cat in
-                            Label(cat.name, systemImage: "tag")
-                                .badge(cat.count)
-                                .tag(FilterMode.category(cat.name))
+                            sidebarRow(.category(cat.name), label: cat.name, icon: "tag", badge: cat.count)
                         }
                     }
                 }
+
+                Section("My Software") {
+                    sidebarRow(.managedSoftware, label: "Managed Software",  icon: "desktopcomputer",         badge: vm.managedApps.count)
+                    sidebarRow(.pendingUpdates,  label: "Pending Updates",   icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
+                    sidebarRow(.updateHistory,   label: "Update History",    icon: "clock.arrow.circlepath",  badge: 0)
+                }
             }
             .listStyle(.sidebar)
-            
-
         }
+    }
+
+    private func sidebarRow(_ mode: FilterMode, label: String, icon: String, badge: Int) -> some View {
+        Button {
+            filterMode = mode
+            selectedItem = nil
+            selectedStagedPatch = nil
+            selectedManagedApp = nil
+            selectedHistoryLabel = nil
+        } label: {
+            Label(label, systemImage: icon)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .badge(badge)
+        .listRowBackground(
+            filterMode == mode
+                ? RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.accentColor.opacity(0.18))
+                : nil
+        )
     }
 
     // MARK: - Main content
 
     private var mainContent: some View {
         VStack(spacing: 0) {
-            if let item = selectedItem {
-                ItemDetailView(item: item, onBack: { selectedItem = nil })
-                    .environmentObject(vm)
-            } else {
-                controlsBar
-                Divider()
-                if filteredItems.isEmpty {
-                    noResults
+            switch filterMode {
+            case .pendingUpdates:
+                if let patch = selectedStagedPatch {
+                    PendingUpdateDetailView(patch: patch, onBack: { selectedStagedPatch = nil })
+                        .environmentObject(vm)
                 } else {
-                    gridView
+                    PendingUpdatesGrid(patches: vm.stagedPatches, onSelect: { selectedStagedPatch = $0 })
+                        .environmentObject(vm)
+                }
+            case .managedSoftware:
+                if let app = selectedManagedApp {
+                    ManagedAppDetailView(app: app, onBack: { selectedManagedApp = nil })
+                        .environmentObject(vm)
+                } else {
+                    ManagedSoftwareGrid(apps: vm.managedApps, onSelect: { selectedManagedApp = $0 })
+                        .environmentObject(vm)
+                }
+            case .updateHistory:
+                if let label = selectedHistoryLabel {
+                    AppHistoryDetailView(
+                        label: label,
+                        displayName: vm.updateHistory.first(where: { $0.label == label })?.displayName ?? label,
+                        iconURL: vm.updateHistory.first(where: { $0.label == label })?.iconURL,
+                        entries: vm.updateHistory.filter { $0.label == label },
+                        onBack: { selectedHistoryLabel = nil }
+                    )
+                } else {
+                    UpdateHistoryList(history: vm.updateHistory, onSelectLabel: { selectedHistoryLabel = $0 })
+                        .environmentObject(vm)
+                }
+            default:
+                // Catalog modes: all, installed, notInstalled, category
+                if let item = selectedItem {
+                    ItemDetailView(item: item, onBack: { selectedItem = nil })
+                        .environmentObject(vm)
+                } else {
+                    controlsBar
+                    Divider()
+                    if filteredItems.isEmpty {
+                        noResults
+                    } else {
+                        gridView
+                    }
                 }
             }
         }
@@ -346,6 +405,8 @@ struct CatalogView: View {
                         .font(.headline)
                     Text("Your IT team hasn't configured any optional software titles.")
                         .font(.subheadline).foregroundStyle(.secondary)
+                default:
+                    EmptyView()
                 }
             } else {
                 Text("No Results for \"\(searchText)\"")
@@ -793,6 +854,562 @@ private struct CatalogHeaderIcon: View {
         return candidates.first(where: { FileManager.default.fileExists(atPath: $0) })
             .flatMap { NSImage(contentsOfFile: $0) }
             .map { Image(nsImage: $0) }
+    }
+}
+
+// MARK: - Pending Updates
+
+private struct PendingUpdatesGrid: View {
+    let patches: [AvailableSoftwareViewModel.StagedPatch]
+    let onSelect: (AvailableSoftwareViewModel.StagedPatch) -> Void
+    @EnvironmentObject var vm: AvailableSoftwareViewModel
+
+    var body: some View {
+        if patches.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 36)).foregroundStyle(.green)
+                Text("No Pending Updates").font(.headline)
+                Text("All managed software is up to date.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            let columns = [GridItem(.adaptive(minimum: 220, maximum: 380), spacing: 10)]
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(patches) { patch in
+                        Button { onSelect(patch) } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                CachedAsyncImage(url: patch.iconURL) { img in
+                                    img.resizable().scaledToFit()
+                                        .clipShape(RoundedRectangle(cornerRadius: 11))
+                                } placeholder: {
+                                    Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                        .clipShape(RoundedRectangle(cornerRadius: 11))
+                                }
+                                .frame(width: 52, height: 52)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(patch.displayName)
+                                        .font(.subheadline).fontWeight(.semibold).lineLimit(2)
+                                    Label("→ \(patch.newVersion)", systemImage: "arrow.down.circle")
+                                        .font(.caption).foregroundStyle(.orange)
+                                    if let date = patch.stagedDate {
+                                        Text("Staged \(date, format: .relative(presentation: .named))")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
+                        }
+                        .buttonStyle(.accessoryBar)
+                        .background(Color.secondary.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(12)
+            }
+        }
+    }
+}
+
+private struct PendingUpdateDetailView: View {
+    let patch: AvailableSoftwareViewModel.StagedPatch
+    let onBack: () -> Void
+    @EnvironmentObject var vm: AvailableSoftwareViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left.circle").imageScale(.large)
+                        Text("Pending Updates")
+                    }.font(.body)
+                }
+                .buttonStyle(.borderless).foregroundStyle(.tint)
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(alignment: .top, spacing: 16) {
+                        CachedAsyncImage(url: patch.iconURL) { img in
+                            img.resizable().scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        } placeholder: {
+                            Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .frame(width: 80, height: 80)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(patch.displayName).font(.title).fontWeight(.bold)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let date = patch.stagedDate {
+                                Label("Staged \(date, format: .relative(presentation: .named))", systemImage: "clock")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Label("Ready to install", systemImage: "arrow.down.circle.fill")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        Spacer(minLength: 12)
+                        Button("Apply All Updates") { vm.triggerApply() }
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                            .disabled(vm.activeLabel != nil)
+                    }
+                    .padding(.bottom, 8)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Update").font(.headline)
+                        Divider()
+                        HStack(spacing: 24) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Available Version").font(.caption).foregroundStyle(.secondary)
+                                Text(patch.newVersion).font(.title3).fontWeight(.semibold)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+// MARK: - Managed Software
+
+private struct ManagedSoftwareGrid: View {
+    let apps: [AvailableSoftwareViewModel.ManagedApp]
+    let onSelect: (AvailableSoftwareViewModel.ManagedApp) -> Void
+    @EnvironmentObject var vm: AvailableSoftwareViewModel
+    @State private var searchText = ""
+
+    private var filteredApps: [AvailableSoftwareViewModel.ManagedApp] {
+        guard !searchText.isEmpty else { return apps }
+        let q = searchText.lowercased()
+        return apps.filter {
+            $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        if apps.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "tray").font(.system(size: 36)).foregroundStyle(.tertiary)
+                Text("No Managed Software").font(.headline)
+                Text("No applications have been discovered yet. Run a scan to get started.")
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .frame(maxWidth: 280)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            VStack(spacing: 0) {
+                // Search bar
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                    TextField("Search managed apps…", text: $searchText)
+                        .textFieldStyle(.plain)
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.secondary.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+                Divider()
+
+                if filteredApps.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 28)).foregroundStyle(.tertiary)
+                        Text("No Results for \"\(searchText)\"").font(.headline)
+                        Text("Try a different search term.").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    let columns = [GridItem(.adaptive(minimum: 220, maximum: 380), spacing: 10)]
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(filteredApps) { app in
+                                Button { onSelect(app) } label: {
+                                    HStack(alignment: .top, spacing: 12) {
+                                        CachedAsyncImage(url: app.iconURL) { img in
+                                            img.resizable().scaledToFit()
+                                                .clipShape(RoundedRectangle(cornerRadius: 11))
+                                        } placeholder: {
+                                            Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                                .clipShape(RoundedRectangle(cornerRadius: 11))
+                                        }
+                                        .frame(width: 52, height: 52)
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(app.displayName)
+                                                .font(.subheadline).fontWeight(.semibold).lineLimit(2)
+                                            managedStatusLabel(app.updateStatus)
+                                            Spacer(minLength: 0)
+                                            if let appPath = app.primaryAppPath {
+                                                HStack {
+                                                    Spacer()
+                                                    Button("Open") {
+                                                        NSWorkspace.shared.open(URL(fileURLWithPath: appPath))
+                                                    }
+                                                    .buttonStyle(.borderedProminent)
+                                                    .controlSize(.small)
+                                                }
+                                                .padding(.top, 2)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
+                                }
+                                .buttonStyle(.accessoryBar)
+                                .background(Color.secondary.opacity(0.06))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+                        .padding(12)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func managedStatusLabel(_ status: String) -> some View {
+        switch status {
+        case "upToDate":
+            Label("Up to Date", systemImage: "checkmark.circle.fill")
+                .font(.caption).foregroundStyle(.green)
+        case "updateRequired":
+            Label("Update Available", systemImage: "arrow.up.circle.fill")
+                .font(.caption).foregroundStyle(.orange)
+        case "userSpace":
+            Label("Out of Scope", systemImage: "house.circle")
+                .font(.caption).foregroundStyle(.secondary)
+        default:
+            Label("Status Unknown", systemImage: "questionmark.circle")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct ManagedAppDetailView: View {
+    let app: AvailableSoftwareViewModel.ManagedApp
+    let onBack: () -> Void
+    @EnvironmentObject var vm: AvailableSoftwareViewModel
+
+    private var appHistory: [AvailableSoftwareViewModel.HistoryEntry] {
+        vm.updateHistory.filter { $0.label == app.id }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left.circle").imageScale(.large)
+                        Text("Managed Software")
+                    }.font(.body)
+                }
+                .buttonStyle(.borderless).foregroundStyle(.tint)
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(alignment: .top, spacing: 16) {
+                        CachedAsyncImage(url: app.iconURL) { img in
+                            img.resizable().scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        } placeholder: {
+                            Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .frame(width: 80, height: 80)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(app.displayName).font(.title).fontWeight(.bold)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Label(app.id, systemImage: "tag")
+                                .font(.caption).foregroundStyle(.secondary)
+                            switch app.updateStatus {
+                            case "upToDate":
+                                Label("Up to Date", systemImage: "checkmark.circle.fill")
+                                    .font(.caption).foregroundStyle(.green)
+                            case "updateRequired":
+                                Label("Update Available", systemImage: "arrow.up.circle.fill")
+                                    .font(.caption).foregroundStyle(.orange)
+                            case "userSpace":
+                                Label("Out of Scope — installed in user space", systemImage: "house.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            default:
+                                Label("Status Unknown", systemImage: "questionmark.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 12)
+                        if let appPath = app.primaryAppPath {
+                            Button("Open") {
+                                NSWorkspace.shared.open(URL(fileURLWithPath: appPath))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                        }
+                    }
+                    .padding(.bottom, 8)
+
+                    if !app.installPaths.isEmpty {
+                        locationSection
+                    }
+
+                    if !appHistory.isEmpty {
+                        historySection
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var locationSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Location").font(.headline)
+            Divider()
+            ForEach(app.installPaths, id: \.self) { path in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: path.hasSuffix(".app") ? "app.badge" : "folder")
+                        .frame(width: 16).foregroundStyle(.secondary)
+                    Text(path)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                        .frame(width: 2)
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting(
+                            [URL(fileURLWithPath: path)]
+                        )
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Reveal in Finder")
+                    
+                }
+            }
+        }
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("History").font(.headline)
+            Divider()
+            ForEach(appHistory) { entry in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: historyIcon(entry))
+                        .frame(width: 16).foregroundStyle(historyColor(entry))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(historyTitle(entry)).font(.subheadline)
+                        Text(entry.date, format: .dateTime.year().month(.abbreviated).day().hour().minute())
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+// MARK: - Update History
+
+private struct UpdateHistoryList: View {
+    let history: [AvailableSoftwareViewModel.HistoryEntry]
+    let onSelectLabel: (String) -> Void
+    @EnvironmentObject var vm: AvailableSoftwareViewModel
+
+    private var grouped: [(key: String, entries: [AvailableSoftwareViewModel.HistoryEntry])] {
+        let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMMM yyyy"
+        var groups: [(key: String, entries: [AvailableSoftwareViewModel.HistoryEntry])] = []
+        var seen: [String: Int] = [:]
+        for entry in history {
+            let key = fmt.string(from: entry.date)
+            if let idx = seen[key] {
+                groups[idx].entries.append(entry)
+            } else {
+                seen[key] = groups.count
+                groups.append((key: key, entries: [entry]))
+            }
+        }
+        _ = cal  // suppress unused warning
+        return groups
+    }
+
+    var body: some View {
+        if history.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "clock").font(.system(size: 36)).foregroundStyle(.tertiary)
+                Text("No Update History").font(.headline)
+                Text("Patcher hasn't applied any updates yet.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List {
+                ForEach(grouped, id: \.key) { group in
+                    Section(group.key) {
+                        ForEach(group.entries) { entry in
+                            Button { onSelectLabel(entry.label) } label: {
+                                HStack(spacing: 12) {
+                                    CachedAsyncImage(url: entry.iconURL) { img in
+                                        img.resizable().scaledToFit()
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    } placeholder: {
+                                        Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    .frame(width: 32, height: 32)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(entry.displayName).font(.subheadline).fontWeight(.medium)
+                                        Text(historyTitle(entry)).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(entry.date, format: .relative(presentation: .named))
+                                        .font(.caption2).foregroundStyle(.tertiary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct AppHistoryDetailView: View {
+    let label: String
+    let displayName: String
+    let iconURL: URL?
+    let entries: [AvailableSoftwareViewModel.HistoryEntry]
+    let onBack: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left.circle").imageScale(.large)
+                        Text("Update History")
+                    }.font(.body)
+                }
+                .buttonStyle(.borderless).foregroundStyle(.tint)
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(alignment: .top, spacing: 16) {
+                        CachedAsyncImage(url: iconURL) { img in
+                            img.resizable().scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        } placeholder: {
+                            Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .frame(width: 80, height: 80)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(displayName).font(.title).fontWeight(.bold)
+                            Label(label, systemImage: "tag")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 12)
+                    }
+                    .padding(.bottom, 8)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("History").font(.headline)
+                        Divider()
+                        ForEach(entries) { entry in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: historyIcon(entry))
+                                    .frame(width: 16).foregroundStyle(historyColor(entry))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(historyTitle(entry)).font(.subheadline)
+                                    Text(entry.date, format: .dateTime.year().month(.abbreviated).day().hour().minute())
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .textSelection(.enabled)
+                        }
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+// MARK: - History helpers (shared by Managed and History detail views)
+
+private func historyIcon(_ entry: AvailableSoftwareViewModel.HistoryEntry) -> String {
+    switch entry.eventType {
+    case "applied":      return "arrow.up.circle.fill"
+    case "selfService":  return "arrow.down.circle.fill"
+    case "discovered":   return "magnifyingglass.circle.fill"
+    default:             return "circle.fill"
+    }
+}
+
+private func historyColor(_ entry: AvailableSoftwareViewModel.HistoryEntry) -> Color {
+    switch entry.eventType {
+    case "applied":      return .green
+    case "selfService":  return .blue
+    case "discovered":   return .secondary
+    default:             return .secondary
+    }
+}
+
+private func historyTitle(_ entry: AvailableSoftwareViewModel.HistoryEntry) -> String {
+    switch entry.eventType {
+    case "applied":
+        let from = entry.fromVersion ?? "?"
+        let to   = entry.toVersion   ?? "?"
+        return "Updated: v\(from) → v\(to)"
+    case "selfService":
+        return "Self-service install: v\(entry.toVersion ?? "?")"
+    case "discovered":
+        return "Discovered: v\(entry.toVersion ?? "unknown")"
+    default:
+        return entry.eventType
     }
 }
 
