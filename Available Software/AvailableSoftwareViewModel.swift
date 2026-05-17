@@ -12,18 +12,61 @@ import Combine
 @MainActor
 final class AvailableSoftwareViewModel: ObservableObject {
 
-    @Published var preferences = Preferences()
+    @Published var preferences  = Preferences()
     @Published var activePhase: String?
     @Published var activeLabel: String?
     @Published var activeStatus: String?
     @Published var queuedLabel: String?
 
+    // MARK: - My Software data
+
+    @Published var stagedPatches: [StagedPatch]  = []
+    @Published var managedApps:   [ManagedApp]   = []
+    @Published var updateHistory: [HistoryEntry] = []
+
+    struct StagedPatch: Identifiable {
+        let id: String          // Installomator label
+        let displayName: String
+        let newVersion: String
+        let stagedDate: Date?
+        let iconURL: URL?
+    }
+
+    struct ManagedApp: Identifiable {
+        let id: String          // Installomator label
+        let displayName: String
+        let updateStatus: String    // "upToDate" | "updateRequired" | "userSpace" | "unknown"
+        let iconURL: URL?
+        let installPaths: [String]  // all paths from foundInstalls
+
+        var primaryAppPath: String? {
+            // Prefer a non-user-space .app; fall back to any .app
+            installPaths.first(where: { $0.hasSuffix(".app") && !$0.hasPrefix("/Users/") })
+                ?? installPaths.first(where: { $0.hasSuffix(".app") })
+        }
+    }
+
+    struct HistoryEntry: Identifiable {
+        let id = UUID()
+        let label: String
+        let displayName: String
+        let date: Date
+        let eventType: String       // "applied" | "selfService" | "discovered"
+        let fromVersion: String?
+        let toVersion: String?
+        let iconURL: URL?
+    }
+
+    // MARK: - Private
+
     private var xpcConnection: NSXPCConnection?
     private var configDirWatcher: DispatchSourceFileSystemObject?
     private var configDirFD: Int32 = -1
+    private var wasActive = false   // tracks phase transition for My Software refresh
 
     init() {
         startConfigDirWatch()
+        loadMySoftwareData()
     }
 
     deinit {
@@ -65,8 +108,12 @@ final class AvailableSoftwareViewModel: ObservableObject {
             activeLabel = nil
             activeStatus = nil
             queuedLabel = nil
+            // Refresh My Software data when a patcher phase finishes
+            if wasActive { loadMySoftwareData() }
+            wasActive = false
             return
         }
+        wasActive = true
         activePhase = phase
         activeLabel = dict["label"] as? String
         activeStatus = dict["status"] as? String
@@ -79,10 +126,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
     // MARK: - XPC
 
     func installLabel(_ label: String) {
-        // Prevent double-tap: already queued or actively running
         guard queuedLabel == nil && activeLabel == nil else { return }
-
-        // Optimistically mark as queued immediately so the button disables before XPC reply
         queuedLabel = label
 
         if xpcConnection == nil { setupXPCConnection() }
@@ -90,7 +134,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
             NSLog("AvailableSoftware XPC error: %@", error.localizedDescription)
             Task { @MainActor [weak self] in
                 self?.xpcConnection = nil
-                self?.queuedLabel = nil   // XPC failed — allow retry
+                self?.queuedLabel = nil
             }
         }) as? PatcherXPCProtocol else {
             NSLog("AvailableSoftware XPC: failed to obtain proxy for installLabel '\(label)'")
@@ -105,6 +149,17 @@ final class AvailableSoftwareViewModel: ObservableObject {
         }
     }
 
+    /// Triggers the apply phase to install all staged pending updates.
+    func triggerApply() {
+        guard activeLabel == nil else { return }
+        if xpcConnection == nil { setupXPCConnection() }
+        guard let proxy = xpcConnection?.remoteObjectProxyWithErrorHandler({ [weak self] error in
+            NSLog("AvailableSoftware XPC error (apply): %@", error.localizedDescription)
+            Task { @MainActor [weak self] in self?.xpcConnection = nil }
+        }) as? PatcherXPCProtocol else { return }
+        proxy.triggerPhase("apply") { _, _ in }
+    }
+
     private func setupXPCConnection() {
         let conn = NSXPCConnection(machServiceName: AppConstants.patcherXPCServiceName, options: .privileged)
         conn.remoteObjectInterface = NSXPCInterface(with: PatcherXPCProtocol.self)
@@ -112,5 +167,170 @@ final class AvailableSoftwareViewModel: ObservableObject {
         conn.interruptionHandler = { NSLog("AvailableSoftware XPC connection interrupted") }
         conn.resume()
         xpcConnection = conn
+    }
+
+    // MARK: - My Software loaders
+
+    func loadMySoftwareData() {
+        preferences    = Preferences()
+        stagedPatches  = buildStagedPatches()
+        managedApps    = buildManagedApps()
+        updateHistory  = buildUpdateHistory()
+    }
+
+    private func buildStagedPatches() -> [StagedPatch] {
+        let cacheURL = AppConstants.patcherCacheFolderURL
+        guard let subdirs = try? FileManager.default.contentsOfDirectory(
+            at: cacheURL, includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return [] }
+
+        let iso = ISO8601DateFormatter()
+        var result: [StagedPatch] = []
+
+        for dir in subdirs {
+            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            let label = dir.lastPathComponent
+
+            // Staged update = directory has at least one file that isn't metadata/history
+            let contents = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+            guard contents.contains(where: {
+                $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != "history.json"
+            }) else { continue }
+
+            let metaURL = dir.appendingPathComponent("metadata.json")
+            guard let data = try? Data(contentsOf: metaURL),
+                  let meta = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+                  let version = meta["appNewVersion"],
+                  let tsString = meta["stagedTimestamp"]
+            else { continue }
+
+            result.append(StagedPatch(
+                id: label,
+                displayName: resolveDisplayName(for: label),
+                newVersion: version,
+                stagedDate: iso.date(from: tsString),
+                iconURL: resolveIconURL(for: label)
+            ))
+        }
+
+        return result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private func buildManagedApps() -> [ManagedApp] {
+        let discoveredURL = AppConstants.patcherDiscoveredFolderURL
+        guard let plists = try? FileManager.default.contentsOfDirectory(
+            at: discoveredURL, includingPropertiesForKeys: nil
+        ) else { return [] }
+
+        let ignoreUserSpace = preferences.ignoreAppsInHomeFolder
+
+        var result: [ManagedApp] = []
+        for plist in plists where plist.pathExtension == "plist" {
+            let label = plist.deletingPathExtension().lastPathComponent
+            guard let data = try? Data(contentsOf: plist),
+                  let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+            else { continue }
+
+            let name = dict["name"] as? String ?? (label.prefix(1).uppercased() + label.dropFirst())
+
+            // Extract all install paths from foundInstalls.
+            let foundInstalls = dict["foundInstalls"] as? [[String: Any]] ?? []
+            let installPaths = foundInstalls.compactMap { $0["path"] as? String }.filter { !$0.isEmpty }
+
+            // Determine whether all known install paths are in user space.
+            let allUserSpace = !installPaths.isEmpty && installPaths.allSatisfy { $0.hasPrefix("/Users/") }
+
+            let status: String
+            if allUserSpace && ignoreUserSpace {
+                // IgnoreAppsInHomeFolder = true — patcher will never update this app.
+                status = "userSpace"
+            } else {
+                status = dict["updateStatus"] as? String ?? "unknown"
+            }
+
+            result.append(ManagedApp(id: label, displayName: name, updateStatus: status,
+                                     iconURL: resolveIconURL(for: label), installPaths: installPaths))
+        }
+
+        return result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private func buildUpdateHistory() -> [HistoryEntry] {
+        let cacheURL = AppConstants.patcherCacheFolderURL
+        guard let subdirs = try? FileManager.default.contentsOfDirectory(
+            at: cacheURL, includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return [] }
+
+        let iso = ISO8601DateFormatter()
+        var result: [HistoryEntry] = []
+
+        for dir in subdirs {
+            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            let label = dir.lastPathComponent
+            let historyURL = dir.appendingPathComponent("history.json")
+            guard let data = try? Data(contentsOf: historyURL),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rawEvents = json["events"] as? [[String: Any]]
+            else { continue }
+
+            let name    = resolveDisplayName(for: label)
+            let icon    = resolveIconURL(for: label)
+            var pending = false
+
+            for raw in rawEvents {
+                guard let type = raw["type"] as? String,
+                      let dateStr = raw["date"] as? String,
+                      let date = iso.date(from: dateStr)
+                else { continue }
+
+                switch type {
+                case "selfServiceInstall":
+                    pending = true
+                case "applied":
+                    result.append(HistoryEntry(
+                        label: label, displayName: name, date: date,
+                        eventType: pending ? "selfService" : "applied",
+                        fromVersion: raw["fromVersion"] as? String,
+                        toVersion:   raw["toVersion"]   as? String,
+                        iconURL: icon
+                    ))
+                    pending = false
+                case "discovered":
+                    result.append(HistoryEntry(
+                        label: label, displayName: name, date: date,
+                        eventType: "discovered",
+                        fromVersion: nil,
+                        toVersion: raw["installedVersion"] as? String,
+                        iconURL: icon
+                    ))
+                default:
+                    break
+                }
+            }
+        }
+
+        return result.sorted { $0.date > $1.date }
+    }
+
+    // MARK: - Private helpers
+
+    private func resolveDisplayName(for label: String) -> String {
+        let url = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+        if let data = try? Data(contentsOf: url),
+           let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+           let name = dict["name"] as? String, !name.isEmpty {
+            return name
+        }
+        return label.prefix(1).uppercased() + label.dropFirst()
+    }
+
+    private func resolveIconURL(for label: String) -> URL? {
+        let local = AppConstants.managedIconsFolderURL.appendingPathComponent("\(label).png")
+        if FileManager.default.fileExists(atPath: local.path) { return local }
+        let base = "https://raw.githubusercontent.com/"
+            + "\(preferences.installomatorGitHubMetadataAccount)/"
+            + "\(preferences.installomatorGitHubMetadataRepo)/"
+            + "refs/heads/\(preferences.installomatorGitHubMetadataBranch)/Icons/"
+        return URL(string: base + "\(label).png")
     }
 }
