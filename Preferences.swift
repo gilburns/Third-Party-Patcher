@@ -110,6 +110,19 @@ struct Preferences {
         pref("InstallomatorGitHubMetadataBranch", default: "main")
     }
 
+    // MARK: - Installomator Metadata Sync
+
+    /// When true, patcherscheduler periodically checks the metadata repo for updates
+    /// and syncs icons and metadata to a local cache. Defaults to true.
+    var metadataSyncEnabled: Bool {
+        prefs["MetadataSyncEnabled"] as? Bool ?? true
+    }
+
+    /// Days between checks for metadata repo updates. Defaults to 10.
+    var metadataSyncIntervalDays: Int {
+        prefs["MetadataSyncIntervalDays"] as? Int ?? 10
+    }
+
     // MARK: - Installomator Handling
     /// When true, disables all Installomator label management: no initial download, no update checks,
     /// and Installomator labels are never used during scan/check/stage. Managed labels (if present)
@@ -320,12 +333,6 @@ struct Preferences {
         prefs["SwiftDialogEnabled"] as? Bool ?? true
     }
 
-    /// Company or organization name shown in the Available Software app sidebar.
-    /// Defaults to "".
-    var companyName: String {
-        pref("CompanyName", default: "ABCDE Corp., Inc.")
-    }
-
     /// Title shown in the swiftDialog apply window.
     /// Defaults to "3rd Party Patcher" when the key is absent.
     var appTitle: String {
@@ -527,6 +534,22 @@ struct Preferences {
     /// causing a swiftDialog progress window to appear. Defaults to true.
     var showScanCheckProgressDialog: Bool {
         prefs["ShowScanCheckProgressDialog"] as? Bool ?? true
+    }
+
+    // MARK: - Available Software UI
+
+    /// Company or organization name shown in the Available Software app sidebar.
+    /// Defaults to "".
+    var companyName: String {
+        pref("CompanyName", default: "Patcher Corp.")
+    }
+
+    /// Absolute path to a PNG or ICNS file used as the Available Software app icon,
+    /// overriding the built-in icon in the Dock, Finder, and app switcher.
+    /// Leave empty to use the default built-in icon. Defaults to "".
+    var customAppIconPath: String? {
+        guard let value = prefs["CustomAppIconPath"] as? String, !value.isEmpty else { return nil }
+        return value
     }
 
     // MARK: - Webhooks
