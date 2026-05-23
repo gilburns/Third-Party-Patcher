@@ -238,7 +238,8 @@ struct SwiftDialogController {
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenProgressPosition,
         ]
-        if let overlay = resolveOverlayIcon(prefs: prefs) { jsonDict["overlayicon"] = overlay }
+        let overlayIcon = resolveOverlayIcon(prefs: prefs)
+        if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
 
         guard let jsonData   = try? JSONSerialization.data(withJSONObject: jsonDict),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return nil }
@@ -251,7 +252,8 @@ struct SwiftDialogController {
         guard (try? p.run()) != nil else { return nil }
 
         Thread.sleep(forTimeInterval: 3.0)
-        return UserProgressDialog(process: p, commandFileURL: cmdURL)
+        return UserProgressDialog(process: p, commandFileURL: cmdURL,
+                                  overlayIconPath: dialogIcon, initialOverlayPath: overlayIcon)
     }
 
     /// Waits for the dialog process to exit, however it exits.
@@ -315,13 +317,6 @@ struct SwiftDialogController {
             message += "\n\nThese \(itemWord) have been pending for **\(daysPending) day\(daysPending == 1 ? "" : "s")**."
         }
                 
-        var checkBox: [String: Any] = [
-            "checkbox": [
-                "label" : "Relaunch after update…",
-                "checked" : true,
-                "disabled" : false ]
-        ]
-
         var jsonDict: [String: Any] = [
             "title":           prefs.appTitle,
             "titlefont":       "size=22",
@@ -330,7 +325,6 @@ struct SwiftDialogController {
             "messagefont":     "size=16",
             "button2text":     "Continue",
             "infobox":         infoboxMessage,
-            "checkbox":        checkBox,
             "moveable":        true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenPosition,
@@ -484,16 +478,21 @@ struct SwiftDialogController {
         var args: [String] = [
             "--title",       "\(item.displayName) Update Paused",
             "--titlefont",   "size=18",
-            "--message",     "\(item.displayName) needs to be updated, but **\(processName)** is currently running.\n\nPlease save your work and quit \(processName) before the timer expires, or click **Skip** to postpone this update.",
+            "--message",     "\(item.displayName) needs to be updated, but **\(processName)** is currently running.\n\nPlease save your work and quit \(processName) before the timer expires, or click **Skip Update** to postpone this update.",
+            "--messagefont", "size=13",
             "--icon",    "caution",
+            "--iconsize", "80",
             "--timer",       "\(countdownSeconds)",
             "--button1text", "Skip Update",
             "--button2",
             "--button2text", "Quit \(processName)",
             "--moveable",
-            "--height",      "300",
-            "--width",       "420",
-            "--messagefont", "size=13",
+            "--height",      "320",
+            "--width",       "480",
+//            "--checkbox",    "Relaunch after update…",
+//            "--checkboxstyle", "regular",
+//            "--alwaysreturninput",
+
         ]
         let prefs = Preferences()
         if prefs.dialogOnTop { args.append("--ontop") }
@@ -585,10 +584,15 @@ struct SwiftDialogController {
 struct UserProgressDialog {
     private let process: Process
     private let commandFileURL: URL
+    private let overlayIconPath: String?    // initial dialogIcon — used as overlay during per-label progress
+    private let initialOverlayPath: String? // initial overlayicon — restored after the loop completes
 
-    init(process: Process, commandFileURL: URL) {
+    init(process: Process, commandFileURL: URL,
+         overlayIconPath: String? = nil, initialOverlayPath: String? = nil) {
         self.process = process
         self.commandFileURL = commandFileURL
+        self.overlayIconPath = overlayIconPath
+        self.initialOverlayPath = initialOverlayPath
     }
 
     func update(message: String) {
@@ -599,10 +603,41 @@ struct UserProgressDialog {
         send("progresstext: \(text)")
     }
 
-    func setProgress(_ current: Int, of total: Int, label: String) {
+    func setProgress(_ current: Int, of total: Int, label: String, icon: String? = nil) {
+        if let icon {
+            send("icon: \(icon)")
+            if let overlayIconPath { send("overlayicon: \(overlayIconPath)") }
+        }
         send("message: \(label)")
         send("progress: \(current)")
         send("progresstext: \(current) of \(total)")
+    }
+
+    /// Signals the start of a long download — updates label/icon and switches to indeterminate spinner.
+    func beginItem(current: Int, of total: Int, label: String, icon: String? = nil) {
+        if let icon {
+            send("icon: \(icon)")
+            if let overlayIconPath { send("overlayicon: \(overlayIconPath)") }
+        }
+        send("message: \(label)")
+        send("progresstext: \(current) of \(total)")
+        send("progress: indeterminate")
+    }
+
+    /// Signals the end of a download — restores the determinate bar advanced to `current`.
+    func completeItem(current: Int, of total: Int) {
+        send("progress: \(current)")
+        send("progresstext: \(current) of \(total)")
+    }
+
+    /// Restores the icon and overlayicon to what was shown when the dialog first launched.
+    func resetIcons() {
+        if let overlayIconPath { send("icon: \(overlayIconPath)") }
+        if let initialOverlayPath {
+            send("overlayicon: \(initialOverlayPath)")
+        } else {
+            send("overlayicon: none")
+        }
     }
 
     func close() {
