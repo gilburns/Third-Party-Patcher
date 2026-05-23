@@ -41,6 +41,7 @@ struct PatcherScheduler {
         let stageDue     = shouldRunStage(state: state, now: now)
         let dialogDue    = prefs.swiftDialogEnabled &&
                            !FileManager.default.fileExists(atPath: AppConstants.swiftDialogBinaryURL.path)
+        let metadataDue  = shouldRunMetadataSync(state: state, now: now)
 
         // ── Internet connectivity check ───────────────────────────────────────
         // Performed once, only when at least one phase requires the network.
@@ -48,7 +49,7 @@ struct PatcherScheduler {
         // by confirming the response body from captive.apple.com says "Success".
         // apply is intentionally excluded — it runs from already-staged files.
         // lightScan is included because scanSingleLabel (called on hits) needs the network.
-        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || dialogDue
+        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || dialogDue || metadataDue
         let networkOK: Bool
         if networkPhaseDue {
             networkOK = isInternetAvailable()
@@ -61,6 +62,27 @@ struct PatcherScheduler {
 
         // ── Bootstrap: ensure swiftDialog is installed before apply can use it ──
         if dialogDue && networkOK { ensureSwiftDialog() }
+
+        // ── Metadata sync ─────────────────────────────────────────────────────
+        // Checks the metadata repo's HEAD SHA against the stored value.
+        // Downloads the full tarball only when a new commit is detected.
+        if metadataDue && networkOK {
+            if let latestSHA = fetchMetadataSHA(prefs: prefs) {
+                if latestSHA != state.lastMetadataSHA {
+                    Logger.log("ℹ️ MetadataSync: new commit …\(String(latestSHA.suffix(8))) — syncing.")
+                    writeActivePhase("metadata")
+                    runSubcommand("metadata")
+                    clearActivePhase()
+                    state.lastMetadataSHA = latestSHA
+                } else {
+                    Logger.log("ℹ️ MetadataSync: already up to date (…\(String(latestSHA.suffix(8)))).")
+                }
+            } else {
+                Logger.log("⚠️ MetadataSync: could not fetch latest SHA — will retry at next interval.")
+            }
+            state.lastMetaSyncDate = now
+            dirty = true
+        }
 
         // ── Scan ──────────────────────────────────────────────────────────────
         // Long interval (default 30 days). Also fires when Installomator labels
@@ -322,6 +344,60 @@ struct PatcherScheduler {
         return false
     }
 
+
+    // MARK: - Metadata sync
+
+    func shouldRunMetadataSync(state: SchedulerState, now: Date) -> Bool {
+        guard prefs.metadataSyncEnabled else {
+            Logger.log("ℹ️ MetadataSync: disabled by preference.")
+            return false
+        }
+        if !FileManager.default.fileExists(atPath: AppConstants.installomatorMetadataFolderURL.path) {
+            Logger.log("ℹ️ MetadataSync: no local cache found — checking now.")
+            return true
+        }
+        guard let lastCheck = state.lastMetaSyncDate else {
+            Logger.log("ℹ️ MetadataSync: never checked — checking now.")
+            return true
+        }
+        let daysSince = Calendar.current.dateComponents([.day], from: lastCheck, to: now).day ?? 0
+        let interval  = prefs.metadataSyncIntervalDays
+        if daysSince >= interval {
+            Logger.log("ℹ️ MetadataSync: due (\(daysSince)d since last check, interval \(interval)d).")
+            return true
+        }
+        Logger.log("ℹ️ MetadataSync: not due (\(daysSince)/\(interval)d since last check).")
+        return false
+    }
+
+    /// Hits the GitHub git refs API to retrieve the current HEAD SHA for the
+    /// configured metadata branch. Returns nil if the request fails.
+    private func fetchMetadataSHA(prefs: Preferences) -> String? {
+        let account = prefs.installomatorGitHubMetadataAccount
+        let repo    = prefs.installomatorGitHubMetadataRepo
+        let branch  = prefs.installomatorGitHubMetadataBranch
+        let urlStr  = "https://api.github.com/repos/\(account)/\(repo)/git/ref/heads/\(branch)"
+        guard let url = URL(string: urlStr) else { return nil }
+
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("patcher/\(AppConstants.patcherVersion)", forHTTPHeaderField: "User-Agent")
+
+        var sha: String?
+        let semaphore = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            defer { semaphore.signal() }
+            guard error == nil,
+                  let data,
+                  let json   = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let object = json["object"] as? [String: Any],
+                  let s      = object["sha"] as? String
+            else { return }
+            sha = s
+        }.resume()
+        semaphore.wait()
+        return sha
+    }
 
     // MARK: - Apply schedule
 
@@ -752,7 +828,7 @@ struct PatcherScheduler {
 
         case "stage":
             writeActivePhase("stage", triggeredBy: "xpc")
-            runSubcommand("stage")
+            runSubcommand("stage", args: ["--user-initiated"])
             clearActivePhase()
             state.lastStageDate = now
             if hasStagedUpdates() {
@@ -785,6 +861,17 @@ struct PatcherScheduler {
                 runSubcommand("sendReport")
                 state.lastWebhookReportDate = now
             }
+            dirty = true
+
+        case "metadata":
+            writeActivePhase("metadata", triggeredBy: "xpc")
+            runSubcommand("metadata")
+            clearActivePhase()
+            // Fetch and record the current SHA so the next cadence check is accurate.
+            if let sha = fetchMetadataSHA(prefs: prefs) {
+                state.lastMetadataSHA = sha
+            }
+            state.lastMetaSyncDate = now
             dirty = true
 
         default:
