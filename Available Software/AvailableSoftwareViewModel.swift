@@ -62,9 +62,11 @@ final class AvailableSoftwareViewModel: ObservableObject {
     private var xpcConnection: NSXPCConnection?
     private var configDirWatcher: DispatchSourceFileSystemObject?
     private var configDirFD: Int32 = -1
-    private var wasActive = false   // tracks phase transition for My Software refresh
+    private var wasActive = false       // tracks phase transition for My Software refresh
+    private var appliedIconPath: String? // icon path last applied to the Dock/Finder
 
     init() {
+        appliedIconPath = Preferences().customAppIconPath
         startConfigDirWatch()
         loadMySoftwareData()
     }
@@ -169,9 +171,54 @@ final class AvailableSoftwareViewModel: ObservableObject {
         xpcConnection = conn
     }
 
+    // MARK: - Icon change detection
+
+    func checkIconChange() {
+        let newPath = Preferences().customAppIconPath
+        guard newPath != appliedIconPath else { return }
+        appliedIconPath = newPath
+
+        // Ask the daemon to apply the Finder icon change immediately (root required).
+        let bundlePath = Bundle.main.bundlePath
+        if xpcConnection == nil { setupXPCConnection() }
+        guard let proxy = xpcConnection?.remoteObjectProxyWithErrorHandler({ [weak self] error in
+            NSLog("AvailableSoftware iconChange XPC error: %@", error.localizedDescription)
+            Task { @MainActor [weak self] in self?.xpcConnection = nil }
+        }) as? PatcherXPCProtocol else { return }
+
+        proxy.setAppIcon(iconPath: newPath, bundlePath: bundlePath) { success, message in
+            NSLog("AvailableSoftware setAppIcon (change): success=%d message=%@", success, message)
+            guard success else { return }
+            Task { @MainActor in self.promptRelaunch() }
+        }
+    }
+
+    private func promptRelaunch() {
+        let alert = NSAlert()
+        alert.messageText = "App Icon Changed"
+        alert.informativeText = "The app icon preference has been updated. Relaunch to apply the new icon to the Dock and app switcher."
+        alert.addButton(withTitle: "Relaunch Now")
+        alert.addButton(withTitle: "Later")
+        alert.alertStyle = .informational
+        if alert.runModal() == .alertFirstButtonReturn {
+            relaunchApp()
+        }
+    }
+
+    private func relaunchApp() {
+        let bundlePath = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // Brief delay lets the current process fully tear down before the new one opens.
+        task.arguments = ["-c", "sleep 0.5 && open \"\(bundlePath)\""]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+
     // MARK: - My Software loaders
 
     func loadMySoftwareData() {
+        checkIconChange()
         preferences    = Preferences()
         stagedPatches  = buildStagedPatches()
         managedApps    = buildManagedApps()
@@ -325,8 +372,15 @@ final class AvailableSoftwareViewModel: ObservableObject {
     }
 
     private func resolveIconURL(for label: String) -> URL? {
-        let local = AppConstants.managedIconsFolderURL.appendingPathComponent("\(label).png")
-        if FileManager.default.fileExists(atPath: local.path) { return local }
+        // 1. Admin-managed icons (highest priority — intentional overrides).
+        let managed = AppConstants.managedIconsFolderURL.appendingPathComponent("\(label).png")
+        if FileManager.default.fileExists(atPath: managed.path) { return managed }
+        // 2. Locally synced metadata repo (fast, works offline after first sync).
+        let synced = AppConstants.installomatorMetadataFolderURL
+            .appendingPathComponent("Icons")
+            .appendingPathComponent("\(label).png")
+        if FileManager.default.fileExists(atPath: synced.path) { return synced }
+        // 3. Remote fallback (used before first sync or for labels with no local icon).
         let base = "https://raw.githubusercontent.com/"
             + "\(preferences.installomatorGitHubMetadataAccount)/"
             + "\(preferences.installomatorGitHubMetadataRepo)/"
