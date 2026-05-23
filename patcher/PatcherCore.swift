@@ -221,6 +221,64 @@ func countPendingUpdates() -> Int {
     }.count
 }
 
+/// Returns the number of discovered apps that will actually be downloaded in the next stage run.
+/// Mirrors the skip logic in downloadAndStageUpdates exactly so the count matches what the loop processes.
+func countStageableUpdates() -> Int {
+    let fm = FileManager.default
+    guard let plists = try? fm.contentsOfDirectory(
+        at: AppConstants.patcherDiscoveredFolderURL, includingPropertiesForKeys: nil
+    ) else { return 0 }
+
+    let prefs = Preferences()
+    let stageBroken = Set(loadStageBrokenState().labels)
+    let applyBrokenVersions = loadApplyBrokenState().brokenVersions
+    let ignoreHomeFolder = prefs.ignoreAppsInHomeFolder
+    let ignoreUnknown = prefs.ignoreUnknownVersionLabels
+    let unknownThrottleDays = prefs.unknownVersionCheckIntervalDays
+    let versionMismatchThrottleDays = prefs.versionMismatchThrottleDays
+
+    return plists.filter { $0.pathExtension == "plist" }.filter { url in
+        let label = url.deletingPathExtension().lastPathComponent
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let status = dict["updateStatus"] as? String,
+              status == UpdateStatus.updateRequired.rawValue || status == UpdateStatus.unknown.rawValue
+        else { return false }
+
+        guard !stageBroken.contains(label) else { return false }
+
+        let appNewVersion   = dict["appNewVersion"] as? String ?? ""
+        let downloadURLStr  = dict["downloadURL"]   as? String ?? ""
+
+        if let brokenVersion = applyBrokenVersions[label],
+           appNewVersion == brokenVersion || appNewVersion.isEmpty { return false }
+
+        // Mirror the main loop's already-staged check exactly: version AND URL must match.
+        // A broad "has any stagedTimestamp" check is wrong — the cache may hold an older
+        // staging whose version differs from the current appNewVersion, and the main loop
+        // would re-download it while the broad check would exclude it from the count.
+        if let cachedMeta = loadCacheMetadata(label: label),
+           cachedMeta["appNewVersion"] == appNewVersion,
+           cachedMeta["downloadURL"]   == downloadURLStr { return false }
+
+        if status == UpdateStatus.unknown.rawValue {
+            if ignoreUnknown { return false }
+            if unknownVersionThrottleActive(label: label, intervalDays: unknownThrottleDays) { return false }
+        }
+
+        if status == UpdateStatus.updateRequired.rawValue,
+           unknownVersionThrottleActive(label: label, intervalDays: versionMismatchThrottleDays,
+                                        currentAppNewVersion: appNewVersion) { return false }
+
+        if ignoreHomeFolder,
+           let foundInstalls = dict["foundInstalls"] as? [[String: Any]],
+           !foundInstalls.isEmpty,
+           foundInstalls.allSatisfy({ ($0["path"] as? String ?? "").hasPrefix("/Users/") }) { return false }
+
+        return true
+    }.count
+}
+
 // MARK: - Start Scanning
 func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     let scanStart = Date()
@@ -455,7 +513,7 @@ func scanSingleLabel(_ labelName: String) -> Bool {
 
 
 /// MARK: - Check Discovered Apps
-func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
+func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) -> Void)? = nil) {
     let checkStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔎 Update check started at \(iso.string(from: checkStart))")
@@ -545,7 +603,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)
                    let name = dict["name"] as? String, !name.isEmpty { return name }
                 return label
             }()
-            progressHandler?(checkedCount, discoveredLabels.count, displayName)
+            progressHandler?(checkedCount, discoveredLabels.count, displayName, label)
             Logger.log("--------------------------------------------------")
             Logger.log("🔎 Checking: \(label).sh")
 
@@ -1225,6 +1283,16 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                         }
                     }
                 }
+                // For pkg-only installs (no foundInstalls or no .app path found),
+                // fall back to the locally synced metadata icon.
+                if iconPath == nil {
+                    let metaIcon = AppConstants.installomatorMetadataFolderURL
+                        .appendingPathComponent("Icons")
+                        .appendingPathComponent("\(lbl).png")
+                    if fileManager.fileExists(atPath: metaIcon.path) {
+                        iconPath = metaIcon.path
+                    }
+                }
             }
             dialogItems.append(SwiftDialogController.ApplyItem(label: lbl, displayName: displayName, iconPath: iconPath))
         }
@@ -1478,18 +1546,25 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             }
 
             if success {
+                // When appNewVersion was unknown at staging time (e.g. pkgInDmg version inspection
+                // is unsupported), read the actual version that is now on disk so history and the
+                // discovered plist reflect the real installed version.
+                let effectiveToVersion = appNewVersion.isEmpty
+                    ? (postInstallVersion(label: label, plist: plist) ?? "")
+                    : appNewVersion
+
                 updateDiscoveredPlist(label: label, updates: [
-                    "installedVersion": appNewVersion,
+                    "installedVersion": effectiveToVersion,
                     "updateStatus": UpdateStatus.upToDate.rawValue
                 ])
                 try? fileManager.removeItem(at: stagedFileURL)
                 appendCacheInstallTimestamp(label: label, timestamp: iso.string(from: Date()), labelCacheURL: labelDirURL)
-                recordApplied(label: label, fromVersion: priorInstalledVersion, toVersion: appNewVersion, date: Date())
+                recordApplied(label: label, fromVersion: priorInstalledVersion, toVersion: effectiveToVersion, date: Date())
                 appendWebhookApplyResult(label: label, displayName: dialogItem.displayName,
                                          fromVersion: priorInstalledVersion.isEmpty ? nil : priorInstalledVersion,
-                                         toVersion: appNewVersion.isEmpty ? nil : appNewVersion,
+                                         toVersion: effectiveToVersion.isEmpty ? nil : effectiveToVersion,
                                          success: true)
-                dialog?.setSuccess(item: dialogItem, toVersion: appNewVersion)
+                dialog?.setSuccess(item: dialogItem, toVersion: effectiveToVersion)
                 Logger.log("✅ Successfully installed \(label)")
                 appliedCount += 1
                 applyFailedAttempts.removeValue(forKey: label)
@@ -1912,6 +1987,75 @@ private func runInstaller(pkgPath: String, label: String) -> Bool {
 }
 
 
+/// Reads the version that is actually installed on disk after a successful install.
+/// Used when appNewVersion was unknown at staging time (e.g. pkgInDmg, where version
+/// inspection is not supported). Priority: package receipt → app bundle Info.plist.
+private func postInstallVersion(label: String, plist: [String: Any]) -> String? {
+    let fm = FileManager.default
+
+    // 1. Package receipt — most reliable for pkg-based installers.
+    if let packageID = plist["packageID"] as? String, !packageID.isEmpty {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/pkgutil")
+        p.arguments = ["--pkg-info-plist", packageID]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError  = Pipe()
+        guard (try? p.run()) != nil else { return nil }
+        p.waitUntilExit()
+        if p.terminationStatus == 0,
+           let dict = try? PropertyListSerialization.propertyList(
+               from: pipe.fileHandleForReading.readDataToEndOfFile(),
+               options: [], format: nil) as? [String: Any],
+           let version = dict["pkg-version"] as? String,
+           !version.isEmpty,
+           !version.split(separator: ".").allSatisfy({ $0 == "0" }) {
+            Logger.log("ℹ️ postInstallVersion: \(label) → \(version) (via pkgutil)")
+            return version
+        }
+    }
+
+    // 2. App bundle Info.plist in standard install locations.
+    let versionKey = (plist["versionKey"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        ?? "CFBundleShortVersionString"
+
+    let appBundleName: String? = {
+        if let n = plist["appName"] as? String, !n.isEmpty { return n }
+        if let n = plist["name"]    as? String, !n.isEmpty { return n + ".app" }
+        return nil
+    }()
+
+    let searchRoots = ["/Applications", "/Applications/Utilities"]
+
+    if let appBundleName {
+        for root in searchRoots {
+            let appPath = "\(root)/\(appBundleName)"
+            guard fm.fileExists(atPath: appPath) else { continue }
+            if let dict = NSDictionary(contentsOfFile: "\(appPath)/Contents/Info.plist"),
+               let version = dict[versionKey] as? String, !version.isEmpty {
+                Logger.log("ℹ️ postInstallVersion: \(label) → \(version) (via bundle at \(appPath))")
+                return version
+            }
+        }
+    }
+
+    // 3. Any .app path recorded in foundInstalls (covers non-standard locations).
+    if let foundInstalls = plist["foundInstalls"] as? [[String: Any]] {
+        for install in foundInstalls {
+            guard let path = install["path"] as? String, path.hasSuffix(".app"),
+                  fm.fileExists(atPath: path) else { continue }
+            if let dict = NSDictionary(contentsOfFile: "\(path)/Contents/Info.plist"),
+               let version = dict[versionKey] as? String, !version.isEmpty {
+                Logger.log("ℹ️ postInstallVersion: \(label) → \(version) (via foundInstalls at \(path))")
+                return version
+            }
+        }
+    }
+
+    Logger.log("ℹ️ postInstallVersion: could not determine installed version for \(label)")
+    return nil
+}
+
 /// Writes the post-install metadata.json, recording installedTimestamp and preserving any
 /// unknownVersionCheckCount. Removes the staged-file keys (appNewVersion, downloadURL,
 /// stagedTimestamp) so the stage deduplication check does not falsely match on the next run.
@@ -1938,7 +2082,9 @@ private func appendCacheInstallTimestamp(label: String, timestamp: String, label
 
 // MARK: - Download and Stage Updates
 
-func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: String? = nil) {
+func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: String? = nil,
+                             onDownloadStart: ((Int, Int, String, String) -> Void)? = nil,
+                             onDownloadComplete: ((Int, Int) -> Void)? = nil) {
     let stageStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("⬇️ Staging started at \(iso.string(from: stageStart))")
@@ -2001,6 +2147,10 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
         var versionMismatchThrottledCount = 0
         var unknownCheckedUpToDateCount = 0
         var failedCount = 0
+
+        // Pre-count items that will actually be downloaded, for progress reporting.
+        let stageTotal: Int = onDownloadStart != nil ? countStageableUpdates() : 0
+        var stagingCount = 0
 
         for plistURL in plistFiles {
             let label = plistURL.deletingPathExtension().lastPathComponent
@@ -2119,6 +2269,15 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
             Logger.log("⬇️ Staging: \(label) v\(appNewVersion) (\(type))")
             Logger.log("   URL: \(downloadURLString)")
 
+            stagingCount += 1
+            let displayName: String = {
+                guard let data = try? Data(contentsOf: plistURL),
+                      let dict = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+                      let name = dict["name"] as? String, !name.isEmpty else { return label }
+                return name
+            }()
+            onDownloadStart?(stagingCount, stageTotal, displayName, label)
+
             // Create per-label cache directory
             let labelCacheURL = AppConstants.patcherCacheFolderURL.appendingPathComponent(label)
             do {
@@ -2140,7 +2299,9 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
 
             // Download
             Logger.log("⬇️ Downloading \(fileName)...")
-            guard downloadFile(from: downloadURL, to: destinationURL, bandwidthLimit: bandwidthLimit, curlOptions: curlOptions) else {
+            let downloadOK = downloadFile(from: downloadURL, to: destinationURL, bandwidthLimit: bandwidthLimit, curlOptions: curlOptions)
+            onDownloadComplete?(stagingCount, stageTotal)   // advance progress bar regardless of outcome
+            guard downloadOK else {
                 Logger.log("❌ Download failed for \(label)")
                 failedCount += 1
                 let attempts = (stageFailedAttempts[label] ?? 0) + 1
