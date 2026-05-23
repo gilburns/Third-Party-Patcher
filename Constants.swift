@@ -72,6 +72,11 @@ struct AppConstants {
             .appendingPathComponent("Installomator")
     }()
 
+    static let installomatorMetadataFolderURL: URL = {
+        patcherFolderURL
+            .appendingPathComponent("Installomator-Metadata")
+    }()
+
     static let installomatorLabelsFolderURL: URL = {
         installomatorFolderURL
             .appendingPathComponent("Labels")
