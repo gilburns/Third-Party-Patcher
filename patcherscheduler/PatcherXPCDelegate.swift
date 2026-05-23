@@ -6,6 +6,7 @@
 //  dispatches phase requests onto the shared serial work queue.
 //
 
+import AppKit
 import Foundation
 
 // MARK: - Listener delegate
@@ -42,7 +43,7 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
     }
 
     func triggerPhase(_ phase: String, reply: @escaping (Bool, String) -> Void) {
-        let valid = ["scan", "check", "stage", "apply"]
+        let valid = ["scan", "check", "stage", "apply", "metadata"]
         guard valid.contains(phase) else {
             reply(false, "Unknown phase '\(phase)'. Valid: \(valid.joined(separator: ", "))")
             return
@@ -68,5 +69,27 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
         workQueue.async {
             PatcherScheduler(prefs: Preferences()).ensureLabel(safe)
         }
+    }
+
+    func setAppIcon(iconPath: String?, bundlePath: String, reply: @escaping (Bool, String) -> Void) {
+        guard bundlePath.hasSuffix(".app"),
+              FileManager.default.fileExists(atPath: bundlePath)
+        else {
+            reply(false, "Invalid bundle path: '\(bundlePath)'")
+            return
+        }
+
+        if let iconPath {
+            guard let image = NSImage(contentsOfFile: iconPath) else {
+                reply(false, "Could not load icon from: '\(iconPath)'")
+                return
+            }
+            NSWorkspace.shared.setIcon(image, forFile: bundlePath, options: [])
+            Logger.log("ℹ️ XPC: applied custom app icon '\(iconPath)' on '\(bundlePath)'.")
+        } else {
+            NSWorkspace.shared.setIcon(nil, forFile: bundlePath, options: [])
+            Logger.log("ℹ️ XPC: cleared custom app icon from '\(bundlePath)'.")
+        }
+        reply(true, "ok")
     }
 }
