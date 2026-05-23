@@ -58,22 +58,43 @@ final class CatalogViewModel: ObservableObject {
         metadataBase = rawBase + "Metadata/"
         iconBase     = rawBase + "Icons/"
 
-        // Discard any label names that have no corresponding label file on disk.
-        // This prevents stale or mistyped OptionalLabels entries from appearing in the grid.
+        // Load broken-label sets from config.json to exclude from the grid.
+        let brokenLabels: Set<String> = {
+            guard let data = try? Data(contentsOf: AppConstants.patcherConfigFileURL),
+                  let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return [] }
+            let scan  = config["lastScanBrokenLabels"] as? [String] ?? []
+            let stage = config["stageBrokenLabels"]    as? [String] ?? []
+            return Set(scan + stage)
+        }()
+
+        // Discard any label names that have no corresponding label file on disk,
+        // or that are flagged as broken in config.json (scan or stage failures).
+        // This prevents stale, mistyped, or broken OptionalLabels entries from appearing in the grid.
         let validLabels = preferences.optionalLabels.filter { label in
             guard labelFileExists(label) else {
                 NSLog("Available Software: label '%@' not found in label folders — skipping.", label)
+                return false
+            }
+            if brokenLabels.contains(label) {
+                NSLog("Available Software: label '%@' is broken (scan/stage) — skipping.", label)
                 return false
             }
             return true
         }
 
         items = validLabels.map { label in
-            // Prefer a local managed icon; fall back to the remote URL
-            let localIconURL = AppConstants.managedIconsFolderURL.appendingPathComponent("\(label).png")
-            let iconURL: URL? = FileManager.default.fileExists(atPath: localIconURL.path)
-                ? localIconURL
-                : URL(string: iconBase + "\(label).png")
+            // Priority: admin-managed icon → locally synced repo icon → remote URL
+            let managedIcon = AppConstants.managedIconsFolderURL.appendingPathComponent("\(label).png")
+            let syncedIcon  = AppConstants.installomatorMetadataFolderURL
+                .appendingPathComponent("Icons")
+                .appendingPathComponent("\(label).png")
+            let iconURL: URL? = {
+                let fm = FileManager.default
+                if fm.fileExists(atPath: managedIcon.path) { return managedIcon }
+                if fm.fileExists(atPath: syncedIcon.path)  { return syncedIcon }
+                return URL(string: iconBase + "\(label).png")
+            }()
 
             var item = CatalogItem(
                 id: label,
@@ -94,7 +115,7 @@ final class CatalogViewModel: ObservableObject {
     // MARK: - Remote metadata fetch
 
     private func fetchMetadata(for label: String) async {
-        // Local managed metadata overrides remote entirely
+        // 1. Admin-managed metadata overrides everything
         if let localMeta = loadLocalMetadata(for: label) {
             metadataCache[label] = localMeta
             guard let idx = items.firstIndex(where: { $0.id == label }) else { return }
@@ -102,12 +123,19 @@ final class CatalogViewModel: ObservableObject {
             return
         }
 
-        // Try localized remote plist first (skipped when language is already English)
+        // 2. Locally synced metadata repo (fast, works offline)
+        if let syncedMeta = loadSyncedMetadata(for: label) {
+            metadataCache[label] = syncedMeta
+            guard let idx = items.firstIndex(where: { $0.id == label }) else { return }
+            apply(syncedMeta, to: &items[idx])
+            return
+        }
+
+        // 3. Remote fetch — used before first sync or when label has no local metadata
         var meta: RemoteMetadata?
         if detectedLangCode != "en" {
             meta = await fetchRemoteMetadata(metadataBase + "\(detectedLangCode)/\(label).plist")
         }
-        // Fall back to base (English) remote plist
         if meta == nil {
             meta = await fetchRemoteMetadata(metadataBase + "\(label).plist")
         }
@@ -120,6 +148,23 @@ final class CatalogViewModel: ObservableObject {
 
     private func loadLocalMetadata(for label: String) -> RemoteMetadata? {
         let base = AppConstants.managedMetadataFolderURL
+        let candidates: [URL] = detectedLangCode == "en"
+            ? [base.appendingPathComponent("\(label).plist")]
+            : [base.appendingPathComponent("\(detectedLangCode)/\(label).plist"),
+               base.appendingPathComponent("\(label).plist")]
+
+        for url in candidates {
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url),
+                  let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+            else { continue }
+            return remoteMetadata(from: dict)
+        }
+        return nil
+    }
+
+    private func loadSyncedMetadata(for label: String) -> RemoteMetadata? {
+        let base = AppConstants.installomatorMetadataFolderURL.appendingPathComponent("Metadata")
         let candidates: [URL] = detectedLangCode == "en"
             ? [base.appendingPathComponent("\(label).plist")]
             : [base.appendingPathComponent("\(detectedLangCode)/\(label).plist"),
