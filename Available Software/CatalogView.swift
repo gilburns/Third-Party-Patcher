@@ -205,7 +205,7 @@ struct CatalogView: View {
             // tapping the already-selected item still fires an action and can
             // dismiss the detail view, returning to the grid.
             List {
-                Section {
+                Section("Available Software") {
                     sidebarRow(.all,          label: "All Applications", icon: "square.grid.2x2",       badge: catalog.items.count)
                     sidebarRow(.installed,    label: "Installed",        icon: "checkmark.circle.fill",  badge: installedCount)
                     sidebarRow(.notInstalled, label: "Not Installed",    icon: "arrow.down.circle",      badge: notInstalledCount)
@@ -219,6 +219,9 @@ struct CatalogView: View {
                     }
                 }
 
+                Divider()
+                    .padding(.bottom, 8)
+                
                 Section("My Software") {
                     sidebarRow(.managedSoftware, label: "Managed Software",  icon: "desktopcomputer",         badge: vm.managedApps.count)
                     sidebarRow(.pendingUpdates,  label: "Pending Updates",   icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
@@ -423,7 +426,7 @@ struct CatalogView: View {
     }
 }
 
-// MARK: - Grid item
+// MARK: - Catalog Grid item
 
 private struct CatalogGridItem: View {
     let item: CatalogViewModel.CatalogItem
@@ -515,7 +518,7 @@ private struct CatalogGridItem: View {
     }
 }
 
-// MARK: - Item detail view (inline, replaces grid)
+// MARK: - Catalog Item detail view (inline, replaces grid)
 
 private struct ItemDetailView: View {
     let item: CatalogViewModel.CatalogItem
@@ -875,6 +878,20 @@ private struct PendingUpdatesGrid: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            
+            HStack (alignment: .center) {
+                Text("\(patches.count) Pending Update\(patches.count == 1 ? "" : "s")")
+                    .font(.body)
+                    .padding(.leading, 20)
+             Spacer()
+                Button("Apply All Updates") { vm.triggerApply() }
+                    .buttonStyle(.borderedProminent).controlSize(.regular)
+                    .disabled(patches.count == 0)
+                    .padding(9)
+                Spacer()
+                    .frame(width: 10)
+            }
+            Divider()
             let columns = [GridItem(.adaptive(minimum: 220, maximum: 380), spacing: 10)]
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 10) {
@@ -920,6 +937,7 @@ private struct PendingUpdateDetailView: View {
     let patch: AvailableSoftwareViewModel.StagedPatch
     let onBack: () -> Void
     @EnvironmentObject var vm: AvailableSoftwareViewModel
+    @State private var metadata: LabelMetadata?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -929,6 +947,7 @@ private struct PendingUpdateDetailView: View {
                         Image(systemName: "chevron.left.circle").imageScale(.large)
                         Text("Pending Updates")
                     }.font(.body)
+                        .padding(.top, 1)
                 }
                 .buttonStyle(.borderless).foregroundStyle(.tint)
                 Spacer()
@@ -951,6 +970,10 @@ private struct PendingUpdateDetailView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(patch.displayName).font(.title).fontWeight(.bold)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let publisher = metadata?.publisher, !publisher.isEmpty {
+                                Label(publisher, systemImage: "building.columns")
+                                    .font(.caption).fontWeight(.bold).foregroundStyle(.secondary)
+                            }
                             if let date = patch.stagedDate {
                                 Label("Staged \(date, format: .relative(presentation: .named))", systemImage: "clock")
                                     .font(.caption).foregroundStyle(.secondary)
@@ -976,11 +999,14 @@ private struct PendingUpdateDetailView: View {
                             }
                         }
                     }
+
+                    MetadataInfoSections(metadata: metadata)
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .task { metadata = loadLabelMetadata(for: patch.id) }
     }
 }
 
@@ -1068,6 +1094,7 @@ private struct ManagedSoftwareGrid: View {
                                                         NSWorkspace.shared.open(URL(fileURLWithPath: appPath))
                                                     }
                                                     .buttonStyle(.borderedProminent)
+                                                    .foregroundStyle(.blue, .blue)
                                                     .controlSize(.small)
                                                 }
                                                 .padding(.top, 2)
@@ -1113,6 +1140,7 @@ private struct ManagedAppDetailView: View {
     let app: AvailableSoftwareViewModel.ManagedApp
     let onBack: () -> Void
     @EnvironmentObject var vm: AvailableSoftwareViewModel
+    @State private var metadata: LabelMetadata?
 
     private var appHistory: [AvailableSoftwareViewModel.HistoryEntry] {
         vm.updateHistory.filter { $0.label == app.id }
@@ -1148,6 +1176,10 @@ private struct ManagedAppDetailView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(app.displayName).font(.title).fontWeight(.bold)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let publisher = metadata?.publisher, !publisher.isEmpty {
+                                Label(publisher, systemImage: "building.columns")
+                                    .font(.caption).fontWeight(.bold).foregroundStyle(.secondary)
+                            }
                             Label(app.id, systemImage: "tag")
                                 .font(.caption).foregroundStyle(.secondary)
                             switch app.updateStatus {
@@ -1176,6 +1208,8 @@ private struct ManagedAppDetailView: View {
                     }
                     .padding(.bottom, 8)
 
+                    MetadataInfoSections(metadata: metadata)
+
                     if !app.installPaths.isEmpty {
                         locationSection
                     }
@@ -1188,6 +1222,7 @@ private struct ManagedAppDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .task { metadata = loadLabelMetadata(for: app.id) }
     }
 
     private var locationSection: some View {
@@ -1248,14 +1283,23 @@ private struct UpdateHistoryList: View {
     let history: [AvailableSoftwareViewModel.HistoryEntry]
     let onSelectLabel: (String) -> Void
     @EnvironmentObject var vm: AvailableSoftwareViewModel
+    @State private var filterType = "all"
+
+    private var filteredHistory: [AvailableSoftwareViewModel.HistoryEntry] {
+        switch filterType {
+        case "applied":     return history.filter { $0.eventType == "applied" }
+        case "selfService": return history.filter { $0.eventType == "selfService" }
+        case "discovered":  return history.filter { $0.eventType == "discovered" }
+        default:            return history
+        }
+    }
 
     private var grouped: [(key: String, entries: [AvailableSoftwareViewModel.HistoryEntry])] {
-        let cal = Calendar.current
         let fmt = DateFormatter()
         fmt.dateFormat = "MMMM yyyy"
         var groups: [(key: String, entries: [AvailableSoftwareViewModel.HistoryEntry])] = []
         var seen: [String: Int] = [:]
-        for entry in history {
+        for entry in filteredHistory {
             let key = fmt.string(from: entry.date)
             if let idx = seen[key] {
                 groups[idx].entries.append(entry)
@@ -1264,7 +1308,6 @@ private struct UpdateHistoryList: View {
                 groups.append((key: key, entries: [entry]))
             }
         }
-        _ = cal  // suppress unused warning
         return groups
     }
 
@@ -1278,32 +1321,58 @@ private struct UpdateHistoryList: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List {
-                ForEach(grouped, id: \.key) { group in
-                    Section(group.key) {
-                        ForEach(group.entries) { entry in
-                            Button { onSelectLabel(entry.label) } label: {
-                                HStack(spacing: 12) {
-                                    CachedAsyncImage(url: entry.iconURL) { img in
-                                        img.resizable().scaledToFit()
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    } placeholder: {
-                                        Image(nsImage: genericAppIcon()).resizable().scaledToFit()
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    }
-                                    .frame(width: 32, height: 32)
+            VStack(spacing: 0) {
+                Picker("Filter", selection: $filterType) {
+                    Text("All").tag("all")
+                    Text("Updates").tag("applied")
+                    Text("Self-Service").tag("selfService")
+                    Text("Discovered").tag("discovered")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
 
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(entry.displayName).font(.subheadline).fontWeight(.medium)
-                                        Text(historyTitle(entry)).font(.caption).foregroundStyle(.secondary)
+                Divider()
+
+                if filteredHistory.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 28)).foregroundStyle(.tertiary)
+                        Text("No Matching Events").font(.headline)
+                        Text("No history entries match the selected filter.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(grouped, id: \.key) { group in
+                            Section(group.key) {
+                                ForEach(group.entries) { entry in
+                                    Button { onSelectLabel(entry.label) } label: {
+                                        HStack(spacing: 12) {
+                                            CachedAsyncImage(url: entry.iconURL) { img in
+                                                img.resizable().scaledToFit()
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            } placeholder: {
+                                                Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            }
+                                            .frame(width: 32, height: 32)
+
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(entry.displayName).font(.subheadline).fontWeight(.medium)
+                                                Text(historyTitle(entry)).font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            Text(entry.date, format: .relative(presentation: .named))
+                                                .font(.caption2).foregroundStyle(.tertiary)
+                                        }
+                                        .contentShape(Rectangle())
                                     }
-                                    Spacer()
-                                    Text(entry.date, format: .relative(presentation: .named))
-                                        .font(.caption2).foregroundStyle(.tertiary)
+                                    .buttonStyle(.plain)
                                 }
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -1318,6 +1387,7 @@ private struct AppHistoryDetailView: View {
     let iconURL: URL?
     let entries: [AvailableSoftwareViewModel.HistoryEntry]
     let onBack: () -> Void
+    @State private var metadata: LabelMetadata?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1347,12 +1417,19 @@ private struct AppHistoryDetailView: View {
                         .frame(width: 80, height: 80)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(displayName).font(.title).fontWeight(.bold)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let publisher = metadata?.publisher, !publisher.isEmpty {
+                                Label(publisher, systemImage: "building.columns")
+                                    .font(.caption).fontWeight(.bold).foregroundStyle(.secondary)
+                            }
                             Label(label, systemImage: "tag")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 12)
                     }
                     .padding(.bottom, 8)
+
+                    MetadataInfoSections(metadata: metadata)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("History").font(.headline)
@@ -1373,6 +1450,97 @@ private struct AppHistoryDetailView: View {
                 }
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .task { metadata = loadLabelMetadata(for: label) }
+    }
+}
+
+// MARK: - Label metadata helpers (shared by My Software detail views)
+
+private struct LabelMetadata {
+    var publisher:     String?
+    var description:   String?
+    var homepage:      String?
+    var documentation: String?
+    var privacy:       String?
+}
+
+/// Loads plist metadata for a label, checking admin-managed then synced repo.
+/// Respects the user's preferred language with an English fallback.
+/// Returns nil when no metadata file exists in either location.
+private func loadLabelMetadata(for label: String) -> LabelMetadata? {
+    let langCode = (Locale.preferredLanguages.first ?? "en")
+        .components(separatedBy: "-").first ?? "en"
+    let managed = AppConstants.managedMetadataFolderURL
+    let synced  = AppConstants.installomatorMetadataFolderURL.appendingPathComponent("Metadata")
+
+    var candidates: [URL] = []
+    if langCode != "en" {
+        candidates.append(managed.appendingPathComponent("\(langCode)/\(label).plist"))
+        candidates.append(managed.appendingPathComponent("\(label).plist"))
+        candidates.append(synced.appendingPathComponent("\(langCode)/\(label).plist"))
+    } else {
+        candidates.append(managed.appendingPathComponent("\(label).plist"))
+    }
+    candidates.append(synced.appendingPathComponent("\(label).plist"))
+
+    for url in candidates {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { continue }
+        return LabelMetadata(
+            publisher:     dict["Publisher"]     as? String,
+            description:   dict["Description"]   as? String,
+            homepage:      dict["Homepage"]       as? String,
+            documentation: dict["Documentation"]  as? String,
+            privacy:       dict["Privacy"]        as? String
+        )
+    }
+    return nil
+}
+
+/// Renders the About (description) and Links (homepage/docs/privacy) sections
+/// from synced label metadata, matching the style used in the catalog detail view.
+private struct MetadataInfoSections: View {
+    let metadata: LabelMetadata?
+
+    private struct AppLink { let title: String; let icon: String; let url: URL }
+
+    private var links: [AppLink] {
+        guard let m = metadata else { return [] }
+        var result: [AppLink] = []
+        if let s = m.homepage,      !s.isEmpty, let u = URL(string: s) {
+            result.append(.init(title: "Homepage",       icon: "globe",       url: u))
+        }
+        if let s = m.documentation, !s.isEmpty, let u = URL(string: s) {
+            result.append(.init(title: "Documentation",  icon: "doc.text",    url: u))
+        }
+        if let s = m.privacy,       !s.isEmpty, let u = URL(string: s) {
+            result.append(.init(title: "Privacy Policy", icon: "lock.shield", url: u))
+        }
+        return result
+    }
+
+    var body: some View {
+        if let desc = metadata?.description, !desc.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("About").font(.headline)
+                Divider()
+                Text(desc).font(.body).fixedSize(horizontal: false, vertical: true)
+            }
+            .textSelection(.enabled)
+        }
+        if !links.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Links").font(.headline)
+                Divider()
+                ForEach(links, id: \.title) { entry in
+                    Link(destination: entry.url) {
+                        Label(entry.title, systemImage: entry.icon).font(.subheadline)
+                    }
+                }
             }
         }
     }
