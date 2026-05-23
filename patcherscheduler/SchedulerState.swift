@@ -44,6 +44,10 @@ struct SchedulerState: Codable {
     // Webhook report tracking
     var lastWebhookReportDate: Date?
 
+    // Installomator metadata repo sync tracking
+    var lastMetaSyncDate: Date?
+    var lastMetadataSHA: String?
+
     private static let url = AppConstants.patcherConfigFolderURL
         .appendingPathComponent("scheduler_state.json")
 
