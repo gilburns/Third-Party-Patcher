@@ -21,4 +21,11 @@ import Foundation
     ///   - reply: Called with (true, "installing") immediately; watch activeLabel via the
     ///            active_phase.json directory watcher for live progress.
     func installLabel(_ label: String, reply: @escaping (Bool, String) -> Void)
+
+    /// Apply or remove a custom Finder icon on an app bundle (requires root — handled by daemon).
+    /// - Parameters:
+    ///   - iconPath: Absolute path to a PNG or ICNS file, or nil to restore the built-in icon.
+    ///   - bundlePath: Absolute path to the .app bundle to modify.
+    ///   - reply: Called with (true, "ok") on success, or (false, reason) on failure.
+    func setAppIcon(iconPath: String?, bundlePath: String, reply: @escaping (Bool, String) -> Void)
 }
