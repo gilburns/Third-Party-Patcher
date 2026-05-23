@@ -13,7 +13,7 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self],
+        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
 //        defaultSubcommand: Scan.self
     )
 }
@@ -119,11 +119,33 @@ extension Patcher {
                 total:   total
             ) : nil
 
-            checkDiscoveredAppsForUpdates { current, total, displayName in
-                dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)** for updates…")
+            if dialog != nil { Thread.sleep(forTimeInterval: 2.0) }
+
+            checkDiscoveredAppsForUpdates { current, total, displayName, labelId in
+                let iconPath: String? = {
+                    let fm = FileManager.default
+                    let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(labelId).plist")
+                    if let data = try? Data(contentsOf: plistURL),
+                       let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+                       let installs = plist["foundInstalls"] as? [[String: Any]] {
+                        for install in installs {
+                            if let appPath = install["path"] as? String,
+                               appPath.hasSuffix(".app"),
+                               fm.fileExists(atPath: appPath) {
+                                return appPath
+                            }
+                        }
+                    }
+                    let metaIcon = AppConstants.installomatorMetadataFolderURL
+                        .appendingPathComponent("Icons")
+                        .appendingPathComponent("\(labelId).png")
+                    return fm.fileExists(atPath: metaIcon.path) ? metaIcon.path : nil
+                }()
+                dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)** for updates…", icon: iconPath)
             }
 
             if let dialog {
+                dialog.resetIcons()
                 let updateCount = countPendingUpdates()
                 let summary = updateCount == 0
                     ? "No updates available."
@@ -176,14 +198,67 @@ extension Patcher {
         @Option(name: .long, help: "Only stage this label (bypasses bandwidth limit).")
         var label: String?
 
+        @Flag(name: .long, help: "Show a progress dialog (used when triggered from PatcherMenu).")
+        var userInitiated: Bool = false
+
         func run() throws {
             Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
             Logger.log("Process ID: \(AppConstants.currentPid)")
             configureLogging()
 
             setupApplicationSupportFolders()
-            let bypass = label != nil    // single-label requests bypass bandwidth throttle
-            downloadAndStageUpdates(bypassBandwidthLimit: bypass, labelFilter: label)
+
+            let prefs = Preferences()
+            let bypass = label != nil || userInitiated
+
+            let total = userInitiated ? countStageableUpdates() : 0
+            let dialog = (userInitiated && total > 0) ? SwiftDialogController.launchProgressWindow(
+                title:   prefs.appTitle,
+                message: "Downloading \(total) update\(total == 1 ? "" : "s")…",
+                total:   total
+            ) : nil
+
+            if dialog != nil { Thread.sleep(forTimeInterval: 2.0) }
+
+            downloadAndStageUpdates(bypassBandwidthLimit: bypass, labelFilter: label,
+                onDownloadStart: { current, total, displayName, labelId in
+                    let iconPath: String? = {
+                        let fm = FileManager.default
+                        let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(labelId).plist")
+                        if let data = try? Data(contentsOf: plistURL),
+                           let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+                           let installs = plist["foundInstalls"] as? [[String: Any]] {
+                            for install in installs {
+                                if let appPath = install["path"] as? String,
+                                   appPath.hasSuffix(".app"),
+                                   fm.fileExists(atPath: appPath) {
+                                    return appPath
+                                }
+                            }
+                        }
+                        let metaIcon = AppConstants.installomatorMetadataFolderURL
+                            .appendingPathComponent("Icons")
+                            .appendingPathComponent("\(labelId).png")
+                        return fm.fileExists(atPath: metaIcon.path) ? metaIcon.path : nil
+                    }()
+                    dialog?.beginItem(current: current, of: total, label: "Downloading: **\(displayName)**…", icon: iconPath)
+                },
+                onDownloadComplete: { current, total in
+                    dialog?.completeItem(current: current, of: total)
+                }
+            )
+
+            if let dialog {
+                dialog.resetIcons()
+                let staged = countPendingUpdates()
+                let summary = staged == 0
+                    ? "No updates to install."
+                    : "\(staged) update\(staged == 1 ? "" : "s") ready to install."
+                dialog.update(message: summary)
+                dialog.updateProgress("Complete")
+                Thread.sleep(forTimeInterval: 5.0)
+            }
+            dialog?.close()
             cleanupAfterRun()
         }
     }
@@ -458,6 +533,24 @@ extension Patcher {
             }
             Logger.log("ℹ️ cleanLogs: removing logs older than \(retention) days…")
             cleanLogs(olderThanDays: retention)
+        }
+    }
+}
+
+extension Patcher {
+    struct SyncMetadata: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "metadata",
+            abstract: "Download and sync the Installomator metadata repository (icons, descriptions) to local storage."
+        )
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+            setupApplicationSupportFolders()
+            syncMetadataRepo(prefs: Preferences())
+            cleanupAfterRun()
         }
     }
 }
