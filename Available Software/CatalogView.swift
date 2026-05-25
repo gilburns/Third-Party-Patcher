@@ -137,7 +137,7 @@ struct CatalogView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarContent
-                .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 220)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
         } detail: {
             if catalog.items.isEmpty {
                 emptyState
@@ -146,7 +146,7 @@ struct CatalogView: View {
             }
         }
         .navigationTitle("Available Software")
-        .frame(minWidth: 580, minHeight: 500)
+        .frame(minWidth: 740, minHeight: 640)
         .toolbar {
             if vm.preferences.showHelpButton {
                 ToolbarItem(placement: .automatic) {
@@ -222,7 +222,7 @@ struct CatalogView: View {
                 Divider()
                     .padding(.bottom, 8)
                 
-                Section("My Software") {
+                Section("Software Details") {
                     sidebarRow(.managedSoftware, label: "Managed Software",  icon: "desktopcomputer",         badge: vm.managedApps.count)
                     sidebarRow(.pendingUpdates,  label: "Pending Updates",   icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
                     sidebarRow(.updateHistory,   label: "Update History",    icon: "clock.arrow.circlepath",  badge: 0)
