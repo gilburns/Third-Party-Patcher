@@ -13,7 +13,7 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
+        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, ResetBrokenState.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
 //        defaultSubcommand: Scan.self
     )
 }
@@ -381,6 +381,88 @@ extension Patcher {
             } else {
                 Logger.log("✅ Reset complete — \(resetCount) reset, \(errorCount) failed.")
             }
+        }
+    }
+}
+
+extension Patcher {
+    struct ResetBrokenState: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "resetBroken",
+            abstract: "Clear broken/failed state for all labels, or a single label if specified."
+        )
+
+        @Argument(help: "Installomator label whose broken state should be cleared. Omit to clear all labels.")
+        var label: String?
+
+        func run() throws {
+            configureLogging()
+            setupApplicationSupportFolders()
+
+            if let label {
+                resetBrokenStateForLabel(label)
+            } else {
+                resetAllBrokenState()
+            }
+
+            cleanupAfterRun()
+        }
+
+        private func resetBrokenStateForLabel(_ label: String) {
+            guard let data = try? Data(contentsOf: AppConstants.patcherConfigFileURL),
+                  let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                Logger.log("ℹ️ config.json not found or unreadable — nothing to reset.")
+                return
+            }
+
+            var scanBroken   = config["lastScanBrokenLabels"] as? [String]    ?? []
+            var stageBroken  = config["stageBrokenLabels"]    as? [String]    ?? []
+            var stageFailed  = config["stageFailedAttempts"]  as? [String: Int]    ?? [:]
+            var applyFailed  = config["applyFailedAttempts"]  as? [String: Int]    ?? [:]
+            var applyBroken  = config["applyBrokenVersions"]  as? [String: String] ?? [:]
+
+            let wasPresent = scanBroken.contains(label)
+                || stageBroken.contains(label)
+                || stageFailed[label] != nil
+                || applyFailed[label] != nil
+                || applyBroken[label] != nil
+
+            guard wasPresent else {
+                Logger.log("ℹ️ '\(label)' has no broken/failed state recorded — nothing to reset.")
+                return
+            }
+
+            scanBroken.removeAll  { $0 == label }
+            stageBroken.removeAll { $0 == label }
+            stageFailed.removeValue(forKey: label)
+            applyFailed.removeValue(forKey: label)
+            applyBroken.removeValue(forKey: label)
+
+            updateConfigJSON([
+                "lastScanBrokenLabels": scanBroken,
+                "stageBrokenLabels":    stageBroken,
+                "stageFailedAttempts":  stageFailed,
+                "applyFailedAttempts":  applyFailed,
+                "applyBrokenVersions":  applyBroken
+            ])
+            Logger.log("✅ Broken/failed state cleared for '\(label)'.")
+        }
+
+        private func resetAllBrokenState() {
+            guard let data = try? Data(contentsOf: AppConstants.patcherConfigFileURL),
+                  (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) != nil else {
+                Logger.log("ℹ️ config.json not found or unreadable — nothing to reset.")
+                return
+            }
+
+            updateConfigJSON([
+                "lastScanBrokenLabels": [String](),
+                "stageBrokenLabels":    [String](),
+                "stageFailedAttempts":  [String: Int](),
+                "applyFailedAttempts":  [String: Int](),
+                "applyBrokenVersions":  [String: String]()
+            ])
+            Logger.log("✅ Broken/failed state cleared for all labels.")
         }
     }
 }
