@@ -465,13 +465,13 @@ struct Preferences {
     }
 
     /// For the Support Team phone number that display in the Help Message.
-    /// Defaults to "".
+    /// Defaults to "None".
     var supportTeamPhone: String {
         pref("SupportTeamPhone", default: "None")
     }
 
     /// For the Support Team wesite that display in the Help Message.
-    /// Defaults to "support@company.com".
+    /// Defaults to "None".
     var supportTeamWebsite: String {
         pref("SupportTeamWebsite", default: "None")
     }
