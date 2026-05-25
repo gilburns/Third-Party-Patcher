@@ -20,6 +20,13 @@ struct MenuStatusView: View {
             Divider()
             VStack(alignment: .leading, spacing: 12) {
                 patchSection
+                if !vm.detectedPatches.isEmpty {
+                    Divider()
+                    pendingDownloadsSection
+                }
+                
+                deadlineSection
+                
                 if vm.preferences.showActivitySection {
                     Divider()
                     activitySection
@@ -169,17 +176,6 @@ struct MenuStatusView: View {
                     .font(.subheadline)
                     .foregroundStyle(.green)
 
-                if !vm.detectedPatches.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.down.circle")
-                            .frame(width: 14)
-                        Text("\(vm.detectedPatches.count) update\(vm.detectedPatches.count == 1 ? "" : "s") available to download")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
-                }
-
                 // Monthly mode: show upcoming patch day even when nothing is pending
                 if vm.preferences.monthlyPatchingCadenceEnabled, let next = vm.nextPatchDay {
                     Text("Next patch cycle: \(next, format: .dateTime.weekday(.wide).month(.abbreviated).day())")
@@ -202,7 +198,38 @@ struct MenuStatusView: View {
                             .lineLimit(1)
                     }
                 }
-                deadlineSection
+            }
+        }
+    }
+
+    // MARK: - Pending downloads
+
+    private var pendingDownloadsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                MenuSectionHeader("Pending Downloads")
+                Spacer()
+                Text("Count: \(vm.detectedPatches.count)")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 2)
+            }
+            ForEach(vm.detectedPatches) { patch in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 6, height: 6)
+                    Text(patch.displayName)
+                        .font(.subheadline)
+                    Spacer()
+                    if let version = patch.availableVersion, !version.isEmpty {
+                        Text(version)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
             }
         }
     }
