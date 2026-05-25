@@ -211,7 +211,7 @@ struct Preferences {
     /// initialScanDelayMaxSeconds window instead of all machines scanning simultaneously
     /// when a LaunchDaemon is pushed. Defaults to true.
     var initialScanDelayEnabled: Bool {
-        prefs["InitialScanDelayEnabled"] as? Bool ?? false
+        prefs["InitialScanDelayEnabled"] as? Bool ?? true
     }
 
     /// Maximum seconds for the one-time initial deployment delay.
