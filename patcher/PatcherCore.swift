@@ -337,6 +337,7 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
                     Logger.log("⏭️ Ignoring label: \(label)")
                     ignoredCount += 1
                     removeDiscoveredPlistIfPresent(label: label)
+                    removeStagedInstallFileIfPresent(label: label)
                     continue
                 }
             }
@@ -349,6 +350,7 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
                     Logger.log("⚠️ Skipping previously broken label: \(label)")
                     brokenSkippedCount += 1
                     removeDiscoveredPlistIfPresent(label: label)
+                    removeStagedInstallFileIfPresent(label: label)
                     continue
                 }
             }
@@ -358,6 +360,15 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
             let filePath = fileURL.path
             Logger.log("--------------------------------------------------")
             Logger.log("📜 Processing script: \(fileURL.lastPathComponent)")
+
+            // Re-write process_label.sh if it was removed while the scan was in progress.
+            if !FileManager.default.fileExists(atPath: scriptPath) {
+                Logger.log("⚠️ process_label.sh disappeared — re-writing.")
+                guard ZshScriptRunner.writeScriptToFile(AppConstants.processLabelZsh) != nil else {
+                    Logger.log("❌ Failed to re-write process_label.sh — aborting scan.")
+                    break
+                }
+            }
 
             // Run the script and capture output
             guard let output = ZshScriptRunner.runScript(at: scriptPath, arguments: [filePath]),
@@ -574,6 +585,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
                     Logger.log("⏭️ Ignoring label: \(label)")
                     ignoredCount += 1
                     removeDiscoveredPlistIfPresent(label: label)
+                    removeStagedInstallFileIfPresent(label: label)
                     continue
                 }
             }
@@ -592,6 +604,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
             guard let labelFileURL = resolveLabel(name: label) else {
                 Logger.log("⚠️ Label file not found for discovered app '\(label)' — removing discovered plist.")
                 removeDiscoveredPlistIfPresent(label: label)
+                removeStagedInstallFileIfPresent(label: label)
                 continue
             }
 
@@ -606,6 +619,15 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
             progressHandler?(checkedCount, discoveredLabels.count, displayName, label)
             Logger.log("--------------------------------------------------")
             Logger.log("🔎 Checking: \(label).sh")
+
+            // Re-write process_label.sh if it was removed while the check was in progress.
+            if !FileManager.default.fileExists(atPath: scriptPath) {
+                Logger.log("⚠️ process_label.sh disappeared — re-writing.")
+                guard ZshScriptRunner.writeScriptToFile(AppConstants.processLabelZsh) != nil else {
+                    Logger.log("❌ Failed to re-write process_label.sh — aborting check.")
+                    break
+                }
+            }
 
             guard let output = ZshScriptRunner.runScript(at: scriptPath, arguments: [labelFileURL.path]),
                   let jsonDict = parseScriptOutput(output) else {
@@ -664,11 +686,9 @@ private func labelIsIgnored(_ label: String, patterns: [String]) -> Bool {
 
 func parseScriptOutput(_ output: String) -> [String: Any]? {
     // Convert JSON string to a dictionary
-//    Logger.log("Output: \(output)")
     if let jsonData = output.data(using: .utf8) {
         do {
             if let jsonDict = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] {
-//                Logger.log("JSON Parsed Successfully: \(jsonDict)")
                 return jsonDict
             }
         } catch {
@@ -792,6 +812,7 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
                 var cleanDict = jsonDict
                 cleanDict["appNewVersion"] = appNewVersion
                 writeScannedPlist(label: label, jsonDict: cleanDict)
+                removeStagedInstallFileIfPresent(label: label)
             }
             return
         }
@@ -935,6 +956,21 @@ func removeDiscoveredPlistIfPresent(label: String) {
     }
 }
 
+func removeStagedInstallFileIfPresent(label: String) {
+    let cacheBaseURL = AppConstants.patcherCacheFolderURL
+    let labelDirURL = cacheBaseURL.appendingPathComponent(label)
+    
+    // A cache dir with only metadata.json (or empty) means nothing is staged
+    if let stagedFileURL = findStagedFile(in: labelDirURL) {
+        guard FileManager.default.fileExists(atPath: stagedFileURL.path) else { return }
+        do {
+            try FileManager.default.removeItem(at: stagedFileURL)
+            Logger.log("🗑️ Removed staged installer for label: \(label)")
+        } catch {
+            Logger.log("❌ Failed to remove staged installer for \(label): \(error)")
+        }
+    }
+}
 
 func writeDiscoveredPlist(label: String, jsonDict: [String: Any], installedVersion: String, updateStatus: UpdateStatus, foundInstalls: [FoundInstall]? = nil) {
     var plistDict = jsonDict
@@ -1400,6 +1436,26 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             let appName               = plist["appName"] as? String
             let name                  = plist["name"] as? String
             let foundInstalls         = plist["foundInstalls"] as? [[String: Any]] ?? []
+
+            // For app-based installer types, verify at least one recorded install path
+            // still exists. If all paths are gone the app was removed by the user — skip
+            // and discard the staged file so it is not applied on future runs either.
+            // Pkg-based types are exempt: their installers run regardless of app presence.
+            let isPkgBased = ["pkg", "pkgInZip", "pkgInDmg", "pkgInDmgInZip"].contains(type)
+            if !isPkgBased, !foundInstalls.isEmpty {
+                let anyPathExists = foundInstalls.contains { install in
+                    guard let path = install["path"] as? String else { return false }
+                    return fileManager.fileExists(atPath: path)
+                }
+                if !anyPathExists {
+                    Logger.log("⏭️ \(label) — no recorded install paths exist (app was removed) — discarding staged update")
+                    removeStagedInstallFileIfPresent(label: label)
+                    removeDiscoveredPlistIfPresent(label: label)
+                    dialog?.setSkipped(item: dialogItem, reason: "App removed")
+                    skippedCount += 1
+                    continue
+                }
+            }
 
             // Determine blocking processes:
             //   ["NONE"]  → nothing blocks
