@@ -828,7 +828,7 @@ struct PatcherScheduler {
 
         case "stage":
             writeActivePhase("stage", triggeredBy: "xpc")
-            runSubcommand("stage", args: ["--user-initiated"])
+            runSubcommand("stage", args: showProgress ? ["--user-initiated"] : [])
             clearActivePhase()
             state.lastStageDate = now
             if hasStagedUpdates() {
