@@ -178,9 +178,9 @@ struct Preferences {
     /// Number of days to wait before re-downloading a label whose script-reported version
     /// did not match the actual downloaded file (e.g. Spotify reporting a future version).
     /// The throttle is invalidated automatically when appNewVersion changes.
-    /// Defaults to 3.
+    /// Defaults to 7.
     var versionMismatchThrottleDays: Int {
-        prefs["VersionMismatchThrottleDays"] as? Int ?? 3
+        prefs["VersionMismatchThrottleDays"] as? Int ?? 7
     }
 
     // MARK: - Download Handling
