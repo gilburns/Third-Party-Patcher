@@ -293,8 +293,9 @@ struct Preferences {
     }
 
     /// Latest time of day to attempt patching, in "HH:MM" 24-hour format. Empty means no restriction.
+    /// Defaults to 17:00 (5:00 PM)
     var patchingEndTime: String {
-        pref("PatchingEndTime", default: "")
+        pref("PatchingEndTime", default: "17:00")
     }
 
     /// Number of days a pending update must be present before Focus / DND is ignored.
@@ -304,9 +305,9 @@ struct Preferences {
     }
 
     /// Number of days a pending update must be present before no further deferrals are allowed.
-    /// 0 means no hard deadline. Defaults to 14.
+    /// 0 means no hard deadline. Defaults to 10.
     var deadlineDaysHard: Int {
-        prefs["DeadlineDaysHard"] as? Int ?? 14
+        prefs["DeadlineDaysHard"] as? Int ?? 10
     }
 
     /// When false, Focus / DND and display assertions are never checked. Defaults to true.
@@ -334,15 +335,15 @@ struct Preferences {
     }
 
     /// Title shown in the swiftDialog apply window.
-    /// Defaults to "3rd Party Patcher" when the key is absent.
+    /// Defaults to "Third Party Patcher" when the key is absent.
     var appTitle: String {
-        pref("AppTitle", default: "\(AppConstants.patcherFullName)")
+        pref("AppTitle", default: "Third Party Patcher")
     }
 
     /// When true, swiftDialog will stay on top of all other windows.
     /// Defaults to true.
     var dialogOnTop: Bool {
-        prefs["DialogOnTop"] as? Bool ?? false
+        prefs["DialogOnTop"] as? Bool ?? true
     }
 
     /// Swift Dialog icon..
