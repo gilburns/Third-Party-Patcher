@@ -148,6 +148,8 @@ struct AppConstants {
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin"
 export LANG="en_US.UTF-8"
 
+currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
+
 ################################
 # FUNCTIONS FUNCTIONS FUNCTIONS
 ################################
