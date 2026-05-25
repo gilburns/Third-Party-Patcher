@@ -1561,6 +1561,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 let cliInstaller  = plist["CLIInstaller"]  as? String
                 let installerTool = plist["installerTool"] as? String
                 let cliArguments  = plist["CLIArguments"]  as? String
+                let updateToolRunAsCurrentUser = !((plist["updateToolRunAsCurrentUser"] as? String) ?? "").isEmpty
                 let useCLI = !(cliInstaller?.isEmpty ?? true)
 
                 let targets: [String]
@@ -1597,6 +1598,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     cliInstaller: cliInstaller,
                     installerTool: installerTool,
                     cliArguments: cliArguments,
+                    updateToolRunAsCurrentUser: updateToolRunAsCurrentUser,
                     label: label
                 )
             }
@@ -1805,6 +1807,7 @@ private func installAppFromStagedFile(
     cliInstaller: String?,
     installerTool: String?,
     cliArguments: String?,
+    updateToolRunAsCurrentUser: Bool = false,
     label: String
 ) -> Bool {
     // Delete /Users/ originals first (convert case; no-op when CLI installer is used)
@@ -1823,7 +1826,7 @@ private func installAppFromStagedFile(
     case "dmg":
         return withMountedDMG(at: stagedFilePath) { mountPoint in
             if useCLI {
-                return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: mountPoint, label: label)
+                return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: mountPoint, label: label, runAsCurrentUser: updateToolRunAsCurrentUser)
             }
             return findAndInstallApp(in: mountPoint, appName: appName, name: name, targets: targets, label: label)
         } ?? false
@@ -1834,7 +1837,7 @@ private func installAppFromStagedFile(
         defer { try? FileManager.default.removeItem(atPath: tempDir) }
         return unzipped(filePath: stagedFilePath, to: tempDir) {
             if useCLI {
-                return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: tempDir, label: label)
+                return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: tempDir, label: label, runAsCurrentUser: updateToolRunAsCurrentUser)
             }
             return findAndInstallApp(in: tempDir, appName: appName, name: name, targets: targets, label: label)
         } ?? false
@@ -1845,7 +1848,7 @@ private func installAppFromStagedFile(
         defer { try? FileManager.default.removeItem(atPath: tempDir) }
         return untarred(filePath: stagedFilePath, to: tempDir) {
             if useCLI {
-                return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: tempDir, label: label)
+                return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: tempDir, label: label, runAsCurrentUser: updateToolRunAsCurrentUser)
             }
             return findAndInstallApp(in: tempDir, appName: appName, name: name, targets: targets, label: label)
         } ?? false
@@ -1861,7 +1864,7 @@ private func installAppFromStagedFile(
             }
             return withMountedDMG(at: dmgPath) { mountPoint in
                 if useCLI {
-                    return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: mountPoint, label: label)
+                    return runCLIInstaller(cliInstaller: cliInstaller!, installerTool: installerTool, cliArguments: cliArguments, in: mountPoint, label: label, runAsCurrentUser: updateToolRunAsCurrentUser)
                 }
                 return findAndInstallApp(in: mountPoint, appName: appName, name: name, targets: targets, label: label)
             } ?? false
@@ -1929,7 +1932,7 @@ private func resolveCLIInstallerPath(cliInstaller: String, installerTool: String
 
 
 /// Finds the CLI installer executable inside a container directory and runs it with the given arguments.
-private func runCLIInstaller(cliInstaller: String, installerTool: String?, cliArguments: String?, in directory: String, label: String) -> Bool {
+private func runCLIInstaller(cliInstaller: String, installerTool: String?, cliArguments: String?, in directory: String, label: String, runAsCurrentUser: Bool = false) -> Bool {
     guard let executablePath = resolveCLIInstallerPath(cliInstaller: cliInstaller, installerTool: installerTool, in: directory) else {
         Logger.log("❌ Could not resolve CLI installer path for \(label)")
         return false
@@ -1948,8 +1951,18 @@ private func runCLIInstaller(cliInstaller: String, installerTool: String?, cliAr
     }
 
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: executablePath)
-    process.arguments = args
+
+    if runAsCurrentUser, let uid = consoleUserUID, uid > 0 {
+        // Run in the console user's login session via launchctl asuser.
+        // This gives the process the user's environment and GUI session context.
+        Logger.log("   Running as user (UID \(uid))")
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["asuser", "\(uid)", executablePath] + args
+    } else {
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = args
+    }
+
     let outPipe = Pipe()
     let errPipe = Pipe()
     process.standardOutput = outPipe
