@@ -328,6 +328,13 @@ struct Preferences {
 
     // MARK: - swiftDialog UI
 
+    /// When true, the scheduler runs a silent apply pass before the interactive apply phase.
+    /// Items whose blocking process is not running are installed without prompting the user.
+    /// Skipped items are not counted as deferrals. Defaults to false.
+    var quietApplyEnabled: Bool {
+        prefs["QuietApplyEnabled"] as? Bool ?? false
+    }
+
     /// When true, swiftDialog is used to show apply progress and handle blocking processes.
     /// Automatically disabled if swiftDialog is not installed. Defaults to true.
     var swiftDialogEnabled: Bool {
@@ -635,6 +642,14 @@ struct Preferences {
     /// Defaults to 90.
     var logRetentionDays: Int {
         prefs["LogRetentionDays"] as? Int ?? 90
+    }
+
+    // MARK: - Diagnostic
+
+    /// Raw preference entries sorted alphabetically by key. For diagnostic display only.
+    var rawEntries: [(key: String, value: Any)] {
+        prefs.sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { (key: $0.key, value: $0.value) }
     }
 
     // MARK: - Private helpers
