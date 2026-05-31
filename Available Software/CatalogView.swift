@@ -85,7 +85,7 @@ struct CatalogView: View {
     enum SortOrder  { case arrayOrder, alphabetical }
     enum FilterMode: Hashable {
         case all, installed, notInstalled, category(String)
-        case pendingUpdates, managedSoftware, updateHistory
+        case pendingUpdates, managedSoftware, updateHistory, about
     }
 
     private var filteredItems: [CatalogViewModel.CatalogItem] {
@@ -146,7 +146,7 @@ struct CatalogView: View {
             }
         }
         .navigationTitle("Available Software")
-        .frame(minWidth: 740, minHeight: 640)
+        .frame(minWidth: 740, minHeight: 660)
         .toolbar {
             if vm.preferences.showHelpButton {
                 ToolbarItem(placement: .automatic) {
@@ -226,6 +226,7 @@ struct CatalogView: View {
                     sidebarRow(.managedSoftware, label: "Managed Software",  icon: "desktopcomputer",         badge: vm.managedApps.count)
                     sidebarRow(.pendingUpdates,  label: "Pending Updates",   icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
                     sidebarRow(.updateHistory,   label: "Update History",    icon: "clock.arrow.circlepath",  badge: 0)
+                    sidebarRow(.about,           label: "About",             icon: "info.circle.fill",        badge: 0)
                 }
             }
             .listStyle(.sidebar)
@@ -288,6 +289,9 @@ struct CatalogView: View {
                     UpdateHistoryList(history: vm.updateHistory, onSelectLabel: { selectedHistoryLabel = $0 })
                         .environmentObject(vm)
                 }
+            case .about:
+                AboutPanelView(catalog: catalog)
+                    .environmentObject(vm)
             default:
                 // Catalog modes: all, installed, notInstalled, category
                 if let item = selectedItem {
@@ -1021,8 +1025,13 @@ private struct ManagedSoftwareGrid: View {
     private var filteredApps: [AvailableSoftwareViewModel.ManagedApp] {
         guard !searchText.isEmpty else { return apps }
         let q = searchText.lowercased()
-        return apps.filter {
-            $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q)
+        return apps.filter { app in
+            app.displayName.lowercased().contains(q)
+            || app.id.lowercased().contains(q)
+            || app.publisher?.lowercased().contains(q) == true
+            || app.appDescription?.lowercased().contains(q) == true
+            || app.keywords.contains { $0.lowercased().contains(q) }
+            || app.category?.lowercased().contains(q) == true
         }
     }
 
@@ -1041,7 +1050,7 @@ private struct ManagedSoftwareGrid: View {
                 // Search bar
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-                    TextField("Search managed apps…", text: $searchText)
+                    TextField("Search apps, publishers, keywords…", text: $searchText)
                         .textFieldStyle(.plain)
                     if !searchText.isEmpty {
                         Button { searchText = "" } label: {
@@ -1632,4 +1641,261 @@ struct SupportInfoView: View {
             }
         }
     }
+}
+
+// MARK: - About Panel
+
+private struct AboutPanelView: View {
+    let catalog: CatalogViewModel
+    @EnvironmentObject var vm: AvailableSoftwareViewModel
+    @State private var showDiagnostics = false
+
+    private var installedCount: Int {
+        catalog.items.filter { $0.installedVersion != nil }.count
+    }
+
+    private var appliedCount: Int {
+        vm.updateHistory.filter { $0.eventType == "applied" || $0.eventType == "selfService" }.count
+    }
+
+    private var uniqueAppsUpdated: Int {
+        Set(vm.updateHistory
+            .filter { $0.eventType == "applied" || $0.eventType == "selfService" }
+            .map { $0.label }
+        ).count
+    }
+
+    private var installomatorVersion: String {
+        (try? String(contentsOf: AppConstants.installomatorVersionFileURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty ?? "Not installed"
+    }
+
+    private var managedLabelsVersion: String {
+        (try? String(contentsOf: AppConstants.managedLabelsVersionFileURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty ?? "Not configured"
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+
+                // App identity
+                HStack(spacing: 16) {
+                    // Control+Option+Shift+click reveals the preferences diagnostic sheet.
+                    Button {
+                        let flags = NSEvent.modifierFlags
+                        if flags.contains(.control) && flags.contains(.option) && flags.contains(.shift) {
+                            showDiagnostics = true
+                        }
+                    } label: {
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: 100, height: 100)
+                    }
+                    .buttonStyle(.plain)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(AppConstants.patcherFullName)
+                            .font(.title2).fontWeight(.semibold)
+                        Text("Version \(AppConstants.patcherVersion)")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, -20)
+                .padding(.bottom, 0)
+
+                // Label Library
+                aboutSection("Label Library") {
+                    infoRow("Installomator Labels",  value: installomatorVersion)
+                    infoRow("Managed Labels",        value: managedLabelsVersion)
+                    infoRow("Available in Catalog",  value: "\(catalog.items.count) apps")
+                    infoRow("Currently Installed",   value: "\(installedCount) apps")
+                }
+
+                // Update Statistics
+                aboutSection("Update Statistics") {
+                    infoRow("Apps Under Management",      value: "\(vm.managedApps.count)")
+                    infoRow("Updates Applied (All Time)", value: "\(appliedCount)")
+                    infoRow("Unique Apps Updated",        value: "\(uniqueAppsUpdated)")
+                    infoRow("Pending Updates",            value: "\(vm.stagedPatches.count)")
+                }
+
+                // Last Activity
+                if let snap = vm.schedulerSnapshot {
+                    aboutSection("Last Activity") {
+                        activityRow("Scan",          date: snap.lastScanDate)
+                        activityRow("Check",         date: snap.lastCheckDate)
+                        activityRow("Stage",         date: snap.lastStageDate)
+                        activityRow("Apply",         date: snap.lastApplyDate)
+//                        activityRow("Metadata Sync", date: snap.lastMetaSyncDate)
+                    }
+                }
+
+                // System
+                aboutSection("System") {
+                    infoRow("macOS", value: ProcessInfo.processInfo.operatingSystemVersionString)
+                    if let host = Host.current().localizedName, !host.isEmpty {
+                        infoRow("Computer", value: host)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(isPresented: $showDiagnostics) {
+            PreferencesDebugSheet(preferences: vm.preferences)
+        }
+    }
+
+    private func aboutSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            Divider()
+            content()
+        }
+    }
+
+    private func infoRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).multilineTextAlignment(.trailing)
+        }
+        .font(.subheadline)
+    }
+
+    private func activityRow(_ label: String, date: Date?) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            if let d = date {
+                Text(d, format: .relative(presentation: .named, unitsStyle: .wide))
+                    .multilineTextAlignment(.trailing)
+            } else {
+                Text("Never").foregroundStyle(.tertiary)
+            }
+        }
+        .font(.subheadline)
+    }
+}
+
+// MARK: - Preferences diagnostic sheet
+
+private struct PreferencesDebugSheet: View {
+    let preferences: Preferences
+    @State private var expandedKeys: Set<String> = []
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Preferences Diagnostic")
+                        .font(.headline)
+                    Text("Source: \(preferences.source)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+
+            Divider()
+
+            let entries = preferences.rawEntries
+            if entries.isEmpty {
+                Text("No preferences configured — all defaults in use.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(entries, id: \.key) { entry in
+                            prefRow(key: entry.key, value: entry.value)
+                            Divider()
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
+        .frame(minWidth: 520, idealWidth: 560, minHeight: 600, idealHeight: 630)
+    }
+
+    @ViewBuilder
+    private func prefRow(key: String, value: Any) -> some View {
+        let fv = formatted(value)
+        let isExpanded = expandedKeys.contains(key)
+
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center) {
+                Text(key)
+                    .font(.system(.subheadline, design: .monospaced))
+                    .fontWeight(.medium)
+                Spacer()
+                if fv.isLong {
+                    Button {
+                        if isExpanded { expandedKeys.remove(key) }
+                        else { expandedKeys.insert(key) }
+                    } label: {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(isExpanded || !fv.isLong ? fv.full : fv.preview)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private struct FormattedValue {
+        let preview: String
+        let full: String
+        var isLong: Bool { preview != full }
+    }
+
+    private func formatted(_ value: Any) -> FormattedValue {
+        let full: String
+        switch value {
+        case let n as NSNumber where CFGetTypeID(n as CFTypeRef) == CFBooleanGetTypeID():
+            full = n.boolValue ? "true" : "false"
+        case let arr as [Any]:
+            full = arr.map { "\($0)" }.joined(separator: "\n")
+        case let dict as [String: Any]:
+            if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),
+               let str = String(data: data, encoding: .utf8) {
+                full = str
+            } else {
+                full = "\(dict)"
+            }
+        default:
+            full = "\(value)"
+        }
+
+        let lines = full.components(separatedBy: "\n")
+        if lines.count > 3 {
+            let preview = lines.prefix(3).joined(separator: "\n") + "\n  … +\(lines.count - 3) more"
+            return FormattedValue(preview: preview, full: full)
+        }
+        if full.count > 120 {
+            return FormattedValue(preview: String(full.prefix(120)) + "…", full: full)
+        }
+        return FormattedValue(preview: full, full: full)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
