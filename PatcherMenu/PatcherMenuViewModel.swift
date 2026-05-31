@@ -60,9 +60,29 @@ final class PatcherMenuViewModel: ObservableObject {
 
     var deferralCount: Int { deferralState?.count ?? schedulerState?.deferralCount ?? 0 }
 
-    var nextPromptDate: Date? {
-        guard let expiry = deferralState?.expiryDate, expiry > Date() else { return nil }
-        return expiry
+    /// Approximate label for when the next apply prompt will appear.
+    /// Coarsely bucketed — no exact countdown — because the prompt fires on the next
+    /// scheduler cycle (up to 10 min) after the deferral expires.
+    /// Returns nil once the deferral has been expired long enough that the scheduler
+    /// has almost certainly run already.
+    var nextPromptLabel: String? {
+        guard let expiry = deferralState?.expiryDate else { return nil }
+        let remaining = expiry.timeIntervalSince(Date())
+        // Scheduler cycle is 600 s. After expiry the prompt fires on the next wake,
+        // so "soon" honestly covers both the tail of the deferral and the post-expiry window.
+        let schedulerCycle: TimeInterval = 600
+        switch remaining {
+        case let r where r > 3600:
+            let hours = Int(ceil(r / 3600))
+            return "in about \(hours == 1 ? "1 hr" : "\(hours) hr")"
+        case let r where r > schedulerCycle:
+            let minutes = Int(ceil(r / 300)) * 5   // round up to nearest 5 min
+            return "in about \(minutes) min"
+        case let r where r > -schedulerCycle:
+            return "soon"
+        default:
+            return nil  // expired more than one full cycle ago — scheduler has run
+        }
     }
 
     private var schedule: PatchSchedule { PatchSchedule(prefs: preferences) }
