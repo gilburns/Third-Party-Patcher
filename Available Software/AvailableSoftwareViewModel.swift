@@ -38,6 +38,10 @@ final class AvailableSoftwareViewModel: ObservableObject {
         let updateStatus: String    // "upToDate" | "updateRequired" | "userSpace" | "unknown"
         let iconURL: URL?
         let installPaths: [String]  // all paths from foundInstalls
+        let publisher: String?
+        let appDescription: String?
+        let keywords: [String]
+        let category: String?
 
         var primaryAppPath: String? {
             // Prefer a non-user-space .app; fall back to any .app
@@ -215,14 +219,35 @@ final class AvailableSoftwareViewModel: ObservableObject {
         NSApp.terminate(nil)
     }
 
+    // MARK: - Scheduler activity snapshot (read-only, for the About panel)
+
+    struct SchedulerActivitySnapshot: Codable {
+        var lastScanDate:     Date?
+        var lastCheckDate:    Date?
+        var lastStageDate:    Date?
+        var lastApplyDate:    Date?
+        var lastMetaSyncDate: Date?
+    }
+
+    @Published var schedulerSnapshot: SchedulerActivitySnapshot?
+
+    private func loadSchedulerSnapshot() -> SchedulerActivitySnapshot? {
+        let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("scheduler_state.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(SchedulerActivitySnapshot.self, from: data)
+    }
+
     // MARK: - My Software loaders
 
     func loadMySoftwareData() {
         checkIconChange()
-        preferences    = Preferences()
-        stagedPatches  = buildStagedPatches()
-        managedApps    = buildManagedApps()
-        updateHistory  = buildUpdateHistory()
+        preferences      = Preferences()
+        stagedPatches    = buildStagedPatches()
+        managedApps      = buildManagedApps()
+        updateHistory    = buildUpdateHistory()
+        schedulerSnapshot = loadSchedulerSnapshot()
     }
 
     private func buildStagedPatches() -> [StagedPatch] {
@@ -295,11 +320,55 @@ final class AvailableSoftwareViewModel: ObservableObject {
                 status = dict["updateStatus"] as? String ?? "unknown"
             }
 
-            result.append(ManagedApp(id: label, displayName: name, updateStatus: status,
-                                     iconURL: resolveIconURL(for: label), installPaths: installPaths))
+            let meta = loadManagedAppMetadata(for: label)
+            result.append(ManagedApp(
+                id:             label,
+                displayName:    name,
+                updateStatus:   status,
+                iconURL:        resolveIconURL(for: label),
+                installPaths:   installPaths,
+                publisher:      meta.publisher,
+                appDescription: meta.description,
+                keywords:       meta.keywords,
+                category:       meta.category
+            ))
         }
 
         return result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    /// Loads publisher, description, keywords, and category for a label from local
+    /// managed metadata or the synced metadata repo. No remote fetch — these are
+    /// installed apps and the fields are only needed for search.
+    private func loadManagedAppMetadata(for label: String) -> (publisher: String?, description: String?, keywords: [String], category: String?) {
+        let langCode = Locale.preferredLanguages.first?.components(separatedBy: "-").first ?? "en"
+        let bases = [
+            AppConstants.managedMetadataFolderURL,
+            AppConstants.installomatorMetadataFolderURL.appendingPathComponent("Metadata")
+        ]
+        for base in bases {
+            let candidates: [URL] = langCode == "en"
+                ? [base.appendingPathComponent("\(label).plist")]
+                : [base.appendingPathComponent("\(langCode)/\(label).plist"),
+                   base.appendingPathComponent("\(label).plist")]
+            for url in candidates {
+                guard FileManager.default.fileExists(atPath: url.path),
+                      let data = try? Data(contentsOf: url),
+                      let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+                else { continue }
+                let kw = (dict["Keywords"] as? String ?? "")
+                    .split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                return (
+                    publisher:   dict["Publisher"]   as? String,
+                    description: dict["Description"] as? String,
+                    keywords:    kw,
+                    category:    dict["Category"]    as? String
+                )
+            }
+        }
+        return (nil, nil, [], nil)
     }
 
     private func buildUpdateHistory() -> [HistoryEntry] {
