@@ -13,7 +13,7 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, EnsureTool.self, ResetHistory.self, ResetBrokenState.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
+        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, ApplyQuiet.self, EnsureTool.self, ResetHistory.self, ResetBrokenState.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
 //        defaultSubcommand: Scan.self
     )
 }
@@ -304,6 +304,28 @@ extension Patcher {
 
             setupApplicationSupportFolders()
             applyUpdates(labelFilter: label, daysPending: daysPending, userInitiated: userInitiated)
+            cleanupAfterRun()
+        }
+    }
+}
+
+extension Patcher {
+    struct ApplyQuiet: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "applyQuiet",
+            abstract: "Silently install staged updates where no blocking process is running. Skipped items are not counted as deferrals."
+        )
+
+        @Option(name: .long, help: "Only apply the staged update for this label.")
+        var label: String?
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+
+            setupApplicationSupportFolders()
+            applyUpdates(labelFilter: label, silentApply: true)
             cleanupAfterRun()
         }
     }
