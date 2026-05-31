@@ -184,10 +184,24 @@ struct PatcherScheduler {
                 let daysPending = state.firstPendingDate.map {
                     Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
                 } ?? 0
-                let applyArgs = daysPending > 0 ? ["--days-pending", "\(daysPending)"] : []
-                writeActivePhase("apply")
-                runSubcommand("apply", args: applyArgs)
-                clearActivePhase()
+
+                // Silent pre-pass: install anything whose blocking process isn't running.
+                // Skipped items are not counted as deferrals.
+                if prefs.quietApplyEnabled {
+                    writeActivePhase("applyQuiet")
+                    runSubcommand("applyQuiet")
+                    clearActivePhase()
+                }
+
+                // Interactive apply: only if items remain after the quiet pre-pass
+                // (or always, when quiet apply is disabled — preserves current behaviour).
+                if !prefs.quietApplyEnabled || hasStagedUpdates() {
+                    let applyArgs = daysPending > 0 ? ["--days-pending", "\(daysPending)"] : []
+                    writeActivePhase("apply")
+                    runSubcommand("apply", args: applyArgs)
+                    clearActivePhase()
+                }
+
                 state.lastApplyDate = now
                 // Clear firstPendingDate once all staged updates have been installed.
                 if !hasStagedUpdates() {
@@ -844,6 +858,8 @@ struct PatcherScheduler {
         case "apply":
             // On-demand apply bypasses cadence and deadline checks — user explicitly requested it.
             // --user-initiated suppresses the deferral prompt so patching begins immediately.
+            // Always runs the full interactive apply — no quiet pre-pass — so the user
+            // immediately sees the dialog and knows something is happening.
             let daysPending = state.firstPendingDate.map {
                 Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
             } ?? 0
