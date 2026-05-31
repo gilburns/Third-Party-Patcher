@@ -294,11 +294,11 @@ struct MenuStatusView: View {
                 .foregroundStyle(.secondary)
 
                 // Next prompt
-                if let next = vm.nextPromptDate {
+                if let label = vm.nextPromptLabel {
                     HStack(spacing: 4) {
                         Image(systemName: "clock")
                             .frame(width: 14)
-                        Text("Next prompt: \(next, format: .relative(presentation: .named, unitsStyle: .abbreviated))")
+                        Text("Next prompt: \(label)")
                             .font(.caption)
                     }
                     .foregroundStyle(.secondary)
