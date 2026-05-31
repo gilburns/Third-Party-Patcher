@@ -1247,10 +1247,11 @@ func daysSinceMonthlyPatchDay(prefs: Preferences, now: Date = Date()) -> Int {
     return max(0, cal.dateComponents([.day], from: targetDate, to: now).day ?? 0)
 }
 
-func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int = 0, userInitiated: Bool = false) {
+func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int = 0, userInitiated: Bool = false, silentApply: Bool = false) {
     let applyStart = Date()
     let iso = ISO8601DateFormatter()
-    Logger.log("🔧 Apply started at \(iso.string(from: applyStart))")
+    Logger.log("🔧 Apply\(silentApply ? " (silent)" : "") started at \(iso.string(from: applyStart))")
+    detachStalePatcherMounts()
 
     let prefs = Preferences()
 
@@ -1334,7 +1335,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         }
 
         // ── Deferral gate + progress dialog ────────────────────────────────────
-        if !suppressDialog, !dialogItems.isEmpty, let controller = SwiftDialogController.makeIfAvailable() {
+        if !suppressDialog, !silentApply, !dialogItems.isEmpty, let controller = SwiftDialogController.makeIfAvailable() {
 
             if userInitiated {
                 // User explicitly chose to apply from PatcherMenu — skip the deferral prompt
@@ -1400,8 +1401,6 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 dialog?.setProgressText("Shutdown — stopping after \(appliedCount) item\(appliedCount == 1 ? "" : "s")")
                 break
             }
-
-            Logger.log("--------------------------------------------------")
 
             // A cache dir with only metadata.json (or empty) means nothing is staged
             guard let stagedFileURL = findStagedFile(in: labelDirURL) else {
@@ -1473,8 +1472,16 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
             var shouldRelaunchBlockedApp = false
 
-            if blockingAction != .ignore,
-               let runningBlocker = effectiveBlockers.first(where: { isProcessRunning($0) }) {
+            // Silent apply: skip any item whose blocking process is running.
+            // Never kill, never prompt, never record as a deferral.
+            if silentApply {
+                if let runningBlocker = effectiveBlockers.first(where: { isProcessRunning($0) }) {
+                    Logger.log("⏭️ \(label) — silent apply: '\(runningBlocker)' is running — skipping")
+                    skippedCount += 1
+                    continue
+                }
+            } else if blockingAction != .ignore,
+                      let runningBlocker = effectiveBlockers.first(where: { isProcessRunning($0) }) {
                 Logger.log("⏸️ \(label) — '\(runningBlocker)' is running (action: \(prefs.blockingProcessAction))")
                 let response = dialog?.handleBlockingProcess(
                     processName:      runningBlocker,
@@ -1664,7 +1671,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
         // If any label was skipped due to a blocking process, count that as a deferral.
         // This keeps the deadline counter accurate even when the user didn't see the prompt.
-        if blockedSkipOccurred {
+        // Silent apply skips are intentionally excluded — they are background opportunistic
+        // installs and should not advance the deadline counter.
+        if blockedSkipOccurred, !silentApply {
             var deferralState = DeferralState.load()
             deferralState.count += 1
             deferralState.save()
@@ -2550,8 +2559,6 @@ private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: St
 }
 
 private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate: String?, curlOptions: String?) -> Bool {
-    Logger.log("🔻 using downloadFileWithCurl to retrieve \(url.lastPathComponent)")
-
     var args: [String] = ["-L", "-o", destination.path, "--silent", "--show-error"]
 
     if let limitRate {
@@ -2889,6 +2896,62 @@ private func convertDmgWithSLA(at path: String) -> Bool {
     return true
 }
 
+/// Detaches any DMG mount points left over from a previous interrupted patcher run.
+/// Logs each stale mount found; silent when there is nothing to clean up.
+/// Returns the number of stale mounts detached.
+@discardableResult
+func detachStalePatcherMounts() -> Int {
+    let info = Process()
+    info.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+    info.arguments = ["info", "-plist"]
+    let outPipe = Pipe()
+    info.standardOutput = outPipe
+    info.standardError = Pipe()
+    guard (try? info.run()) != nil else { return 0 }
+    info.waitUntilExit()
+    guard info.terminationStatus == 0 else { return 0 }
+
+    let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+    guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+          let root = plist as? [String: Any],
+          let images = root["images"] as? [[String: Any]] else { return 0 }
+
+    let tempBase = AppConstants.patcherTempFolderURL.path
+    var staleCount = 0
+
+    for image in images {
+        guard let entities = image["system-entities"] as? [[String: Any]] else { continue }
+        for entity in entities {
+            guard let mountPoint = entity["mount-point"] as? String else { continue }
+            let lastComponent = URL(fileURLWithPath: mountPoint).lastPathComponent
+            guard mountPoint.hasPrefix(tempBase), lastComponent.hasPrefix("dmg_") else { continue }
+
+            staleCount += 1
+            let imagePath = (image["image-path"] as? String) ?? "(unknown)"
+            Logger.log("🧹 Stale DMG mount: \(mountPoint) ← \(imagePath)")
+
+            let detach = Process()
+            detach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            detach.arguments = ["detach", mountPoint, "-force", "-quiet"]
+            detach.standardOutput = Pipe()
+            detach.standardError = Pipe()
+            if (try? detach.run()) != nil {
+                detach.waitUntilExit()
+                if detach.terminationStatus == 0 {
+                    Logger.log("✅ Detached stale mount: \(mountPoint)")
+                } else {
+                    Logger.log("⚠️ Failed to detach \(mountPoint) (exit \(detach.terminationStatus))")
+                }
+            }
+        }
+    }
+
+    if staleCount > 0 {
+        Logger.log("🧹 Cleaned up \(staleCount) stale patcher DMG mount(s)")
+    }
+    return staleCount
+}
+
 /// Mounts a DMG at a temporary mount point, runs the closure, then detaches.
 /// Automatically handles SLA-protected DMGs by converting them before mounting.
 private func withMountedDMG<T>(at filePath: String, body: (String) -> T?) -> T? {
@@ -2926,7 +2989,7 @@ private func withMountedDMG<T>(at filePath: String, body: (String) -> T?) -> T? 
     defer {
         let detach = Process()
         detach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
-        detach.arguments = ["detach", mountPoint, "-quiet"]
+        detach.arguments = ["detach", mountPoint, "-quiet", "-force"]
         detach.standardOutput = Pipe()
         detach.standardError = Pipe()
         try? detach.run()
@@ -3672,6 +3735,7 @@ func cleanLogs(olderThanDays days: Int) -> Int {
 
 // MARK: - Cleanup after run
 func cleanupAfterRun() {
+    detachStalePatcherMounts()
     do {
         try FileManager.default.removeItem(atPath: AppConstants.patcherTempFolderURL.path)
         Logger.log("Deleted directory: \(AppConstants.patcherTempFolderURL.path)")
