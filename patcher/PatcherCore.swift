@@ -1247,7 +1247,7 @@ func daysSinceMonthlyPatchDay(prefs: Preferences, now: Date = Date()) -> Int {
     return max(0, cal.dateComponents([.day], from: targetDate, to: now).day ?? 0)
 }
 
-func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int = 0, userInitiated: Bool = false, silentApply: Bool = false) {
+func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int = 0, userInitiated: Bool = false, silentApply: Bool = false, bypassIgnoreHomeFolder: Bool = false) {
     let applyStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔧 Apply\(silentApply ? " (silent)" : "") started at \(iso.string(from: applyStart))")
@@ -1272,9 +1272,15 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         effectiveDaysPending = daysSinceOldestStagedUpdate()
         Logger.log("ℹ️ Days pending (oldest staged update): \(effectiveDaysPending)")
     }
-    let ignoreAppsInHomeFolder = prefs.ignoreAppsInHomeFolder
-    // ConvertAppsInHomeFolder is fully ignored when IgnoreAppsInHomeFolder is true
-    let effectiveConvert = prefs.convertAppsInHomeFolder && !ignoreAppsInHomeFolder
+    let ignoreAppsInHomeFolder = prefs.ignoreAppsInHomeFolder && !bypassIgnoreHomeFolder
+    // ConvertAppsInHomeFolder is fully ignored when IgnoreAppsInHomeFolder is true.
+    // Self-service installs always convert: the user explicitly requested managed placement.
+    let effectiveConvert = bypassIgnoreHomeFolder && prefs.ignoreAppsInHomeFolder
+        ? true
+        : prefs.convertAppsInHomeFolder && !ignoreAppsInHomeFolder
+    if bypassIgnoreHomeFolder && prefs.ignoreAppsInHomeFolder {
+        Logger.log("⚡ IgnoreAppsInHomeFolder bypassed — user-space copy will be converted to /Applications")
+    }
     let blockingAction = BlockingProcessAction(rawValue: prefs.blockingProcessAction)
     let countdownSeconds = prefs.blockingProcessCountdownSeconds
 
@@ -1622,6 +1628,30 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     "installedVersion": effectiveToVersion,
                     "updateStatus": UpdateStatus.upToDate.rawValue
                 ])
+
+                // For self-service installs, find the app on disk and persist its
+                // location in foundInstalls so Available Software can resolve the
+                // Dock path immediately after install completes.
+                if bypassIgnoreHomeFolder, !isPkgBased {
+                    let appWithExtension: String
+                    if let an = appName, !an.isEmpty {
+                        appWithExtension = an.hasSuffix(".app") ? an : "\(an).app"
+                    } else if let n = name, !n.isEmpty {
+                        appWithExtension = "\(n).app"
+                    } else {
+                        appWithExtension = "\(label).app"
+                    }
+                    let versionKey = plist["versionKey"] as? String
+                    if let freshInstalls = getApplicationVersion(appWithExtension: appWithExtension, versionKey: versionKey),
+                       !freshInstalls.isEmpty {
+                        let installDicts = freshInstalls.map {
+                            ["path": $0.path, "version": $0.version, "discoveryMethod": $0.discoveryMethod]
+                        }
+                        updateDiscoveredPlist(label: label, updates: ["foundInstalls": installDicts])
+                        Logger.log("📍 Self-service: updated foundInstalls for \(label) — \(freshInstalls.map { $0.path }.joined(separator: ", "))")
+                    }
+                }
+
                 try? fileManager.removeItem(at: stagedFileURL)
                 appendCacheInstallTimestamp(label: label, timestamp: iso.string(from: Date()), labelCacheURL: labelDirURL)
                 recordApplied(label: label, fromVersion: priorInstalledVersion, toVersion: effectiveToVersion, date: Date())
@@ -2160,7 +2190,9 @@ private func appendCacheInstallTimestamp(label: String, timestamp: String, label
 
 // MARK: - Download and Stage Updates
 
-func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: String? = nil,
+func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
+                             bypassIgnoreHomeFolder: Bool = false,
+                             labelFilter: String? = nil,
                              onDownloadStart: ((Int, Int, String, String) -> Void)? = nil,
                              onDownloadComplete: ((Int, Int) -> Void)? = nil) {
     let stageStart = Date()
@@ -2176,7 +2208,10 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false, labelFilter: St
     } else if let bandwidthLimit {
         Logger.log("🐢 Bandwidth limit active: \(bandwidthLimit)/s")
     }
-    let ignoreAppsInHomeFolder = prefs.ignoreAppsInHomeFolder
+    let ignoreAppsInHomeFolder = prefs.ignoreAppsInHomeFolder && !bypassIgnoreHomeFolder
+    if bypassIgnoreHomeFolder && prefs.ignoreAppsInHomeFolder {
+        Logger.log("⚡ IgnoreAppsInHomeFolder bypassed (self-service install)")
+    }
     let ignoreUnknownVersionLabels = prefs.ignoreUnknownVersionLabels
     let unknownVersionCheckIntervalDays = prefs.unknownVersionCheckIntervalDays
     let versionMismatchThrottleDays = prefs.versionMismatchThrottleDays
