@@ -560,6 +560,12 @@ struct Preferences {
         return value
     }
 
+    /// When true, apps installed via self-service installs are automatically added
+    /// to the current user's Dock if not already present. Defaults to true.
+    var addToDockOnSelfServiceInstall: Bool {
+        prefs["AddToDockOnSelfServiceInstall"] as? Bool ?? true
+    }
+
     // MARK: - Webhooks
     
     /// Determines if Webhooks are sent when patching is completed.
