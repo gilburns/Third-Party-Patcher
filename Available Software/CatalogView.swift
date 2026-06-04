@@ -85,7 +85,7 @@ struct CatalogView: View {
     enum SortOrder  { case arrayOrder, alphabetical }
     enum FilterMode: Hashable {
         case all, installed, notInstalled, category(String)
-        case pendingUpdates, managedSoftware, updateHistory, about
+        case pendingUpdates, pendingDownloads, managedSoftware, updateHistory, about
     }
 
     private var filteredItems: [CatalogViewModel.CatalogItem] {
@@ -120,8 +120,12 @@ struct CatalogView: View {
         return result
     }
 
-    private var installedCount:    Int { catalog.items.filter { $0.installedVersion != nil }.count }
-    private var notInstalledCount: Int { catalog.items.filter { $0.installedVersion == nil }.count }
+    private var installedCount:        Int { catalog.items.filter { $0.installedVersion != nil }.count }
+    private var notInstalledCount:     Int { catalog.items.filter { $0.installedVersion == nil }.count }
+    private var pendingDownloadsCount: Int {
+        let stagedIDs = Set(vm.stagedPatches.map { $0.id })
+        return vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) }.count
+    }
 
     private var sortedCategories: [(name: String, count: Int)] {
         var counts: [String: Int] = [:]
@@ -146,7 +150,7 @@ struct CatalogView: View {
             }
         }
         .navigationTitle("Available Software")
-        .frame(minWidth: 740, minHeight: 660)
+        .frame(minWidth: 740, minHeight: 680)
         .toolbar {
             if vm.preferences.showHelpButton {
                 ToolbarItem(placement: .automatic) {
@@ -223,10 +227,11 @@ struct CatalogView: View {
                     .padding(.bottom, 8)
                 
                 Section("Software Details") {
-                    sidebarRow(.managedSoftware, label: "Managed Software",  icon: "desktopcomputer",         badge: vm.managedApps.count)
-                    sidebarRow(.pendingUpdates,  label: "Pending Updates",   icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
-                    sidebarRow(.updateHistory,   label: "Update History",    icon: "clock.arrow.circlepath",  badge: 0)
-                    sidebarRow(.about,           label: "About",             icon: "info.circle.fill",        badge: 0)
+                    sidebarRow(.managedSoftware,  label: "Managed Software",   icon: "desktopcomputer",         badge: vm.managedApps.count)
+                    sidebarRow(.pendingUpdates,   label: "Pending Updates",    icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
+                    sidebarRow(.pendingDownloads, label: "Pending Downloads",  icon: "arrow.down.circle",       badge: pendingDownloadsCount)
+                    sidebarRow(.updateHistory,    label: "Update History",     icon: "clock.arrow.circlepath",  badge: 0)
+                    sidebarRow(.about,            label: "About",              icon: "info.circle.fill",        badge: 0)
                 }
             }
             .listStyle(.sidebar)
@@ -266,6 +271,16 @@ struct CatalogView: View {
                         .environmentObject(vm)
                 } else {
                     PendingUpdatesGrid(patches: vm.stagedPatches, onSelect: { selectedStagedPatch = $0 })
+                        .environmentObject(vm)
+                }
+            case .pendingDownloads:
+                if let app = selectedManagedApp {
+                    ManagedAppDetailView(app: app, backLabel: "Pending Downloads", onBack: { selectedManagedApp = nil })
+                        .environmentObject(vm)
+                } else {
+                    let stagedIDs = Set(vm.stagedPatches.map { $0.id })
+                    let pending = vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) }
+                    PendingDownloadsGrid(apps: pending, onSelect: { selectedManagedApp = $0 })
                         .environmentObject(vm)
                 }
             case .managedSoftware:
@@ -1145,8 +1160,77 @@ private struct ManagedSoftwareGrid: View {
     }
 }
 
+// MARK: - Pending Downloads
+
+private struct PendingDownloadsGrid: View {
+    let apps: [AvailableSoftwareViewModel.ManagedApp]
+    let onSelect: (AvailableSoftwareViewModel.ManagedApp) -> Void
+    @EnvironmentObject var vm: AvailableSoftwareViewModel
+
+    var body: some View {
+        if apps.isEmpty {
+            VStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 36)).foregroundStyle(.green)
+                Text("No Pending Downloads").font(.headline)
+                Text("All managed software is up to date or already staged for install.")
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .frame(maxWidth: 280)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            HStack(alignment: .center) {
+                Text("\(apps.count) Pending Download\(apps.count == 1 ? "" : "s")")
+                    .font(.body)
+                    .padding(.leading, 20)
+                Spacer()
+                Button("Download Now") { vm.triggerStage() }
+                    .buttonStyle(.borderedProminent).controlSize(.regular)
+                    .padding(9)
+                Spacer()
+                    .frame(width: 10)
+            }
+            Divider()
+            let columns = [GridItem(.adaptive(minimum: 220, maximum: 380), spacing: 10)]
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(apps) { app in
+                        Button { onSelect(app) } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                CachedAsyncImage(url: app.iconURL) { img in
+                                    img.resizable().scaledToFit()
+                                        .clipShape(RoundedRectangle(cornerRadius: 11))
+                                } placeholder: {
+                                    Image(nsImage: genericAppIcon()).resizable().scaledToFit()
+                                        .clipShape(RoundedRectangle(cornerRadius: 11))
+                                }
+                                .frame(width: 52, height: 52)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(app.displayName)
+                                        .font(.subheadline).fontWeight(.semibold).lineLimit(2)
+                                    Label("Update Available", systemImage: "arrow.down.circle")
+                                        .font(.caption).foregroundStyle(.orange)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
+                        }
+                        .buttonStyle(.accessoryBar)
+                        .background(Color.secondary.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(12)
+            }
+        }
+    }
+}
+
 private struct ManagedAppDetailView: View {
     let app: AvailableSoftwareViewModel.ManagedApp
+    var backLabel: String = "Managed Software"
     let onBack: () -> Void
     @EnvironmentObject var vm: AvailableSoftwareViewModel
     @State private var metadata: LabelMetadata?
@@ -1161,7 +1245,7 @@ private struct ManagedAppDetailView: View {
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left.circle").imageScale(.large)
-                        Text("Managed Software")
+                        Text(backLabel)
                     }.font(.body)
                 }
                 .buttonStyle(.borderless).foregroundStyle(.tint)
