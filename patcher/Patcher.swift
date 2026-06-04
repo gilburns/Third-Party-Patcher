@@ -548,9 +548,9 @@ extension Patcher {
             }
 
             writeEnsureStatus("Downloading…")
-            downloadAndStageUpdates(bypassBandwidthLimit: true, labelFilter: label)
+            downloadAndStageUpdates(bypassBandwidthLimit: true, bypassIgnoreHomeFolder: true, labelFilter: label)
             writeEnsureStatus("Installing…")
-            applyUpdates(labelFilter: label, suppressDialog: true)
+            applyUpdates(labelFilter: label, suppressDialog: true, bypassIgnoreHomeFolder: true)
 
             cleanupAfterRun()
         }
