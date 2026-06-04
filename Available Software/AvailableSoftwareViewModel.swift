@@ -110,12 +110,19 @@ final class AvailableSoftwareViewModel: ObservableObject {
               let phase = dict["phase"] as? String
         else {
             // No active phase — all activity has stopped; clear any queued state
+            let completedPhase = activePhase
+            let completedLabel = activeLabel
             activePhase = nil
             activeLabel = nil
             activeStatus = nil
             queuedLabel = nil
             // Refresh My Software data when a patcher phase finishes
-            if wasActive { loadMySoftwareData() }
+            if wasActive {
+                loadMySoftwareData()
+                if completedPhase == "install", let label = completedLabel {
+                    addInstalledAppToDock(label: label)
+                }
+            }
             wasActive = false
             return
         }
@@ -127,6 +134,53 @@ final class AvailableSoftwareViewModel: ObservableObject {
         if let activeLabel, activeLabel == queuedLabel {
             queuedLabel = nil
         }
+    }
+
+    private func addInstalledAppToDock(label: String) {
+        guard preferences.addToDockOnSelfServiceInstall else { return }
+
+        var appPath: String?
+
+        // Primary: foundInstalls in the discovered plist, written by patcher after install
+        let discoveredURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+        if let data = try? Data(contentsOf: discoveredURL),
+           let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+
+            let foundInstalls = dict["foundInstalls"] as? [[String: Any]] ?? []
+            appPath = foundInstalls
+                .compactMap { $0["path"] as? String }
+                .first(where: { $0.hasSuffix(".app") && !$0.hasPrefix("/Users/") })
+                ?? foundInstalls
+                .compactMap { $0["path"] as? String }
+                .first(where: { $0.hasSuffix(".app") })
+
+            // Fallback: construct path from name if foundInstalls is empty
+            if appPath == nil, let name = dict["name"] as? String, !name.isEmpty {
+                let candidate = "/Applications/\(name).app"
+                if FileManager.default.fileExists(atPath: candidate) {
+                    appPath = candidate
+                }
+            }
+            // Fallback: construct path from name if foundInstalls is empty
+            if appPath == nil, let name = dict["appName"] as? String, !name.isEmpty {
+                let candidate = "/Applications/\(name)"
+                if FileManager.default.fileExists(atPath: candidate) {
+                    appPath = candidate
+                }
+            }
+        }
+
+        // Fallback: managedApps (already loaded by loadMySoftwareData above)
+        if appPath == nil {
+            appPath = managedApps.first(where: { $0.id == label })?.primaryAppPath
+        }
+
+        guard let resolvedPath = appPath else {
+            NSLog("DockManager: could not resolve app path for label %@", label)
+            return
+        }
+
+        DockManager.addApp(at: resolvedPath)
     }
 
     // MARK: - XPC
@@ -164,6 +218,17 @@ final class AvailableSoftwareViewModel: ObservableObject {
             Task { @MainActor [weak self] in self?.xpcConnection = nil }
         }) as? PatcherXPCProtocol else { return }
         proxy.triggerPhase("apply") { _, _ in }
+    }
+
+    /// Triggers the stage phase to download pending updates.
+    func triggerStage() {
+        guard activeLabel == nil else { return }
+        if xpcConnection == nil { setupXPCConnection() }
+        guard let proxy = xpcConnection?.remoteObjectProxyWithErrorHandler({ [weak self] error in
+            NSLog("AvailableSoftware XPC error (stage): %@", error.localizedDescription)
+            Task { @MainActor [weak self] in self?.xpcConnection = nil }
+        }) as? PatcherXPCProtocol else { return }
+        proxy.triggerPhase("stage") { _, _ in }
     }
 
     private func setupXPCConnection() {
