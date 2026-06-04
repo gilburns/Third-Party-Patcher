@@ -22,7 +22,7 @@ struct AvailableSoftwareApp: App {
             CatalogView()
                 .environmentObject(viewModel)
         }
-        .defaultSize(width: 720, height: 520)
+        .defaultSize(width: 720, height: 560)
     }
 
     private func applyCustomIcon() {
