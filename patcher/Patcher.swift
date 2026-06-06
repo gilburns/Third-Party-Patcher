@@ -252,7 +252,7 @@ extension Patcher {
                 dialog.resetIcons()
                 let staged = countPendingUpdates()
                 let summary = staged == 0
-                    ? "No updates to install."
+                    ? "No updates to download."
                     : "\(staged) update\(staged == 1 ? "" : "s") ready to install."
                 dialog.update(message: summary)
                 dialog.updateProgress("Complete")
