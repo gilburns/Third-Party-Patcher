@@ -440,9 +440,9 @@ struct Preferences {
     }
 
     /// The number of minutes to defer until the next update workflow attempt if a user chooses not to install updates
-    ///  Using this option overrides the default deferral time which is set to 240 minutes (4 hours)
+    ///  Using this option overrides the default deferral time which is set to 120 minutes (2 hours)
     var deferralTimerDefault: Int {
-        prefs["DeferralTimerDefault"] as? Int ?? 240
+        prefs["DeferralTimerDefault"] as? Int ?? 120
     }
 
     /// Display a deferral time pop-up menu in the install update dialog that allows the user to override the 'DeferralTimerDefault' timer.
