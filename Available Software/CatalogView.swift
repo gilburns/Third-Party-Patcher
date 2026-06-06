@@ -893,7 +893,8 @@ private struct PendingUpdatesGrid: View {
                     .font(.system(size: 36)).foregroundStyle(.green)
                 Text("No Pending Updates").font(.headline)
                 Text("All managed software is up to date.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .frame(maxWidth: 280)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -1173,7 +1174,7 @@ private struct PendingDownloadsGrid: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 36)).foregroundStyle(.green)
                 Text("No Pending Downloads").font(.headline)
-                Text("All managed software is up to date or already staged for install.")
+                Text("Nothing to download at the moment.")
                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: 280)
             }
