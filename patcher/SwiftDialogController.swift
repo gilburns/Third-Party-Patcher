@@ -84,7 +84,7 @@ struct SwiftDialogController {
     }
 
 
-    // MARK: Progress dialog
+    // MARK: Patcher Progress main dialog
 
     struct ApplyItem {
         let label:       String
@@ -108,7 +108,7 @@ struct SwiftDialogController {
         let overlayIcon  = resolveOverlayIcon(prefs: prefs)
         let startISO     = ISO8601DateFormatter().string(from: Date())
         let helpMessage  = buildHelpMessage(prefs: prefs, startISO: startISO)
-        let infoboxMessage = buildInfoboxMessage()
+//        let infoboxMessage = buildInfoboxMessage()
         
         // Build the listitem array as structured JSON so swiftDialog parses
         // title, icon, and status correctly from the start.
@@ -124,11 +124,16 @@ struct SwiftDialogController {
         let listItemsCount = listItems.count
 
         var jsonDict: [String: Any] = [
+            "presentation":    true,
+            "width":           750,
+            "height":          min(450, max(520, 220 + items.count * 60)),
             "title":           prefs.appTitle,
             "titlefont":       "size=18",
             "icon":            dialogIcon,
+            "iconsize":        128,
 //            "message":         "There are **\(listItemsCount) updates** waiting.\n\nThe following updates are being applied:",
-            "infobox":         "\(prefs.appTitle)\n\nThere are **\(listItemsCount) updates** waiting.\n\nThe following updates are being applied:",
+//            "messagefont":     "size=16",
+            "infobox":         "\(prefs.appTitle)\n\nThere are **\(listItemsCount) updates** waiting.\n\nThese updates are being applied 👉",
             "helpmessage":     helpMessage,
 //            "infobox":         infoboxMessage,
             "progress":        items.count,
@@ -136,13 +141,9 @@ struct SwiftDialogController {
             "commandfile":     commandFileURL.path,
             "button1text":     "Updating…",
             "button1disabled": true,
-            "moveable":        true,
-            "presentation":    true,
-            "ontop":           prefs.dialogOnTop,
-            "width":           750,
-            "height":          min(450, max(520, 220 + items.count * 60)),
-            "messagefont":     "size=16",
             "listitem":        listItems,
+            "moveable":        true,
+            "ontop":           prefs.dialogOnTop,
         ]
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
 
@@ -189,6 +190,8 @@ struct SwiftDialogController {
     /// Updates the dialog to show a completion summary and re-enables the Done button.
     /// Call `dismiss()` after a suitable delay (or when the patcher exits) to close it.
     func complete(applied: Int, skipped: Int, failed: Int) {
+        let prefs        = Preferences()
+
         let summary: String
         if failed > 0 {
             summary = "\(applied) updated · \(skipped) skipped · \(failed) failed"
@@ -197,6 +200,7 @@ struct SwiftDialogController {
         } else {
             summary = "\(applied) update\(applied == 1 ? "" : "s") applied successfully"
         }
+        sendCommand("\(prefs.appTitle)\n\nAll waiting updates **have been applied**.\n\nThese updates were just applied 👉")
         sendCommand("progress: complete")
         sendCommand("progresstext: Complete — \(summary)")
         sendCommand("button1text: Done")
