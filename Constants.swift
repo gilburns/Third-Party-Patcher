@@ -13,7 +13,7 @@ struct AppConstants {
     static let randomGUID = UUID().uuidString
 
     static let patcherFullName = "Third Party Patcher"
-    static let patcherVersion = "0.2.2"
+    static let patcherVersion = "0.9.5"
 
     // MARK: - Binary paths
 
