@@ -227,6 +227,16 @@ struct PatcherScheduler {
             dirty = true
         }
 
+        // Safety net: clear firstPendingDate whenever no staged updates remain, regardless
+        // of which code path removed the files (apply, check discarding a superseded staged
+        // update, manual install outside the scheduler, etc.).  Prevents the deadline clock
+        // from continuing to count after all patches are gone.
+        if state.firstPendingDate != nil && !hasStagedUpdates() {
+            state.firstPendingDate = nil
+            Logger.log("ℹ️ No staged updates remain — firstPendingDate cleared.")
+            dirty = true
+        }
+
         if dirty { state.save() }
     }
 
@@ -892,6 +902,14 @@ struct PatcherScheduler {
 
         default:
             Logger.log("⚠️ runOnDemand: unrecognized phase '\(phase)'")
+        }
+
+        // Safety net: clear firstPendingDate if no staged updates remain after any
+        // on-demand phase (e.g., check discarding a superseded staged update).
+        if state.firstPendingDate != nil && !hasStagedUpdates() {
+            state.firstPendingDate = nil
+            Logger.log("ℹ️ No staged updates remain — firstPendingDate cleared.")
+            dirty = true
         }
 
         if dirty { state.save() }
