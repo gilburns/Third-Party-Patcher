@@ -35,7 +35,7 @@ Three command-line tools are installed to `/usr/local/bin/tpp/`:
 
 ## Requirements
 
-- macOS 13 Ventura or later
+- macOS 14 Ventura or later
 - [swiftDialog](https://github.com/swiftDialog/swiftDialog) (for user prompts; install via `patcher ensure`)
 - Network access to GitHub (for Installomator label updates and app downloads)
 
