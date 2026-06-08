@@ -80,7 +80,8 @@ struct CatalogView: View {
     @State private var selectedStagedPatch: AvailableSoftwareViewModel.StagedPatch? = nil
     @State private var selectedManagedApp: AvailableSoftwareViewModel.ManagedApp? = nil
     @State private var selectedHistoryLabel: String? = nil
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @State private var columnVisibility      = NavigationSplitViewVisibility.all
+    @State private var categoriesExpanded    = false
 
     enum SortOrder  { case arrayOrder, alphabetical }
     enum FilterMode: Hashable {
@@ -141,7 +142,7 @@ struct CatalogView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarContent
-                .navigationSplitViewColumnWidth(min: 220, ideal: 220, max: 220)
+                .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 270)
         } detail: {
             if catalog.items.isEmpty {
                 emptyState
@@ -150,7 +151,7 @@ struct CatalogView: View {
             }
         }
         .navigationTitle("Available Software")
-        .frame(minWidth: 740, minHeight: 680)
+        .frame(minWidth: 840, minHeight: 680)
         .toolbar {
             if vm.preferences.showHelpButton {
                 ToolbarItem(placement: .automatic) {
@@ -216,15 +217,35 @@ struct CatalogView: View {
                 }
 
                 if !sortedCategories.isEmpty {
-                    Section("Categories") {
-                        ForEach(sortedCategories, id: \.name) { cat in
-                            sidebarRow(.category(cat.name), label: cat.name, icon: "tag", badge: cat.count)
+                    Section(header:
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.3)) { categoriesExpanded.toggle() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Categories")
+                                Spacer()
+                                    .frame(maxWidth: categoriesExpanded ? 144 : 159, alignment: .init(horizontal: .leading, vertical: .center))
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .rotationEffect(.degrees(categoriesExpanded ? 90 : 0))
+                            }
+                            .padding()
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    ) {
+                        if categoriesExpanded {
+                            ForEach(sortedCategories, id: \.name) { cat in
+                                sidebarRow(.category(cat.name), label: cat.name, icon: "tag", badge: cat.count)
+                            }
                         }
                     }
+                    .padding(.bottom, 8)
                 }
 
                 Divider()
-                    .padding(.bottom, 8)
+                    .padding(.bottom, -10)
                 
                 Section("Software Details") {
                     sidebarRow(.managedSoftware,  label: "Managed Software",   icon: "desktopcomputer",         badge: vm.managedApps.count)
