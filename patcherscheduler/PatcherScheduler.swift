@@ -196,9 +196,8 @@ struct PatcherScheduler {
                 // Interactive apply: only if items remain after the quiet pre-pass
                 // (or always, when quiet apply is disabled — preserves current behaviour).
                 if !prefs.quietApplyEnabled || hasStagedUpdates() {
-                    let applyArgs = daysPending > 0 ? ["--days-pending", "\(daysPending)"] : []
                     writeActivePhase("apply")
-                    runSubcommand("apply", args: applyArgs)
+                    runSubcommand("apply", args: ["--days-pending", "\(daysPending)"])
                     clearActivePhase()
                 }
 
@@ -873,8 +872,7 @@ struct PatcherScheduler {
             let daysPending = state.firstPendingDate.map {
                 Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
             } ?? 0
-            var applyArgs = ["--user-initiated"]
-            if daysPending > 0 { applyArgs += ["--days-pending", "\(daysPending)"] }
+            let applyArgs = ["--user-initiated", "--days-pending", "\(daysPending)"]
             writeActivePhase("apply", triggeredBy: "xpc")
             runSubcommand("apply", args: applyArgs)
             clearActivePhase()
