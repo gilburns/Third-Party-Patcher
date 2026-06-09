@@ -1247,7 +1247,7 @@ func daysSinceMonthlyPatchDay(prefs: Preferences, now: Date = Date()) -> Int {
     return max(0, cal.dateComponents([.day], from: targetDate, to: now).day ?? 0)
 }
 
-func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int = 0, userInitiated: Bool = false, silentApply: Bool = false, bypassIgnoreHomeFolder: Bool = false) {
+func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, daysPending: Int? = nil, userInitiated: Bool = false, silentApply: Bool = false, bypassIgnoreHomeFolder: Bool = false) {
     let applyStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔧 Apply\(silentApply ? " (silent)" : "") started at \(iso.string(from: applyStart))")
@@ -1260,14 +1260,18 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
     var applyBrokenVersions = applyBrokenState.brokenVersions
     let applyFailThreshold  = prefs.applyFailThreshold
 
-    // In monthly patching mode, daysPending counts from the patch day this month
-    // (day 0 on the target date, +1 each subsequent day) rather than from when
-    // updates were staged, since all patches are intentionally released together.
-    // In deadline mode, use the age of the oldest staged update.
+    // Determine how many days this patch cycle has been running.
+    // Monthly mode: days since the configured patch day.
+    // Deadline mode: use the value passed by the scheduler (days since firstPendingDate),
+    //   which is authoritative. Fall back to daysSinceOldestStagedUpdate() only when
+    //   running without a scheduler-provided value (e.g., manual CLI invocation).
     let effectiveDaysPending: Int
     if prefs.monthlyPatchingCadenceEnabled {
         effectiveDaysPending = daysSinceMonthlyPatchDay(prefs: prefs)
         Logger.log("ℹ️ Days pending (monthly patch cycle): \(effectiveDaysPending)")
+    } else if let dp = daysPending {
+        effectiveDaysPending = dp
+        Logger.log("ℹ️ Days pending (from scheduler): \(effectiveDaysPending)")
     } else {
         effectiveDaysPending = daysSinceOldestStagedUpdate()
         Logger.log("ℹ️ Days pending (oldest staged update): \(effectiveDaysPending)")
