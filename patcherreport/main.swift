@@ -171,16 +171,46 @@ struct PendingItem {
 }
 
 func buildPendingItems(_ ctx: ReportContext) -> [PendingItem] {
-    ctx.histories.compactMap { (label, history) -> PendingItem? in
-        guard let lastStaged = history.lastEvent(ofType: LabelHistoryEvent.EventType.staged) else { return nil }
-        if let lastApplied = history.lastEvent(ofType: LabelHistoryEvent.EventType.applied),
-           lastApplied.date >= lastStaged.date { return nil }
-        return PendingItem(
+    let fm    = FileManager.default
+    let iso   = ISO8601DateFormatter()
+
+    guard let dirs = try? fm.contentsOfDirectory(
+        at: AppConstants.patcherCacheFolderURL,
+        includingPropertiesForKeys: [.isDirectoryKey]
+    ) else { return [] }
+
+    var items: [PendingItem] = []
+
+    for dir in dirs {
+        guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+        let label = dir.lastPathComponent
+
+        // Staged update = at least one file that isn't metadata.json or history.json.
+        // Matches the same check used by PatcherMenu and Available Software.
+        let contents = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        guard contents.contains(where: {
+            $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != LabelHistory.fileName
+        }) else { continue }
+
+        // metadata.json must carry stagedTimestamp — it is stripped when the installer is applied.
+        let metaURL = dir.appendingPathComponent("metadata.json")
+        guard let data  = try? Data(contentsOf: metaURL),
+              let meta  = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tsStr = meta["stagedTimestamp"] as? String,
+              let staged = iso.date(from: tsStr)
+        else { continue }
+
+        let version   = meta["appNewVersion"] as? String ?? ""
+        let installed = ctx.discoveredPlists[label]?["installedVersion"] as? String ?? ""
+
+        items.append(PendingItem(
             label:            label,
-            stagedVersion:    lastStaged.availableVersion ?? "",
-            stagedDate:       lastStaged.date,
-            installedVersion: ctx.discoveredPlists[label]?["installedVersion"] as? String ?? "",
-            daysPending:      daysSince(lastStaged.date, now: ctx.now)
-        )
-    }.sorted { $0.daysPending > $1.daysPending }
+            stagedVersion:    version,
+            stagedDate:       staged,
+            installedVersion: installed,
+            daysPending:      daysSince(staged, now: ctx.now)
+        ))
+    }
+
+    return items.sorted { $0.daysPending > $1.daysPending }
 }
