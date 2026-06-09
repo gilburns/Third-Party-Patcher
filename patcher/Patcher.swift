@@ -291,8 +291,8 @@ extension Patcher {
         @Option(name: .long, help: "Only apply the staged update for this label.")
         var label: String?
 
-        @Option(name: .long, help: "Days the oldest pending update has been staged (used for deadline enforcement).")
-        var daysPending: Int = 0
+        @Option(name: .long, help: "Days pending from the scheduler's firstPendingDate (overrides the stagedTimestamp fallback).")
+        var daysPending: Int?
 
         @Flag(name: .long, help: "Skip the deferral prompt and go straight to the patching window (used when triggered from PatcherMenu).")
         var userInitiated: Bool = false
