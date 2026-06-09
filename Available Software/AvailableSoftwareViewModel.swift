@@ -42,6 +42,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
         let appDescription: String?
         let keywords: [String]
         let category: String?
+        let isThrottled: Bool       // true if within the version-mismatch throttle window (stage will skip it)
 
         var primaryAppPath: String? {
             // Prefer a non-user-space .app; fall back to any .app
@@ -353,6 +354,25 @@ final class AvailableSoftwareViewModel: ObservableObject {
         return result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
+    private func isVersionMismatchThrottled(label: String, currentAppNewVersion: String) -> Bool {
+        let metadataURL = AppConstants.patcherCacheFolderURL
+            .appendingPathComponent(label)
+            .appendingPathComponent("metadata.json")
+        guard let data = try? Data(contentsOf: metadataURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let timestampStr = json["lastCheckedUpToDateTimestamp"] as? String
+        else { return false }
+        if !currentAppNewVersion.isEmpty,
+           let throttledAt = json["throttledAtAppNewVersion"] as? String,
+           throttledAt != currentAppNewVersion {
+            return false
+        }
+        let iso = ISO8601DateFormatter()
+        guard let lastChecked = iso.date(from: timestampStr) else { return false }
+        let daysSince = Calendar.current.dateComponents([.day], from: lastChecked, to: Date()).day ?? Int.max
+        return daysSince < preferences.versionMismatchThrottleDays
+    }
+
     private func buildManagedApps() -> [ManagedApp] {
         let discoveredURL = AppConstants.patcherDiscoveredFolderURL
         guard let plists = try? FileManager.default.contentsOfDirectory(
@@ -385,6 +405,14 @@ final class AvailableSoftwareViewModel: ObservableObject {
                 status = dict["updateStatus"] as? String ?? "unknown"
             }
 
+            let isThrottled: Bool
+            if status == "updateRequired" {
+                let availableVersion = dict["appNewVersion"] as? String ?? ""
+                isThrottled = isVersionMismatchThrottled(label: label, currentAppNewVersion: availableVersion)
+            } else {
+                isThrottled = false
+            }
+
             let meta = loadManagedAppMetadata(for: label)
             result.append(ManagedApp(
                 id:             label,
@@ -395,7 +423,8 @@ final class AvailableSoftwareViewModel: ObservableObject {
                 publisher:      meta.publisher,
                 appDescription: meta.description,
                 keywords:       meta.keywords,
-                category:       meta.category
+                category:       meta.category,
+                isThrottled:    isThrottled
             ))
         }
 
