@@ -206,6 +206,8 @@ struct Preferences {
         prefs["ApplyFailThreshold"] as? Int ?? 3
     }
 
+    // MARK: - Scan Delay Options
+    
     /// When true, the scheduler waits a one-time random delay after first deployment
     /// before running its first scan. Spreads fleet-wide first-scan load across the
     /// initialScanDelayMaxSeconds window instead of all machines scanning simultaneously
