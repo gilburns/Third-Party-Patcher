@@ -125,7 +125,7 @@ struct CatalogView: View {
     private var notInstalledCount:     Int { catalog.items.filter { $0.installedVersion == nil }.count }
     private var pendingDownloadsCount: Int {
         let stagedIDs = Set(vm.stagedPatches.map { $0.id })
-        return vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) }.count
+        return vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isThrottled }.count
     }
 
     private var sortedCategories: [(name: String, count: Int)] {
@@ -241,7 +241,6 @@ struct CatalogView: View {
                             }
                         }
                     }
-                    .padding(.bottom, 8)
                 }
 
                 Divider()
@@ -300,7 +299,7 @@ struct CatalogView: View {
                         .environmentObject(vm)
                 } else {
                     let stagedIDs = Set(vm.stagedPatches.map { $0.id })
-                    let pending = vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) }
+                    let pending = vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isThrottled }
                     PendingDownloadsGrid(apps: pending, onSelect: { selectedManagedApp = $0 })
                         .environmentObject(vm)
                 }
