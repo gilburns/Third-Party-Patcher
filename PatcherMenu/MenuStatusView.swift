@@ -44,12 +44,17 @@ struct MenuStatusView: View {
 
     private var headerSection: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(vm.preferences.appTitle)
-                    .font(.headline)
-                Text("Refreshed \(vm.refreshedAgo)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 5) {
+                HeaderIcon(preferences: vm.preferences, size: 48)
+                    .padding(.top, -5)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(vm.preferences.appTitle)
+                        .font(.headline)
+                    Text("Refreshed \(vm.refreshedAgo)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if vm.isLoading {
@@ -72,6 +77,81 @@ struct MenuStatusView: View {
         .padding(.vertical, 10)
     }
     
+    private struct HeaderIcon: View {
+        let preferences: Preferences
+        let size: CGFloat
+
+        init(preferences: Preferences, size: CGFloat = 48) {
+            self.preferences = preferences
+            self.size = size
+        }
+
+        var body: some View {
+            ZStack(alignment: .bottomTrailing) {
+                mainImage
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+
+                if preferences.useOverlayIcon, let overlay = Self.overlayImage(for: preferences) {
+                    overlay
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: size * 0.40, height: size * 0.40)
+                        .offset(x: 4, y: 4)
+                }
+            }
+            .frame(width: size + 4, height: size + 4)
+        }
+
+        private var mainImage: Image {
+            let iconStr = preferences.dialogIcon
+
+            if iconStr.isEmpty {
+                let cached = AppConstants.patcherConfigFolderURL.appendingPathComponent("dialog_icon.png")
+                if let img = NSImage(contentsOf: cached) { return Image(nsImage: img) }
+                if let img = NSImage(named: NSImage.computerName) { return Image(nsImage: img) }
+                return Image(systemName: "desktopcomputer")
+            }
+            if iconStr.hasPrefix("/") || iconStr.hasPrefix("~") {
+                let path = (iconStr as NSString).expandingTildeInPath
+                if let img = NSImage(contentsOfFile: path) { return Image(nsImage: img) }
+                return Image(systemName: "desktopcomputer")
+            }
+            if iconStr.hasPrefix("SF=") {
+                let symbolName = String(iconStr.dropFirst(3).split(separator: ",").first ?? "desktopcomputer")
+                return Image(systemName: symbolName)
+            }
+            return Image(systemName: iconStr)
+        }
+
+        static func overlayImage(for preferences: Preferences) -> Image? {
+            let explicit = preferences.overlayIcon
+            if !explicit.isEmpty {
+                let path = (explicit as NSString).expandingTildeInPath
+                if let img = NSImage(contentsOfFile: path) { return Image(nsImage: img) }
+            }
+            let candidates = [
+                "/Library/Application Support/JAMF/Jamf.app/Contents/Resources/AppIcon.icns",
+                "/Applications/Self Service.app/Contents/Resources/AppIcon.icns",
+                "/Applications/Self-Service.app/Contents/Resources/AppIcon.icns",
+                "/Applications/Manager.app/Contents/Resources/AppIcon.icns",
+                "/Library/Addigy/macmanage/MacManage.app/Contents/Resources/atom.icns",
+                "/Library/Intune/Microsoft Intune Agent.app/Contents/Resources/AppIcon.icns",
+                "/Applications/Company Portal.app/Contents/Resources/AppIcon.icns",
+                "/Applications/Workspace ONE Intelligent Hub.app/Contents/Resources/AppIcon.icns",
+                "/Applications/Kandji Self Service.app/Contents/Resources/AppIcon.icns",
+                "/usr/local/sbin/FileWave.app/Contents/Resources/fwGUI.app/Contents/Resources/kiosk.icns",
+                "/System/Applications/App Store.app/Contents/Resources/AppIcon.icns",
+                "/Applications/App Store.app/Contents/Resources/AppIcon.icns",
+            ]
+            return candidates.first(where: { FileManager.default.fileExists(atPath: $0) })
+                .flatMap { NSImage(contentsOfFile: $0) }
+                .map { Image(nsImage: $0) }
+        }
+    }
+
+
     // MARK: - Action section
     
     private var actionSection: some View {
