@@ -69,6 +69,11 @@ struct Preferences {
         prefs["IgnoreAppsInHomeFolder"] as? Bool ?? false
     }
 
+    /// Applications discovered only on external volumes (/Volumes/*) are ignored if true.
+    var ignoreAppsOnExternalVolumes: Bool {
+        prefs["IgnoreAppsOnExternalVolumes"] as? Bool ?? false
+    }
+
     /// When true, applications discovered in /Users/* locations are relocated to /Applications.
     /// Items relocated to the /Applications are managed and the previous user managed app is deleted.
     /// If 'IgnoreAppsInHomeFolder' is set to 'true' this setting is also ignored.
