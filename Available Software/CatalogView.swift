@@ -167,6 +167,9 @@ struct CatalogView: View {
         .onAppear {
             catalog.loadItems(preferences: vm.preferences)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .reloadAvailableSoftware)) { _ in
+            catalog.loadItems(preferences: vm.preferences)
+        }
         .onChange(of: filterMode) { _, _ in selectedItem = nil }
         .onChange(of: vm.activeLabel) { oldLabel, newLabel in
             if oldLabel != nil && newLabel == nil {
@@ -246,11 +249,11 @@ struct CatalogView: View {
                 Divider()
                     .padding(.bottom, -10)
                 
-                Section("Software Details") {
-                    sidebarRow(.managedSoftware,  label: "Managed Software",   icon: "desktopcomputer",         badge: vm.managedApps.count)
+                Section("Managed Software") {
+                    sidebarRow(.managedSoftware,  label: "Software Details",   icon: "desktopcomputer",         badge: vm.managedApps.count)
                     sidebarRow(.pendingUpdates,   label: "Pending Updates",    icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
                     sidebarRow(.pendingDownloads, label: "Pending Downloads",  icon: "arrow.down.circle",       badge: pendingDownloadsCount)
-                    sidebarRow(.updateHistory,    label: "Update History",     icon: "clock.arrow.circlepath",  badge: 0)
+                    sidebarRow(.updateHistory,    label: "Software History",     icon: "clock.arrow.circlepath",  badge: 0)
                     sidebarRow(.about,            label: "About",              icon: "info.circle.fill",        badge: 0)
                 }
             }
@@ -1318,6 +1321,8 @@ private struct ManagedAppDetailView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
+                            .disabled(!pathIsAvailable(appPath))
+                            .help(pathIsAvailable(appPath) ? "" : "Volume not mounted")
                         }
                     }
                     .padding(.bottom, 8)
@@ -1344,12 +1349,13 @@ private struct ManagedAppDetailView: View {
             Text("Location").font(.headline)
             Divider()
             ForEach(app.installPaths, id: \.self) { path in
+                let available = pathIsAvailable(path)
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: path.hasSuffix(".app") ? "app.badge" : "folder")
-                        .frame(width: 16).foregroundStyle(.secondary)
+                        .frame(width: 16).foregroundStyle(available ? .secondary : .tertiary)
                     Text(path)
                         .font(.caption)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(available ? .primary : .secondary)
                         .textSelection(.enabled)
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1363,12 +1369,20 @@ private struct ManagedAppDetailView: View {
                         Image(systemName: "magnifyingglass")
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Reveal in Finder")
-                    
+                    .foregroundStyle(available ? .secondary : .tertiary)
+                    .disabled(!available)
+                    .help(available ? "Reveal in Finder" : "Volume not mounted")
                 }
             }
         }
+    }
+
+    /// Returns false when `path` starts with /Volumes/<name>/ and that volume is not mounted.
+    private func pathIsAvailable(_ path: String) -> Bool {
+        guard path.hasPrefix("/Volumes/") else { return true }
+        let parts = path.dropFirst("/Volumes/".count).components(separatedBy: "/")
+        guard let volName = parts.first, !volName.isEmpty else { return true }
+        return FileManager.default.fileExists(atPath: "/Volumes/\(volName)")
     }
 
     private var historySection: some View {
@@ -1391,7 +1405,7 @@ private struct ManagedAppDetailView: View {
     }
 }
 
-// MARK: - Update History
+// MARK: - Software History
 
 private struct UpdateHistoryList: View {
     let history: [AvailableSoftwareViewModel.HistoryEntry]
@@ -1429,7 +1443,7 @@ private struct UpdateHistoryList: View {
         if history.isEmpty {
             VStack(spacing: 12) {
                 Image(systemName: "clock").font(.system(size: 36)).foregroundStyle(.tertiary)
-                Text("No Update History").font(.headline)
+                Text("No Software History").font(.headline)
                 Text("Patcher hasn't applied any updates yet.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
@@ -1509,7 +1523,7 @@ private struct AppHistoryDetailView: View {
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left.circle").imageScale(.large)
-                        Text("Update History")
+                        Text("Software History")
                     }.font(.body)
                 }
                 .buttonStyle(.borderless).foregroundStyle(.tint)
