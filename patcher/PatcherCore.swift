@@ -812,7 +812,23 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
                 var cleanDict = jsonDict
                 cleanDict["appNewVersion"] = appNewVersion
                 writeScannedPlist(label: label, jsonDict: cleanDict)
-                removeStagedInstallFileIfPresent(label: label)
+
+                // If the app's last-known paths were all on an external volume that is
+                // simply not mounted, keep the staged installer for when it reconnects.
+                let prevPlistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+                let prevPaths: [String]
+                if let data = try? Data(contentsOf: prevPlistURL),
+                   let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                   let installs = dict["foundInstalls"] as? [[String: Any]] {
+                    prevPaths = installs.compactMap { $0["path"] as? String }
+                } else {
+                    prevPaths = []
+                }
+                if !prevPaths.isEmpty && prevPaths.allSatisfy({ isOnUnmountedVolume($0) }) {
+                    Logger.log("ℹ️ \(label) not found — install paths on an unmounted volume; staged installer retained")
+                } else {
+                    removeStagedInstallFileIfPresent(label: label)
+                }
             }
             return
         }
@@ -945,6 +961,15 @@ func updateConfigJSON(_ updates: [String: Any]) {
 }
 
 
+/// Returns true if `path` starts with `/Volumes/<name>/` and that volume is not currently mounted.
+/// Used to distinguish a temporarily-absent external drive from a genuinely uninstalled app.
+func isOnUnmountedVolume(_ path: String) -> Bool {
+    guard path.hasPrefix("/Volumes/") else { return false }
+    let parts = path.dropFirst("/Volumes/".count).components(separatedBy: "/")
+    guard let volName = parts.first, !volName.isEmpty else { return false }
+    return !FileManager.default.fileExists(atPath: "/Volumes/\(volName)")
+}
+
 func removeDiscoveredPlistIfPresent(label: String) {
     let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
     guard FileManager.default.fileExists(atPath: plistURL.path) else { return }
@@ -1016,6 +1041,7 @@ func writeScannedPlist(label: String, jsonDict: [String: Any]) {
 func getApplicationVersion(appWithExtension: String, versionKey: String? = "CFBundleShortVersionString", targetDir: String? = nil) -> [FoundInstall]? {
     let fileManager = FileManager.default
     let keyToCheck = versionKey?.isEmpty == false ? versionKey! : "CFBundleShortVersionString"
+    let ignoreExternalVolumes = Preferences().ignoreAppsOnExternalVolumes
 
     // Build paths to check: targetDir first (if provided), then standard locations as fallback
     var appPaths = [
@@ -1030,6 +1056,7 @@ func getApplicationVersion(appWithExtension: String, versionKey: String? = "CFBu
     var found: [FoundInstall] = []
 
     for appPath in appPaths {
+        if ignoreExternalVolumes && appPath.hasPrefix("/Volumes/") { continue }
         guard fileManager.fileExists(atPath: appPath) else { continue }
 
         if fileManager.fileExists(atPath: "\(appPath)/Contents/_MASReceipt") {
@@ -1051,7 +1078,7 @@ func getApplicationVersion(appWithExtension: String, versionKey: String? = "CFBu
 
     // Supplement with mdfind to catch installs outside the checked paths
     let foundPaths = Set(found.map { $0.path })
-    for appPath in runMdfind(appWithExtension: appWithExtension) {
+    for appPath in runMdfind(appWithExtension: appWithExtension, ignoreExternalVolumes: ignoreExternalVolumes) {
         guard !foundPaths.contains(appPath) else { continue }
 
         if fileManager.fileExists(atPath: "\(appPath)/Contents/_MASReceipt") {
@@ -1079,7 +1106,7 @@ func getApplicationVersion(appWithExtension: String, versionKey: String? = "CFBu
     return found
 }
 
-private func runMdfind(appWithExtension: String) -> [String] {
+private func runMdfind(appWithExtension: String, ignoreExternalVolumes: Bool = false) -> [String] {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
     process.arguments = ["kMDItemContentType == 'com.apple.application-bundle' && kMDItemFSName == '\(appWithExtension)'", "-0"]
@@ -1100,6 +1127,7 @@ private func runMdfind(appWithExtension: String) -> [String] {
     guard let output = String(data: data, encoding: .utf8) else { return [] }
     return output.components(separatedBy: "\0").filter { path in
         guard !path.isEmpty else { return false }
+        if ignoreExternalVolumes && path.hasPrefix("/Volumes/") { return false }
         return !path.hasPrefix("/Library/") && !path.hasPrefix("/System/")
     }
 }
@@ -1457,6 +1485,19 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     return fileManager.fileExists(atPath: path)
                 }
                 if !anyPathExists {
+                    let installPaths = foundInstalls.compactMap { $0["path"] as? String }
+                    let allOnUnmountedVolume = !installPaths.isEmpty && installPaths.allSatisfy { isOnUnmountedVolume($0) }
+                    if allOnUnmountedVolume {
+                        let volumes = Array(Set(installPaths.compactMap { path -> String? in
+                            let parts = path.dropFirst("/Volumes/".count).components(separatedBy: "/")
+                            guard let v = parts.first, !v.isEmpty else { return nil }
+                            return "/Volumes/\(v)"
+                        })).sorted().joined(separator: ", ")
+                        dialog?.setSkipped(item: dialogItem, reason: "Unavailable Drive")
+                        Logger.log("⏭️ \(label) — skipping, volume not mounted: \(volumes)")
+                        skippedCount += 1
+                        continue
+                    }
                     Logger.log("⏭️ \(label) — no recorded install paths exist (app was removed) — discarding staged update")
                     removeStagedInstallFileIfPresent(label: label)
                     removeDiscoveredPlistIfPresent(label: label)
@@ -1600,6 +1641,24 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     )
                     guard !targets.isEmpty else {
                         Logger.log("⏭️ \(label) — no install targets after applying preferences")
+                        skippedCount += 1
+                        continue
+                    }
+
+                    // If any target is under /Volumes/, verify the volume is mounted.
+                    // A missing volume is not an install failure — keep the staged file
+                    // and retry next cycle when the drive may be reconnected.
+                    let unmountedVolumes: [String] = targets.compactMap { path in
+                        guard path.hasPrefix("/Volumes/") else { return nil }
+                        let parts = path.dropFirst("/Volumes/".count).components(separatedBy: "/")
+                        guard let volName = parts.first, !volName.isEmpty else { return nil }
+                        let mountPoint = "/Volumes/\(volName)"
+                        return fileManager.fileExists(atPath: mountPoint) ? nil : mountPoint
+                    }
+                    if !unmountedVolumes.isEmpty {
+                        let names = Array(Set(unmountedVolumes)).sorted().joined(separator: ", ")
+                        dialog?.setSkipped(item: dialogItem, reason: "Unavailable Drive")
+                        Logger.log("⏭️ \(label) — skipping, volume not mounted: \(names)")
                         skippedCount += 1
                         continue
                     }
