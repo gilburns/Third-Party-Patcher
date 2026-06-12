@@ -8,6 +8,10 @@
 import SwiftUI
 import AppKit
 
+extension Notification.Name {
+    static let reloadAvailableSoftware = Notification.Name("com.gilburns.patcher.reloadAvailableSoftware")
+}
+
 @main
 struct AvailableSoftwareApp: App {
     @StateObject private var viewModel = AvailableSoftwareViewModel()
@@ -23,6 +27,16 @@ struct AvailableSoftwareApp: App {
                 .environmentObject(viewModel)
         }
         .defaultSize(width: 720, height: 560)
+        .commands {
+            CommandGroup(after: .toolbar) {
+                Button("Reload") {
+                    viewModel.loadMySoftwareData()
+                    NotificationCenter.default.post(name: .reloadAvailableSoftware, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                Divider()
+            }
+        }
     }
 
     private func applyCustomIcon() {
