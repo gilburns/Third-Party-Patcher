@@ -12,8 +12,13 @@ extension Notification.Name {
     static let reloadAvailableSoftware = Notification.Name("com.gilburns.patcher.reloadAvailableSoftware")
 }
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+}
+
 @main
 struct AvailableSoftwareApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var viewModel = AvailableSoftwareViewModel()
 
     init() {
