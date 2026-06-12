@@ -506,7 +506,10 @@ struct PatcherScheduler {
             // prompt again even though apply already ran today.
             if let lastApply = state.lastApplyDate, cal.isDate(lastApply, inSameDayAs: now) {
                 let deferral = DeferralState.load()
+                // Only bypass if the expiry is after the last apply — an expiry that predates
+                // the last run was already consumed by it and should not trigger another prompt.
                 let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
+                    && deferral.expiryDate! > lastApply
                 if deferralExpired {
                     Logger.log("ℹ️ Apply: monthly — deferral expired on patch day, prompting again.")
                 } else {
@@ -525,6 +528,7 @@ struct PatcherScheduler {
                 if hoursSince < intervalHours {
                     let deferral = DeferralState.load()
                     let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
+                        && deferral.expiryDate! > lastApply
                     if deferralExpired {
                         Logger.log("ℹ️ Apply: monthly — deferral expired, bypassing \(intervalHours)h interval.")
                     } else {
@@ -554,7 +558,10 @@ struct PatcherScheduler {
             let intervalHours = prefs.applyIntervalHours
             if hoursSince < intervalHours {
                 let deferral = DeferralState.load()
+                // Only bypass if the expiry is after the last apply — an expiry that predates
+                // the last run was already consumed by it and should not trigger another prompt.
                 let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
+                    && deferral.expiryDate! > lastApply
                 if deferralExpired {
                     Logger.log("ℹ️ Apply: deferral expired, bypassing \(intervalHours)h interval.")
                 } else {
