@@ -13,7 +13,7 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, ApplyQuiet.self, EnsureTool.self, ResetHistory.self, ResetBrokenState.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
+        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, ApplyQuiet.self, EnsureTool.self, ResetHistory.self, ResetBrokenState.self, ResetLabel.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
 //        defaultSubcommand: Scan.self
     )
 }
@@ -485,6 +485,90 @@ extension Patcher {
                 "applyBrokenVersions":  [String: String]()
             ])
             Logger.log("✅ Broken/failed state cleared for all labels.")
+        }
+    }
+}
+
+extension Patcher {
+    struct ResetLabel: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "resetLabel",
+            abstract: "Fully reset a label: remove its staged cache and move it from Discovered back to Scanned."
+        )
+
+        @Argument(help: "Installomator label to reset.")
+        var label: String
+
+        func run() throws {
+            Logger.log("Patcher Version: \(AppConstants.patcherVersion)")
+            Logger.log("Process ID: \(AppConstants.currentPid)")
+            configureLogging()
+            setupApplicationSupportFolders()
+            performReset(label)
+            cleanupAfterRun()
+        }
+
+        private func performReset(_ label: String) {
+            let fm               = FileManager.default
+            let cacheDir         = AppConstants.patcherCacheFolderURL.appendingPathComponent(label)
+            let discoveredPlist  = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+            let scannedPlist     = AppConstants.patcherScannedFolderURL.appendingPathComponent("\(label).plist")
+
+            let hasCacheDir        = fm.fileExists(atPath: cacheDir.path)
+            let hasDiscoveredPlist = fm.fileExists(atPath: discoveredPlist.path)
+
+            guard hasCacheDir || hasDiscoveredPlist else {
+                Logger.log("ℹ️ '\(label)' — no cache directory or discovered plist found; nothing to reset.")
+                return
+            }
+
+            var errors = 0
+
+            // 1. Remove cache directory (staged installer, metadata.json, history.json).
+            if hasCacheDir {
+                do {
+                    try fm.removeItem(at: cacheDir)
+                    Logger.log("🗑️ Removed cache directory for '\(label)'.")
+                } catch {
+                    Logger.log("❌ Failed to remove cache directory for '\(label)': \(error)")
+                    errors += 1
+                }
+            }
+
+            // 2. Strip install-specific keys from the discovered plist and write it to Scanned.
+            if hasDiscoveredPlist {
+                if let data = try? Data(contentsOf: discoveredPlist),
+                   var dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+                    dict.removeValue(forKey: "installedVersion")
+                    dict.removeValue(forKey: "updateStatus")
+                    dict.removeValue(forKey: "foundInstalls")
+                    do {
+                        let scannedData = try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
+                        try scannedData.write(to: scannedPlist, options: .atomic)
+                        Logger.log("💾 Wrote scanned plist for '\(label)'.")
+                    } catch {
+                        Logger.log("❌ Failed to write scanned plist for '\(label)': \(error)")
+                        errors += 1
+                    }
+                } else {
+                    Logger.log("⚠️ Could not read discovered plist for '\(label)' — scanned plist not written.")
+                }
+
+                // 3. Remove the discovered plist.
+                do {
+                    try fm.removeItem(at: discoveredPlist)
+                    Logger.log("🗑️ Removed discovered plist for '\(label)'.")
+                } catch {
+                    Logger.log("❌ Failed to remove discovered plist for '\(label)': \(error)")
+                    errors += 1
+                }
+            }
+
+            if errors == 0 {
+                Logger.log("✅ '\(label)' fully reset — will be re-evaluated on next scan.")
+            } else {
+                Logger.log("⚠️ '\(label)' reset completed with \(errors) error(s) — check log for details.")
+            }
         }
     }
 }
