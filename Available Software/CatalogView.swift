@@ -137,6 +137,13 @@ struct CatalogView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    private var isInCatalogMode: Bool {
+        switch filterMode {
+        case .all, .installed, .notInstalled, .category: return true
+        default: return false
+        }
+    }
+
     private var hasDetectedUpdates: Bool {
         let stagedIDs = Set(vm.stagedPatches.map { $0.id })
         return vm.managedApps.contains { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isThrottled }
@@ -191,7 +198,7 @@ struct CatalogView: View {
             sidebarContent
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 270)
         } detail: {
-            if catalog.items.isEmpty {
+            if catalog.items.isEmpty && isInCatalogMode {
                 emptyState
             } else {
                 mainContent
@@ -216,6 +223,9 @@ struct CatalogView: View {
         }
         .onAppear {
             catalog.loadItems(preferences: vm.preferences)
+            if vm.preferences.optionalLabels.isEmpty {
+                filterMode = .managedSoftware
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .reloadAvailableSoftware)) { _ in
             catalog.loadItems(preferences: vm.preferences)
