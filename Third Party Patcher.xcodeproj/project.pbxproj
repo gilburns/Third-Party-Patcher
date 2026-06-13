@@ -146,6 +146,11 @@
 			path = patcherTests;
 			sourceTree = "<group>";
 		};
+		1B8E96262FDDF8420071142C /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		1BAFE18C2F96F13700E18CFB /* patcherscheduler */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -226,15 +231,7 @@
 		1B3193992F7F478400860CB7 = {
 			isa = PBXGroup;
 			children = (
-				1B3193B02F7F47C900860CB7 /* Constants.swift */,
-				1B319BE22F8D989600860CB7 /* DeferralState.swift */,
-				1B319BC22F8BE89C00860CB7 /* LabelHistory.swift */,
-				1B3193B22F7F47E800860CB7 /* Logging.swift */,
-				1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */,
-				1BAFE20D2F9B8A7800E18CFB /* PatcherXPCProtocol.swift */,
-				1B3193B82F8100A000860CB7 /* Preferences.swift */,
-				1B319C612F948B7700860CB7 /* SystemInfo.swift */,
-				1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */,
+				1B8E96262FDDF8420071142C /* Shared */,
 				1B3193A42F7F478400860CB7 /* patcher */,
 				1BAFE18C2F96F13700E18CFB /* patcherscheduler */,
 				1B319BD62F8BEE1200860CB7 /* patcherreport */,
@@ -243,6 +240,15 @@
 				1BAFE1DC2F98ED4E00E18CFB /* PatcherMenu */,
 				1BAFE4E02F9D421600E18CFB /* Available Software */,
 				1B3193A32F7F478400860CB7 /* Products */,
+				1B3193B02F7F47C900860CB7 /* Constants.swift */,
+				1B319BE22F8D989600860CB7 /* DeferralState.swift */,
+				1B319BC22F8BE89C00860CB7 /* LabelHistory.swift */,
+				1B3193B22F7F47E800860CB7 /* Logging.swift */,
+				1BAFE20D2F9B8A7800E18CFB /* PatcherXPCProtocol.swift */,
+				1BE8B2842FAFB0A100D4F9C6 /* PatchSchedule.swift */,
+				1B3193B82F8100A000860CB7 /* Preferences.swift */,
+				1B319C612F948B7700860CB7 /* SystemInfo.swift */,
+				1BE8B27B2FA7AEE600D4F9C6 /* Webhooks.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -277,6 +283,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				1B3193A42F7F478400860CB7 /* patcher */,
+				1B8E96262FDDF8420071142C /* Shared */,
 			);
 			name = patcher;
 			packageProductDependencies = (
@@ -300,6 +307,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				1B319BD62F8BEE1200860CB7 /* patcherreport */,
+				1B8E96262FDDF8420071142C /* Shared */,
 			);
 			name = patcherreport;
 			packageProductDependencies = (
@@ -322,6 +330,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				1B319C082F90650200860CB7 /* patcherschedulerTests */,
+				1B8E96262FDDF8420071142C /* Shared */,
 			);
 			name = patcherschedulerTests;
 			packageProductDependencies = (
@@ -344,6 +353,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				1B319C362F925CD300860CB7 /* patcherTests */,
+				1B8E96262FDDF8420071142C /* Shared */,
 			);
 			name = patcherTests;
 			packageProductDependencies = (
@@ -365,6 +375,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				1B8E96262FDDF8420071142C /* Shared */,
 				1BAFE18C2F96F13700E18CFB /* patcherscheduler */,
 			);
 			name = patcherscheduler;
@@ -387,6 +398,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				1B8E96262FDDF8420071142C /* Shared */,
 				1BAFE1DC2F98ED4E00E18CFB /* PatcherMenu */,
 			);
 			name = PatcherMenu;
@@ -409,6 +421,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				1B8E96262FDDF8420071142C /* Shared */,
 				1BAFE4E02F9D421600E18CFB /* Available Software */,
 			);
 			name = "Available Software";
