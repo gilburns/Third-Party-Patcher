@@ -28,6 +28,8 @@
 	<string>Defer</string>
 	<key>IgnoreAppsInHomeFolder</key>
 	<true/>
+	<key>IgnoreAppsOnExternalVolumes</key>
+	<false/>
 	<key>IgnoredLabels</key>
 	<string>bbedit brave firefox_da firefox_intl firefox firefoxesr_intl firefoxesr firefoxpkg_intl googlechrome* microsoft* nudge* renew-noagent thunderbird_intl thunderbirdesr zoomclient zoomgov zulujdk*</string>
 	<key>InstallomatorGitHubAccount</key>
