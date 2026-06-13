@@ -43,7 +43,7 @@ SCHEMES=(patcher patcherscheduler patcherreport)
 
 # ── Extract version from Constants.swift ─────────────────────────────────────
 
-VERSION=$(grep 'patcherVersion' "$PROJECT_DIR/Constants.swift" \
+VERSION=$(grep 'patcherVersion' "$PROJECT_DIR/Shared/Constants.swift" \
     | grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' | tr -d '"')
 if [[ -z "$VERSION" ]]; then
     print "❌  Could not extract version from Constants.swift" >&2
