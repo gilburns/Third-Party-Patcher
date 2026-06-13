@@ -137,6 +137,53 @@ struct CatalogView: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    private var hasDetectedUpdates: Bool {
+        let stagedIDs = Set(vm.stagedPatches.map { $0.id })
+        return vm.managedApps.contains { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isThrottled }
+    }
+
+    private var runNowMenu: some View {
+        Menu {
+            Button("Apply pending updates") {
+                vm.triggerApply()
+            }
+            .disabled(vm.stagedPatches.isEmpty)
+            .help(vm.stagedPatches.isEmpty
+                  ? "No staged updates — run Download first"
+                  : "Apply any staged pending updates")
+
+            if vm.preferences.showMenuDownloadAction
+                || vm.preferences.showMenuCheckAction
+                || vm.preferences.showMenuScanAction {
+                Divider()
+            }
+            if vm.preferences.showMenuDownloadAction {
+                Button("Download new Updates") {
+                    vm.triggerStage()
+                }
+                .disabled(!hasDetectedUpdates)
+                .help(hasDetectedUpdates
+                      ? "Download and verify any available updates"
+                      : "No new updates detected — run Check or Scan first")
+            }
+            if vm.preferences.showMenuCheckAction {
+                Button("Check for Updates") {
+                    vm.triggerCheck()
+                }
+                .help("Check for any available updates for previously discovered apps")
+            }
+            if vm.preferences.showMenuScanAction {
+                Button("Full Discovery Scan") {
+                    vm.triggerScan()
+                }
+                .help("Runs a full discovery scan for installed applications. This can take a while.")
+            }
+        } label: {
+            Image(systemName: "play.circle")
+        }
+        .help("Run actions…")
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -153,6 +200,9 @@ struct CatalogView: View {
         .navigationTitle("Available Software")
         .frame(minWidth: 840, minHeight: 680)
         .toolbar {
+            ToolbarItem(placement: .automatic) {
+                runNowMenu
+            }
             if vm.preferences.showHelpButton {
                 ToolbarItem(placement: .automatic) {
                     Button { showingHelp.toggle() } label: {
