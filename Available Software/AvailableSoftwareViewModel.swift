@@ -232,6 +232,28 @@ final class AvailableSoftwareViewModel: ObservableObject {
         proxy.triggerPhase("stage") { _, _ in }
     }
 
+    /// Triggers the check phase to look for available updates.
+    func triggerCheck() {
+        guard activeLabel == nil else { return }
+        if xpcConnection == nil { setupXPCConnection() }
+        guard let proxy = xpcConnection?.remoteObjectProxyWithErrorHandler({ [weak self] error in
+            NSLog("AvailableSoftware XPC error (check): %@", error.localizedDescription)
+            Task { @MainActor [weak self] in self?.xpcConnection = nil }
+        }) as? PatcherXPCProtocol else { return }
+        proxy.triggerPhase("check") { _, _ in }
+    }
+
+    /// Triggers the scan phase for full discovery of installed applications.
+    func triggerScan() {
+        guard activeLabel == nil else { return }
+        if xpcConnection == nil { setupXPCConnection() }
+        guard let proxy = xpcConnection?.remoteObjectProxyWithErrorHandler({ [weak self] error in
+            NSLog("AvailableSoftware XPC error (scan): %@", error.localizedDescription)
+            Task { @MainActor [weak self] in self?.xpcConnection = nil }
+        }) as? PatcherXPCProtocol else { return }
+        proxy.triggerPhase("scan") { _, _ in }
+    }
+
     private func setupXPCConnection() {
         let conn = NSXPCConnection(machServiceName: AppConstants.patcherXPCServiceName, options: .privileged)
         conn.remoteObjectInterface = NSXPCInterface(with: PatcherXPCProtocol.self)
@@ -314,6 +336,12 @@ final class AvailableSoftwareViewModel: ObservableObject {
         managedApps      = buildManagedApps()
         updateHistory    = buildUpdateHistory()
         schedulerSnapshot = loadSchedulerSnapshot()
+        updateDockBadge()
+    }
+
+    private func updateDockBadge() {
+        let count = managedApps.filter { $0.updateStatus == "updateRequired" && !$0.isThrottled }.count
+        NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : ""
     }
 
     private func buildStagedPatches() -> [StagedPatch] {
