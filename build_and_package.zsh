@@ -266,6 +266,19 @@ cat > "$SCRIPTS_DIR/preinstall" << 'PREINSTALL'
 #!/bin/zsh
 # Unload the scheduler if it is currently running (handles upgrades).
 /bin/launchctl bootout system/com.gilburns.patcher.scheduler 2>/dev/null
+
+# Unload PatcherMenu LaunchAgent for the console user if it is installed.
+MENU_PLIST="/Library/LaunchAgents/com.gilburns.patcher.menu.plist"
+if [[ -f "$MENU_PLIST" ]]; then
+    CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
+    if [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != "root" && "$CONSOLE_USER" != "loginwindow" ]]; then
+        CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null)
+        if [[ -n "$CONSOLE_UID" ]]; then
+            /bin/launchctl bootout gui/${CONSOLE_UID} "$MENU_PLIST" 2>/dev/null
+        fi
+    fi
+fi
+
 exit 0
 PREINSTALL
 
@@ -274,6 +287,19 @@ cat > "$SCRIPTS_DIR/postinstall" << 'POSTINSTALL'
 sleep 10
 # Load (or reload) the scheduler daemon.
 /bin/launchctl bootstrap system /Library/LaunchDaemons/com.gilburns.patcher.scheduler.plist
+
+# Load PatcherMenu LaunchAgent for the console user if it is installed.
+MENU_PLIST="/Library/LaunchAgents/com.gilburns.patcher.menu.plist"
+if [[ -f "$MENU_PLIST" ]]; then
+    CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
+    if [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != "root" && "$CONSOLE_USER" != "loginwindow" ]]; then
+        CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null)
+        if [[ -n "$CONSOLE_UID" ]]; then
+            /bin/launchctl bootstrap gui/${CONSOLE_UID} "$MENU_PLIST"
+        fi
+    fi
+fi
+
 exit 0
 POSTINSTALL
 
