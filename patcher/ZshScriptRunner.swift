@@ -23,10 +23,10 @@ class ZshScriptRunner {
             // Set execute permissions
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempScriptURL.path)
             
-//            print("✅ Script written to: \(tempScriptURL.path)")
+            Logger.verbose("✅ Script written to: \(tempScriptURL.path)")
             return tempScriptURL
         } catch {
-//            print("❌ Error writing script to file: \(error)")
+            Logger.log("❌ Error writing script to file: \(error)")
             return nil
         }
     }
@@ -54,7 +54,7 @@ class ZshScriptRunner {
                 try process.run()
                 process.waitUntilExit()
             } catch {
-//                print("❌ Error running script: \(error)")
+                Logger.log("❌ Error running script: \(error)")
             }
             group.leave()
         }
