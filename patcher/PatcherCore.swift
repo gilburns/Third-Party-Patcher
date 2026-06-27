@@ -596,6 +596,8 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
                 } else {
                     Logger.log("--------------------------------------------------")
                     Logger.log("⚠️ Skipping previously broken label: \(label)")
+                    removeDiscoveredPlistIfPresent(label: label)
+                    removeStagedInstallFileIfPresent(label: label)
                     brokenSkippedCount += 1
                     continue
                 }
