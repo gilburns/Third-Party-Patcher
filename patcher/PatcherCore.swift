@@ -807,11 +807,16 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
                 writeDiscoveredPlist(label: label, jsonDict: cleanDict,
                                      installedVersion: "", updateStatus: .updateRequired,
                                      foundInstalls: nil)
+                
+                removeScannedPlistIfPresent(label: label)
+                
             } else {
                 // App/pkg not installed — retain scan metadata for future use.
                 var cleanDict = jsonDict
                 cleanDict["appNewVersion"] = appNewVersion
                 writeScannedPlist(label: label, jsonDict: cleanDict)
+                
+                removeDiscoveredPlistIfPresent(label: label)
 
                 // If the app's last-known paths were all on an external volume that is
                 // simply not mounted, keep the staged installer for when it reconnects.
@@ -978,6 +983,17 @@ func removeDiscoveredPlistIfPresent(label: String) {
         Logger.log("🗑️ Removed discovered plist for ignored label: \(label)")
     } catch {
         Logger.log("❌ Failed to remove discovered plist for \(label): \(error)")
+    }
+}
+
+func removeScannedPlistIfPresent(label: String) {
+    let plistURL = AppConstants.patcherScannedFolderURL.appendingPathComponent("\(label).plist")
+    guard FileManager.default.fileExists(atPath: plistURL.path) else { return }
+    do {
+        try FileManager.default.removeItem(at: plistURL)
+        Logger.log("🗑️ Removed scanned plist for ignored label: \(label)")
+    } catch {
+        Logger.log("❌ Failed to remove scanned plist for \(label): \(error)")
     }
 }
 
@@ -1361,11 +1377,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 // For pkg-only installs (no foundInstalls or no .app path found),
                 // fall back to the locally synced metadata icon.
                 if iconPath == nil {
-                    let metaIcon = AppConstants.installomatorMetadataFolderURL
-                        .appendingPathComponent("Icons")
-                        .appendingPathComponent("\(lbl).png")
-                    if fileManager.fileExists(atPath: metaIcon.path) {
-                        iconPath = metaIcon.path
+                    let metaIcon = resolveLabelIcon(label: (lbl))
+                    if fileManager.fileExists(atPath: metaIcon) {
+                        iconPath = metaIcon
                     }
                 }
             }
