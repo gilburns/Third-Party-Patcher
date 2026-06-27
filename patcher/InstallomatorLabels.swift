@@ -68,10 +68,10 @@ class InstallomatorLabels {
 
                 // Compare versions
                 if currentVersionDate > localVersionDate {
-//                    print("New version available")
+                    Logger.verbose("New version available")
                     completion(false, "New Installomator version available: \(installomatorCurrentVersion)") // Online version is newer
                 } else {
-//                    print("No new version available")
+                    Logger.verbose("No new version available")
                     completion(true, "Installomator version is up to date: \(installomatorLocalVersion)") // Local version is up to date
                 }
             } catch {
@@ -94,7 +94,7 @@ class InstallomatorLabels {
             do {
                 try FileManager.default.createDirectory(atPath: tempDir.path, withIntermediateDirectories: true, attributes: nil)
             } catch {
-                print(error.localizedDescription);
+                Logger.log(error.localizedDescription);
                 return
             }
         }
@@ -113,7 +113,7 @@ class InstallomatorLabels {
                     return
                 }
 
-                print("SHA Value: \(sha)")
+                Logger.verbose("SHA Value: \(sha)")
                 // Download the tar.gz
                 let installomatorURL = URL(string: "https://codeload.github.com/\(account)/\(repo)/legacy.tar.gz/\(sha)")!
                 let installomatorTarGz = tempDir.appendingPathComponent("Installomator.tar.gz")
