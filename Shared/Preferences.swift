@@ -453,6 +453,7 @@ struct Preferences {
     }
 
     /// Display a deferral time pop-up menu in the install update dialog that allows the user to override the 'DeferralTimerDefault' timer.
+    /// If you override this with your own values, make sure the value set for `deferralTimerDefault` is included in this list
     var deferralTimerMenu: String {
         pref("DeferralTimerMenu", default: "5,30,60,120,240,480,1440")
     }
@@ -509,12 +510,6 @@ struct Preferences {
         prefs["ShowMenuBarApp"] as? Bool ?? false
     }
 
-    /// When true, a Help (?) button is shown in the menu bar popover header.
-    /// Tapping it displays support contact information. Defaults to true.
-    var showHelpButton: Bool {
-        prefs["ShowHelpButton"] as? Bool ?? true
-    }
-
     /// When true, the Last Activity section (scan / check / stage / apply dates)
     /// is shown in the menu bar popover. Defaults to true.
     var showActivitySection: Bool {
@@ -525,6 +520,36 @@ struct Preferences {
     /// Defaults to true.
     var showQuitButton: Bool {
         prefs["ShowQuitButton"] as? Bool ?? true
+    }
+
+    // MARK: - Available Software UI
+
+    /// Absolute path to a PNG or ICNS file used as the Available Software app icon,
+    /// overriding the built-in icon in the Dock, Finder, and app switcher.
+    /// Leave empty to use the default built-in icon. Defaults to "".
+    var customAppIconPath: String? {
+        guard let value = prefs["CustomAppIconPath"] as? String, !value.isEmpty else { return nil }
+        return value
+    }
+
+    /// Company or organization name shown in the Available Software app sidebar.
+    /// Defaults to "Patcher Corp.".
+    var companyName: String {
+        pref("CompanyName", default: "Patcher Corp.")
+    }
+
+    /// When true, apps installed via self-service installs are automatically added
+    /// to the current user's Dock if not already present. Defaults to true.
+    var addToDockOnSelfServiceInstall: Bool {
+        prefs["AddToDockOnSelfServiceInstall"] as? Bool ?? true
+    }
+
+    // MARK: - Available Software & PatherMenu UI
+
+    /// When true, a Help (?) button is shown in the menu bar popover header.
+    /// Tapping it displays support contact information. Defaults to true.
+    var showHelpButton: Bool {
+        prefs["ShowHelpButton"] as? Bool ?? true
     }
 
     /// When true, the "Download new Updates" option is shown in the Run Now menu.
@@ -549,28 +574,6 @@ struct Preferences {
     /// causing a swiftDialog progress window to appear. Defaults to true.
     var showScanCheckProgressDialog: Bool {
         prefs["ShowScanCheckProgressDialog"] as? Bool ?? true
-    }
-
-    // MARK: - Available Software UI
-
-    /// Company or organization name shown in the Available Software app sidebar.
-    /// Defaults to "".
-    var companyName: String {
-        pref("CompanyName", default: "Patcher Corp.")
-    }
-
-    /// Absolute path to a PNG or ICNS file used as the Available Software app icon,
-    /// overriding the built-in icon in the Dock, Finder, and app switcher.
-    /// Leave empty to use the default built-in icon. Defaults to "".
-    var customAppIconPath: String? {
-        guard let value = prefs["CustomAppIconPath"] as? String, !value.isEmpty else { return nil }
-        return value
-    }
-
-    /// When true, apps installed via self-service installs are automatically added
-    /// to the current user's Dock if not already present. Defaults to true.
-    var addToDockOnSelfServiceInstall: Bool {
-        prefs["AddToDockOnSelfServiceInstall"] as? Bool ?? true
     }
 
     // MARK: - Webhooks
