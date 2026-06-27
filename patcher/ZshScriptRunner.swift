@@ -64,7 +64,7 @@ class ZshScriptRunner {
 
         // If timeout occurred, terminate the process
         if result == .timedOut {
-//            print("⏳ Timeout reached: Killing script process.")
+            Logger.log("⏳ Timeout reached: Killing script process.")
             process.terminate()
             return nil
         }
