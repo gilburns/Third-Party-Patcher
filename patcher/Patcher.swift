@@ -136,10 +136,8 @@ extension Patcher {
                             }
                         }
                     }
-                    let metaIcon = AppConstants.installomatorMetadataFolderURL
-                        .appendingPathComponent("Icons")
-                        .appendingPathComponent("\(labelId).png")
-                    return fm.fileExists(atPath: metaIcon.path) ? metaIcon.path : nil
+                    let metaIcon = resolveIconURL(for: (labelId))
+                    return metaIcon?.path
                 }()
                 dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)** for updates…", icon: iconPath)
             }
