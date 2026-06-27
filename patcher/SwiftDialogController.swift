@@ -116,7 +116,7 @@ struct SwiftDialogController {
             [
                 "title":      item.displayName,
                 "icon":       item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns",
-                "status":     "wait",
+                "status":     "pending",
                 "statustext": "Waiting",
             ]
         }
@@ -163,7 +163,7 @@ struct SwiftDialogController {
     /// Marks a list item as in-progress (spinner) and updates the progress text.
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
         sendCommand("progresstext: [\(current)/\(total)] Installing \(item.displayName)…")
-        sendCommand("listitem: title: \(item.displayName), status: progress, statustext: Installing…")
+        sendCommand("listitem: title: \(item.displayName), status: wait, statustext: Installing…")
     }
 
     /// Marks a list item as successfully applied.
@@ -200,7 +200,13 @@ struct SwiftDialogController {
         } else {
             summary = "\(applied) update\(applied == 1 ? "" : "s") applied successfully"
         }
-        sendCommand("\(prefs.appTitle)\n\nAll waiting updates **have been applied**.\n\nThese updates were just applied 👉")
+        sendCommand("infobox: \(prefs.appTitle)")
+        sendCommand("infobox: + \n")
+        sendCommand("infobox: + \n")
+        sendCommand("infobox: + **All possible updates have been applied**.")
+        sendCommand("infobox: + \n")
+        sendCommand("infobox: + \n")
+        sendCommand("infobox: + These updates were just attempted 👉")
         sendCommand("progress: complete")
         sendCommand("progresstext: Complete — \(summary)")
         sendCommand("button1text: Done")
@@ -450,28 +456,40 @@ struct SwiftDialogController {
     }
 
 
-    // MARK: - Private
+    // MARK: - Notify or Prompt
 
+    // handleBlockingProcess = notify
     private func handleNotify(processName: String, item: ApplyItem) -> BlockingActionResponse {
         Logger.log("ℹ️ BlockingProcessAction=notify — showing notification for '\(processName)'")
-        let prefs = Preferences()
         var args: [String] = [
-            "--notification",
             "--title",     "Update Pending: \(item.displayName)",
             "--titlefont", "size=18",
             "--icon",      "caution",
+            "--iconsize", "80",
+            "--timer",       "30",
             "--message",   "\(item.displayName) needs to be quit to apply an update. Please close it when convenient.",
-            "--height",    "300",
+            "--messagealignment", "left",
+            "--messagefont", "size=16",
+            "--moveable",
+            "--height",    "200",
+            "--width",    "600",
         ]
-        if let overlay = resolveOverlayIcon(prefs: prefs) { args += ["--overlayicon", overlay] }
-        let p = launchAsUser(args)
-        p.waitUntilExit()
+        let prefs = Preferences()
+        if prefs.dialogOnTop { args.append("--ontop") }
+        // Use the blocking item's app icon as the overlay so the user sees which
+        // app is blocking. Fall back to the pkg icon if no app icon is available.
+        let overlayIcon = item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns"
+        args += ["--overlayicon", overlayIcon]
+
+        let prompt = launchAsUser(args)
+        prompt.waitUntilExit()
         recordBlockingProcessEvent(label: item.label,
                                    type: LabelHistoryEvent.EventType.blockingProcessNotified,
                                    processName: processName, date: Date())
         return .skip
     }
 
+    // handleBlockingProcess = prompt
     private func handlePrompt(processName: String, item: ApplyItem, countdownSeconds: Int) -> BlockingActionResponse {
         Logger.log("ℹ️ BlockingProcessAction=prompt — showing blocking-process dialog for '\(processName)'")
 
@@ -646,7 +664,7 @@ struct UserProgressDialog {
 
     func close() {
         send("progress: complete")
-        send("message: Check completed")
+        send("message: Process completed")
         Thread.sleep(forTimeInterval: 3.0)
          
         send("quit:")
