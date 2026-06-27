@@ -585,6 +585,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
                     Logger.log("⏭️ Ignoring label: \(label)")
                     ignoredCount += 1
                     removeDiscoveredPlistIfPresent(label: label)
+                    removeScannedPlistIfPresent(label: label)
                     removeStagedInstallFileIfPresent(label: label)
                     continue
                 }
@@ -597,6 +598,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
                     Logger.log("--------------------------------------------------")
                     Logger.log("⚠️ Skipping previously broken label: \(label)")
                     removeDiscoveredPlistIfPresent(label: label)
+                    removeScannedPlistIfPresent(label: label)
                     removeStagedInstallFileIfPresent(label: label)
                     brokenSkippedCount += 1
                     continue
@@ -606,6 +608,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
             guard let labelFileURL = resolveLabel(name: label) else {
                 Logger.log("⚠️ Label file not found for discovered app '\(label)' — removing discovered plist.")
                 removeDiscoveredPlistIfPresent(label: label)
+                removeScannedPlistIfPresent(label: label)
                 removeStagedInstallFileIfPresent(label: label)
                 continue
             }
