@@ -58,11 +58,21 @@ struct DockManager {
         defaults?.set(persistentApps, forKey: "persistent-apps")
         defaults?.synchronize()
 
-        let killall = Process()
-        killall.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-        killall.arguments = ["Dock"]
-        try? killall.run()
+        let killCfprefsd = Process()
+        killCfprefsd.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        killCfprefsd.arguments = ["cfprefsd"]
+        do {
+            try killCfprefsd.run()
+            killCfprefsd.waitUntilExit()
+        } catch {
+            NSLog("Failed to launch killall cfprefsd: \(error)")
+        }
 
+        let killDock = Process()
+        killDock.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        killDock.arguments = ["Dock"]
+        try? killDock.run()
+        
         NSLog("DockManager: added %@ to Dock", normalizedPath)
         return true
     }
