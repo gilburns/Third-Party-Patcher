@@ -1,0 +1,114 @@
+{
+  "creationSource" : null,
+  "@odata.context" : "https:\/\/graph.microsoft.com\/beta\/$metadata#deviceManagement\/configurationPolicies\/$entity",
+  "settings" : [
+    {
+      "id" : "0",
+      "settingInstance" : {
+        "settingDefinitionId" : "com.apple.tcc.configuration-profile-policy_com.apple.tcc.configuration-profile-policy",
+        "@odata.type" : "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance",
+        "settingInstanceTemplateReference" : null,
+        "auditRuleInformation" : null,
+        "groupSettingCollectionValue" : [
+          {
+            "children" : [
+              {
+                "groupSettingCollectionValue" : [
+                  {
+                    "children" : [
+                      {
+                        "auditRuleInformation" : null,
+                        "settingInstanceTemplateReference" : null,
+                        "settingDefinitionId" : "com.apple.tcc.configuration-profile-policy_services_systempolicyappbundles",
+                        "@odata.type" : "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance",
+                        "groupSettingCollectionValue" : [
+                          {
+                            "children" : [
+                              {
+                                "settingDefinitionId" : "com.apple.tcc.configuration-profile-policy_services_systempolicyappbundles_item_authorization",
+                                "choiceSettingValue" : {
+                                  "settingValueTemplateReference" : null,
+                                  "children" : [
+
+                                  ],
+                                  "value" : "com.apple.tcc.configuration-profile-policy_services_systempolicyappbundles_item_authorization_0"
+                                },
+                                "auditRuleInformation" : null,
+                                "@odata.type" : "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance",
+                                "settingInstanceTemplateReference" : null
+                              },
+                              {
+                                "simpleSettingValue" : {
+                                  "@odata.type" : "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                                  "value" : "identifier \"com.gilburns.AvailableSoftware\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] \/* exists *\/ and certificate leaf[field.1.2.840.113635.100.6.1.13] \/* exists *\/ and certificate leaf[subject.OU] = G4MQ57TVLE",
+                                  "settingValueTemplateReference" : null
+                                },
+                                "@odata.type" : "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+                                "auditRuleInformation" : null,
+                                "settingDefinitionId" : "com.apple.tcc.configuration-profile-policy_services_systempolicyappbundles_item_coderequirement",
+                                "settingInstanceTemplateReference" : null
+                              },
+                              {
+                                "@odata.type" : "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+                                "settingDefinitionId" : "com.apple.tcc.configuration-profile-policy_services_systempolicyappbundles_item_identifier",
+                                "settingInstanceTemplateReference" : null,
+                                "auditRuleInformation" : null,
+                                "simpleSettingValue" : {
+                                  "value" : "com.gilburns.AvailableSoftware",
+                                  "@odata.type" : "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+                                  "settingValueTemplateReference" : null
+                                }
+                              },
+                              {
+                                "settingInstanceTemplateReference" : null,
+                                "auditRuleInformation" : null,
+                                "choiceSettingValue" : {
+                                  "value" : "com.apple.tcc.configuration-profile-policy_services_systempolicyappbundles_item_identifiertype_0",
+                                  "children" : [
+
+                                  ],
+                                  "settingValueTemplateReference" : null
+                                },
+                                "settingDefinitionId" : "com.apple.tcc.configuration-profile-policy_services_systempolicyappbundles_item_identifiertype",
+                                "@odata.type" : "#microsoft.graph.deviceManagementConfigurationChoiceSettingInstance"
+                              }
+                            ],
+                            "settingValueTemplateReference" : null
+                          }
+                        ]
+                      }
+                    ],
+                    "settingValueTemplateReference" : null
+                  }
+                ],
+                "settingDefinitionId" : "com.apple.tcc.configuration-profile-policy_services",
+                "settingInstanceTemplateReference" : null,
+                "auditRuleInformation" : null,
+                "@odata.type" : "#microsoft.graph.deviceManagementConfigurationGroupSettingCollectionInstance"
+              }
+            ],
+            "settingValueTemplateReference" : null
+          }
+        ]
+      }
+    }
+  ],
+  "settingCount" : 1,
+  "roleScopeTagIds" : [
+    "0"
+  ],
+  "id" : "6cbbcba7-5792-4784-bb12-04446a06dbf2",
+  "lastModifiedDateTime" : "2026-05-24T02:41:42.155Z",
+  "priorityMetaData" : null,
+  "name" : "Available Software Settings Catalog PPPC",
+  "templateReference" : {
+    "templateDisplayName" : null,
+    "templateFamily" : "none",
+    "templateDisplayVersion" : null,
+    "templateId" : ""
+  },
+  "technologies" : "mdm,appleRemoteManagement",
+  "description" : "",
+  "createdDateTime" : "2026-05-24T02:38:49.303Z",
+  "platforms" : "macOS"
+}
