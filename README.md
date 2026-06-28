@@ -39,6 +39,8 @@ PatcherMenu is enabled with a single preference key and fully configurable via M
 
 See the **[PatcherMenu wiki page](../../wiki/PatcherMenu)** for configuration details.
 
+![PatcherMenu](https://raw.githubusercontent.com/wiki/gilburns/Third-Party-Patcher/screenshots/patchermenu-overview.png)
+
 ### Available Software
 
 A standalone window app that gives users a self-service software catalog and a full view of every app under patcher management.
@@ -54,6 +56,8 @@ A standalone window app that gives users a self-service software catalog and a f
 **Toolbar Run Now menu** — a `play.circle` button triggers any patching phase directly from the window, with the same actions and preference controls as PatcherMenu's Run Now menu.
 
 See the **[Available Software wiki page](../../wiki/Available-Software)** for configuration details.
+
+![Available Sodtware](https://raw.githubusercontent.com/wiki/gilburns/Third-Party-Patcher/screenshots/available-software-overview.png)
 
 ---
 
