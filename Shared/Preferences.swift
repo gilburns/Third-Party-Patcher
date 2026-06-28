@@ -517,9 +517,9 @@ struct Preferences {
     }
 
     /// When true, a Quit button is shown in the menu bar popover footer.
-    /// Defaults to true.
+    /// Defaults to false.
     var showQuitButton: Bool {
-        prefs["ShowQuitButton"] as? Bool ?? true
+        prefs["ShowQuitButton"] as? Bool ?? false
     }
 
     // MARK: - Available Software UI
