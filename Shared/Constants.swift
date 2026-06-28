@@ -13,7 +13,7 @@ struct AppConstants {
     static let randomGUID = UUID().uuidString
 
     static let patcherFullName = "Third Party Patcher"
-    static let patcherVersion = "0.9.5"
+    static let patcherVersion = "1.0.0"
 
     // MARK: - Binary paths
 
@@ -239,6 +239,9 @@ if [[ ! -f "$fullPathToLabel" ]]; then
     echo "Label file does not exist: $fullPathToLabel"
     exit 1
 fi
+
+# get current user
+currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }')
 
 # Get the label from the full path for the eval
 label=$fullPathToLabel:t:r
