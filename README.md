@@ -39,7 +39,7 @@ PatcherMenu is enabled with a single preference key and fully configurable via M
 
 See the **[PatcherMenu wiki page](../../wiki/PatcherMenu)** for configuration details.
 
-![PatcherMenu](https://raw.githubusercontent.com/wiki/gilburns/Third-Party-Patcher/screenshots/patchermenu-overview.png)
+![PatcherMenu](https://raw.githubusercontent.com/wiki/gilburns/Third-Party-Patcher/screenshots/patchermenu-support-info.png)
 
 ### Available Software
 
