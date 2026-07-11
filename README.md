@@ -1,3 +1,5 @@
+![](https://img.shields.io/github/v/release/gilburns/Third-Party-Patcher)&nbsp;![](https://img.shields.io/github/downloads/gilburns/Third-Party-Patcher/latest/total)&nbsp;![](https://img.shields.io/badge/macOS-15.0%2B-success)&nbsp;![](https://img.shields.io/github/license/gilburns/Third-Party-Patcher)
+
 # Third Party Patcher
 
 Third Party Patcher (TPP) is a macOS daemon-based patching system for IT administrators. It automatically discovers installed third-party applications, checks for available updates, downloads installers in the background, and applies them — with optional user-facing prompts via [swiftDialog](https://github.com/swiftDialog/swiftDialog) so users stay informed without being blocked.
