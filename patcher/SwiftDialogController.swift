@@ -133,7 +133,8 @@ struct SwiftDialogController {
             "iconsize":        128,
 //            "message":         "There are **\(listItemsCount) updates** waiting.\n\nThe following updates are being applied:",
 //            "messagefont":     "size=16",
-            "infobox":         "\(prefs.appTitle)\n\nThere are **\(listItemsCount) updates** waiting.\n\nThese updates are being applied 👉",
+            "infobox":         ":\(brandColorHex(prefs.brandColorFont))[\(prefs.appTitle)\n\nThere are **\(listItemsCount) updates** waiting.\n\nThese updates are being attempted 👉]",
+            "background":      "colour=\(prefs.brandColorBackground)",
             "helpmessage":     helpMessage,
 //            "infobox":         infoboxMessage,
             "progress":        items.count,
@@ -200,13 +201,13 @@ struct SwiftDialogController {
         } else {
             summary = "\(applied) update\(applied == 1 ? "" : "s") applied successfully"
         }
-        sendCommand("infobox: \(prefs.appTitle)")
+        sendCommand("infobox: :\(brandColorHex(prefs.brandColorFont))[\(prefs.appTitle)]")
         sendCommand("infobox: + \n")
         sendCommand("infobox: + \n")
-        sendCommand("infobox: + **All possible updates have been applied**.")
+        sendCommand("infobox: + :\(brandColorHex(prefs.brandColorFont))[**All possible updates have been applied**.]")
         sendCommand("infobox: + \n")
         sendCommand("infobox: + \n")
-        sendCommand("infobox: + These updates were just attempted 👉")
+        sendCommand("infobox: + :\(brandColorHex(prefs.brandColorFont))[These updates were just attempted 👉]")
         sendCommand("progress: complete")
         sendCommand("progresstext: Complete — \(summary)")
         sendCommand("button1text: Done")
@@ -236,7 +237,7 @@ struct SwiftDialogController {
 
         var jsonDict: [String: Any] = [
             "title":           title,
-            "titlefont":       "size=18",
+            "titlefont":       "shadow=1,size=18,alignment=left",
             "icon":            dialogIcon,
             "message":         message,
             "messagefont":     "size=14",
@@ -304,13 +305,14 @@ struct SwiftDialogController {
     /// Returns immediately with `.proceed` if the hard deadline is reached.
     /// Uses `--outputfile` to capture the dropdown selection without stdout issues.
     func showDeferralPrompt(
-        itemCount:              Int,
+        items:                  [SwiftDialogController.ApplyItem],
         daysPending:            Int,
         hardDeadlineReached:    Bool,
         allowedDeferralMinutes: [Int],
         prefs:                  Preferences
     ) -> DeferralPromptResult {
 
+        let itemCount    = items.count
         let deferMenu    = allowedDeferralMinutes
         let defaultMins  = prefs.deferralTimerDefault
         let countdown    = prefs.deferralCountdownSeconds
@@ -326,20 +328,30 @@ struct SwiftDialogController {
         } else if daysPending > 0 {
             message += "\n\nThese \(itemWord) have been pending for **\(daysPending) day\(daysPending == 1 ? "" : "s")**."
         }
+        let maxVisible  = 7
+        let sortedNames = items.map { $0.displayName }.sorted()
+        let overflow    = sortedNames.count - maxVisible
+        var listLines   = sortedNames.prefix(overflow == 1 ? maxVisible + 1 : maxVisible).map { "- \($0)" }
+        if overflow > 1 {
+            listLines.append("- And \(overflow) additional updates")
+        }
+        message += "\n\n" + listLines.joined(separator: "\n")
                 
         var jsonDict: [String: Any] = [
-            "title":           prefs.appTitle,
-            "titlefont":       "size=22",
+            "bannertitle":     prefs.appTitle,
+            "titlefont":       "shadow=1,size=22,alignment=left,colour=\(prefs.brandColorFont)",
+            "bannerimage":     "colour=\(prefs.brandColorBackground)",
+            "bannerheight":    70,
             "icon":            resolveDialogIcon(prefs: prefs),
             "message":         message,
-            "messagefont":     "size=16",
+            "messagefont":     "size=14",
             "button2text":     "Continue",
             "infobox":         infoboxMessage,
             "moveable":        true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenPosition,
             "height":          400,
-            "width":           540,
+            "width":           600,
             "timer":           countdown,
         ]
         if let overlay = resolveOverlayIcon(prefs: prefs) { jsonDict["overlayicon"] = overlay }
@@ -455,15 +467,17 @@ struct SwiftDialogController {
         }
     }
 
-
     // MARK: - Notify or Prompt
 
     // handleBlockingProcess = notify
     private func handleNotify(processName: String, item: ApplyItem) -> BlockingActionResponse {
         Logger.log("ℹ️ BlockingProcessAction=notify — showing notification for '\(processName)'")
+        let prefs = Preferences()
         var args: [String] = [
-            "--title",     "Update Pending: \(item.displayName)",
-            "--titlefont", "size=18",
+            "--bannertitle",     "Update Pending: \(item.displayName)",
+            "--titlefont", "shadow=1,size=18,alignment=left,colour=\(prefs.brandColorFont)",
+            "--bannerimage", "colour=\(prefs.brandColorBackground)",
+            "--bannerheight", "50",
             "--icon",      "caution",
             "--iconsize", "80",
             "--timer",       "30",
@@ -474,7 +488,6 @@ struct SwiftDialogController {
             "--height",    "200",
             "--width",    "600",
         ]
-        let prefs = Preferences()
         if prefs.dialogOnTop { args.append("--ontop") }
         // Use the blocking item's app icon as the overlay so the user sees which
         // app is blocking. Fall back to the pkg icon if no app icon is available.
@@ -496,10 +509,12 @@ struct SwiftDialogController {
         // Pause the progress dialog while waiting for user input
         setProgressText("Waiting for user — \(item.displayName)")
         setSkipped(item: item, reason: "Waiting for user…")
-
+        let prefs = Preferences()
         var args: [String] = [
-            "--title",       "\(item.displayName) Update Paused",
-            "--titlefont",   "size=18",
+            "--bannertitle",       "\(item.displayName) Update Paused",
+            "--titlefont", "shadow=1,size=18,alignment=left,colour=\(prefs.brandColorFont)",
+            "--bannerimage", "colour=\(prefs.brandColorBackground)",
+            "--bannerheight", "50",
             "--message",     "\(item.displayName) needs to be updated, but **\(processName)** is currently running.\n\nPlease save your work and quit \(processName) before the timer expires, or click **Skip Update** to postpone this update.",
             "--messagefont", "size=13",
             "--icon",    "caution",
@@ -516,7 +531,6 @@ struct SwiftDialogController {
 //            "--alwaysreturninput",
 
         ]
-        let prefs = Preferences()
         if prefs.dialogOnTop { args.append("--ontop") }
         // Use the blocking item's app icon as the overlay so the user sees which
         // app is blocking. Fall back to the pkg icon if no app icon is available.

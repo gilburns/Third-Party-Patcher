@@ -333,6 +333,24 @@ struct Preferences {
         prefs["AggressivePatchDayDeferral"] as? Bool ?? true
     }
 
+    // MARK: - Branding Color Palette
+    
+    /// Font color.
+    /// Can be a standard Apple color: black, blue, gray, green, orange, pink, purple, red, white, yellow.
+    /// or
+    /// Specified in hex format, e.g. #00A4C7
+    var brandColorFont: String {
+        pref("BrandColorFont", default: "white")
+    }
+
+    /// Background color.
+    /// Can be a standard Apple color: black, blue, gray, green, orange, pink, purple, red, white, yellow.
+    /// or
+    /// Specified in hex format, e.g. #00A4C7
+    var brandColorBackground: String {
+        pref("BrandColorBackground", default: "blue")
+    }
+
     // MARK: - swiftDialog UI
 
     /// When true, the scheduler runs a silent apply pass before the interactive apply phase.
@@ -465,7 +483,7 @@ struct Preferences {
         prefs["DeferralTimerFocus"] as? Int ?? 60
     }
 
-    // MARK: - swiftDialog support info UI
+    // MARK: - Support info UI
     
     /// For the Support Team name that display in the Help Message.
     /// Defaults to "IT Support Team".
