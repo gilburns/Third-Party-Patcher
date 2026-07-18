@@ -1406,7 +1406,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 let hardDeadline = prefs.deadlineDaysHard > 0 && effectiveDaysPending >= prefs.deadlineDaysHard
                 let schedule     = PatchSchedule(prefs: prefs)
                 let promptResult = controller.showDeferralPrompt(
-                    itemCount:              dialogItems.count,
+                    items:                  dialogItems,
                     daysPending:            effectiveDaysPending,
                     hardDeadlineReached:    hardDeadline,
                     allowedDeferralMinutes: schedule.allowedDeferralMinutes(daysPending: effectiveDaysPending),

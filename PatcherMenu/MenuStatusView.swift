@@ -43,17 +43,25 @@ struct MenuStatusView: View {
     // MARK: - Header
 
     private var headerSection: some View {
-        HStack(alignment: .center) {
+        let prefs = Preferences()
+        let bgColor: String = prefs.brandColorBackground
+        let fontColor: String = prefs.brandColorFont
+
+        return HStack(alignment: .center) {
+            
             HStack(spacing: 5) {
                 HeaderIcon(preferences: vm.preferences, size: 48)
                     .padding(.top, -5)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(vm.preferences.appTitle)
-                        .font(.headline)
+                        .font(.title3)
+                        .foregroundColor(Color(brandString: fontColor))
                     Text("Refreshed \(vm.refreshedAgo)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .foregroundColor(Color(brandString: fontColor))
+                        .padding(.leading, 5)
                 }
             }
             Spacer()
@@ -67,7 +75,8 @@ struct MenuStatusView: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+//                .foregroundStyle(.secondary)
+                .foregroundColor(Color(brandString: fontColor))
                 .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
                     SupportInfoView(preferences: vm.preferences)
                 }
@@ -75,7 +84,9 @@ struct MenuStatusView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .background(Color(brandString: bgColor))
     }
+
     
     private struct HeaderIcon: View {
         let preferences: Preferences
@@ -526,6 +537,7 @@ struct SupportInfoView: View {
         }
     }
 }
+
 
 // MARK: - Section header
 

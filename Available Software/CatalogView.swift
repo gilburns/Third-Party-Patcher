@@ -59,6 +59,46 @@ private struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     }
 }
 
+private struct ColoredSymbol: NSViewRepresentable {
+    let systemName: String
+    let color:      Color
+
+    func makeNSView(context: Context) -> NSImageView {
+        let iv = NSImageView()
+        iv.image            = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)
+        iv.contentTintColor = NSColor(color)
+        iv.imageScaling     = .scaleProportionallyUpOrDown
+        return iv
+    }
+
+    func updateNSView(_ nsView: NSImageView, context: Context) {
+        nsView.contentTintColor = NSColor(color)
+    }
+}
+
+private struct ToolbarTitleLabel: NSViewRepresentable {
+    let text:       String
+    let color:      Color
+    let background: Color
+
+    func makeNSView(context: Context) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.font             = .boldSystemFont(ofSize: 24)
+        label.textColor        = NSColor(color)
+        label.drawsBackground  = true
+        label.backgroundColor  = NSColor(background)
+        label.isBordered       = false
+        label.alignment        = .left
+        label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        return label
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        nsView.stringValue = text
+        nsView.textColor   = NSColor(color)
+    }
+}
+
 private func genericAppIcon() -> NSImage {
 //    Bundle(path: "/System/Library/CoreServices/CoreTypes.bundle")?
 //        .image(forResource: "GenericApplicationIcon")
@@ -186,14 +226,24 @@ struct CatalogView: View {
                 .help("Runs a full discovery scan for installed applications. This can take a while.")
             }
         } label: {
-            Image(systemName: "play.circle")
+//            Image(systemName: "play.circle")
+            Text("Run Now…")
+                .foregroundColor(Color(brandString: vm.preferences.brandColorFont))
+
         }
-        .help("Run actions…")
+        .border(Color(brandString: vm.preferences.brandColorFont), width: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(Color(brandString: vm.preferences.brandColorBackground))
+        .help("Available Run Actions…")
+        .padding(.horizontal, 6)
     }
 
     // MARK: - Body
 
     var body: some View {
+        let bgColor   = vm.preferences.brandColorBackground
+        let fontColor = vm.preferences.brandColorFont
+
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarContent
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 270)
@@ -204,23 +254,38 @@ struct CatalogView: View {
                 mainContent
             }
         }
-        .navigationTitle("Available Software")
+        .navigationTitle("")
         .frame(minWidth: 840, minHeight: 680)
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                runNowMenu
-            }
-            if vm.preferences.showHelpButton {
-                ToolbarItem(placement: .automatic) {
+            ToolbarItemGroup(placement: .accessoryBar(id: "header")) {
+                ToolbarTitleLabel(text: "Available Software", color: Color(brandString: fontColor), background: Color(brandString: bgColor))
+                
+                if vm.preferences.showHelpButton {
                     Button { showingHelp.toggle() } label: {
-                        Image(systemName: "questionmark.circle")
+                        ColoredSymbol(systemName: "questionmark.circle", color: Color(brandString: fontColor))
+                            .frame(width: 16, height: 16)
+
                     }
+                    .foregroundStyle(Color(brandString: fontColor))
+                    .buttonStyle(.plain)
+                    .help("Help Info…")
                     .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
                         SupportInfoView(preferences: vm.preferences)
+
                     }
                 }
+                Spacer()
+                    .frame(maxWidth: .infinity)
+
+                runNowMenu
+                    .buttonStyle(.bordered)
+
             }
         }
+        .toolbarBackground(Color(brandString: bgColor), for: .windowToolbar)
+        .toolbarBackground(Color(brandString: bgColor), for: .accessoryBar(id: "header"))
+        .toolbarBackground(.visible, for: .windowToolbar)
+        .toolbarBackground(.visible, for: .accessoryBar(id: "header"))
         .onAppear {
             catalog.loadItems(preferences: vm.preferences)
             if vm.preferences.optionalLabels.isEmpty {
@@ -242,13 +307,14 @@ struct CatalogView: View {
         }
     }
 
+
     // MARK: - Sidebar
 
     private var sidebarContent: some View {
         VStack(spacing: 0) {
             VStack(alignment: .center, spacing: 8) {
                 CatalogHeaderIcon(preferences: vm.preferences, size: 80)
-                    .padding(.top, -20)
+                    .padding(.top, 30)
 
                 if !vm.preferences.companyName.isEmpty {
                     Text(vm.preferences.companyName)
