@@ -5,7 +5,23 @@
 //  Created by Gil Burns on 4/22/26.
 //
 
+import AppKit
 import SwiftUI
+
+// Makes the MenuBarExtra window opaque so colors render identically to how they
+// appear in regular NSWindow toolbars. Without this, NSVisualEffectView's
+// behind-window blending subtly shifts all colors relative to what's on screen
+// behind the popover. Side effect: the popover has a flat, non-translucent look.
+private struct OpaqueWindowBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            window.isOpaque = true
+            window.backgroundColor = NSColor.windowBackgroundColor
+        }
+    }
+}
 
 struct MenuStatusView: View {
     @EnvironmentObject private var vm: PatcherMenuViewModel
@@ -37,6 +53,7 @@ struct MenuStatusView: View {
             footerSection
         }
         .frame(width: 300)
+        .background(OpaqueWindowBackground())
     }
     
 
