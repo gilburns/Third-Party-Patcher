@@ -143,6 +143,15 @@ struct Preferences {
         prefs["InstallomatorUpdateDisable"] as? Bool ?? false
     }
     
+    
+    /// Key determines if managed apps are detected and automatially added
+    /// to the IgnoredLabels list
+    /// Currently it looks for Microsoft Suite, Microsoft Edge, Google Suite and Google Chrome
+    /// Default is true. Set to false to manage the list yourself
+    var ignoreManagedApps: Bool {
+        prefs["IgnoreManagedApps"] as? Bool ?? true
+    }
+    
     /// Space-separated list of label name patterns to ignore during a scan.
     /// Supports `*` and `?` wildcards (e.g. `"google* microsoft*"`).
     var ignoredLabels: [String] {

@@ -288,7 +288,8 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     let preferences = Preferences()
     Logger.log("📋 Preferences source: \(preferences.source)")
 
-    let ignoredPatterns = preferences.ignoredLabels
+    var ignoredPatterns = preferences.ignoredLabels
+    appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -532,7 +533,8 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
     let preferences = Preferences()
     Logger.log("📋 Preferences source: \(preferences.source)")
 
-    let ignoredPatterns = preferences.ignoredLabels
+    var ignoredPatterns = preferences.ignoredLabels
+    appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -687,6 +689,75 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
 
 private func labelIsIgnored(_ label: String, patterns: [String]) -> Bool {
     patterns.contains { NSPredicate(format: "self LIKE[c] %@", $0).evaluate(with: label) }
+}
+
+/// Returns true when Microsoft AutoUpdate (MAU) update policies are pushed via MDM
+/// and updates are not set to Manual.
+/// Reads `HowToCheck` from the managed plist: any value other than "Manual" (e.g.
+/// "AutomaticDownload", "AutomaticCheck") means MAU is controlling updates.
+private func isMicrosoftSuiteManaged() -> Bool {
+    let path = "/Library/Managed Preferences/com.microsoft.autoupdate2.plist"
+    guard let dict = NSDictionary(contentsOfFile: path) as? [String: Any] else { return false }
+    if let howToCheck = dict["HowToCheck"] as? String, howToCheck == "Manual" {
+        return false
+    }
+    return true
+}
+
+/// Returns true when Microsoft EdgeUpdater policies are pushed via MDM and the
+/// `updatePolicies.global.UpdateDefault` key is 0 (disabled) or 1 (automatic silent).
+/// Values 2+ (manual-only, notify-only) are treated as unmanaged for our purposes.
+private func isMicrosoftEdgeManaged() -> Bool {
+    let path = "/Library/Managed Preferences/com.microsoft.EdgeUpdater.plist"
+    guard let dict            = NSDictionary(contentsOfFile: path) as? [String: Any],
+          let updatePolicies  = dict["updatePolicies"]             as? [String: Any],
+          let global          = updatePolicies["global"]           as? [String: Any],
+          let updateDefault   = global["UpdateDefault"]            as? Int
+    else { return false }
+    return updateDefault == 0 || updateDefault == 1
+}
+
+/// Reads the Google Keystone managed plist and returns the effective `UpdateDefault`
+/// value for `appID`, falling back to the `global` policy if no per-app key exists.
+/// Returns `true` when the value is 0 (disabled) or 1 (automatic silent updates).
+private func isGoogleAppManaged(_ appID: String) -> Bool {
+    let path = "/Library/Managed Preferences/com.google.Keystone.plist"
+    guard let dict           = NSDictionary(contentsOfFile: path) as? [String: Any],
+          let updatePolicies = dict["updatePolicies"] as? [String: Any]
+    else { return false }
+    let appPolicy    = updatePolicies[appID]    as? [String: Any]
+    let globalPolicy = updatePolicies["global"] as? [String: Any]
+    guard let updateDefault = (appPolicy ?? globalPolicy)?["UpdateDefault"] as? Int
+    else { return false }
+    return updateDefault == 0 || updateDefault == 1
+}
+
+private func isGoogleChromeManaged() -> Bool { isGoogleAppManaged("com.google.Chrome") }
+private func isGoogleDriveManaged()  -> Bool { isGoogleAppManaged("com.google.GoogleDrive") }
+
+/// Appends any MDM-managed vendor label sets to `patterns` when `IgnoreManagedApps` is enabled.
+private func appendManagedAppLabels(to patterns: inout [String], preferences: Preferences) {
+    guard preferences.ignoreManagedApps else { return }
+    if isMicrosoftSuiteManaged() {
+        let labels = AppConstants.microsoftSuiteLabels.split(separator: " ").map(String.init)
+        patterns.append(contentsOf: labels)
+        Logger.log("🏢 Microsoft Suite MDM-managed — appending \(labels.count) labels to ignored list")
+    }
+    if isMicrosoftEdgeManaged() {
+        let labels = AppConstants.microsoftEdgeLabels.split(separator: " ").map(String.init)
+        patterns.append(contentsOf: labels)
+        Logger.log("🌐 Microsoft Edge MDM-managed — appending \(labels.count) labels to ignored list")
+    }
+    if isGoogleChromeManaged() {
+        let labels = AppConstants.googleChromeLabels.split(separator: " ").map(String.init)
+        patterns.append(contentsOf: labels)
+        Logger.log("🌐 Google Chrome MDM-managed — appending \(labels.count) labels to ignored list")
+    }
+    if isGoogleDriveManaged() {
+        let labels = AppConstants.googleDriveLabels.split(separator: " ").map(String.init)
+        patterns.append(contentsOf: labels)
+        Logger.log("☁️ Google Drive MDM-managed — appending \(labels.count) labels to ignored list")
+    }
 }
 
 func parseScriptOutput(_ output: String) -> [String: Any]? {
