@@ -186,10 +186,17 @@ private func webhookShell(_ executable: String, _ args: [String]) -> String {
     p.arguments = args
     let pipe = Pipe()
     p.standardOutput = pipe
-    p.standardError  = Pipe()
+    // nullDevice, not Pipe(): an unread stderr pipe can fill and block the child just as
+    // stdout can, and nothing here ever reads it.
+    p.standardError  = FileHandle.nullDevice
     guard (try? p.run()) != nil else { return "" }
+    // Drain BEFORE waiting. readDataToEndOfFile() returns at EOF and keeps the pipe empty
+    // while the child runs; waiting first deadlocks as soon as the child writes more than
+    // the ~64 KiB pipe buffer, because it blocks in write() and can then never exit.
+    // Hit in the wild by `profiles show` on an Intune-managed Mac (~75 KB of output).
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
     p.waitUntilExit()
-    return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    return String(data: data, encoding: .utf8) ?? ""
 }
 
 // MARK: - Main Entry Point
