@@ -317,6 +317,6 @@ echo "$json_output" | LC_ALL=C.UTF-8 tr -d '\r'
 
     static let microsoftSuiteLabels: String = "microsoft365copilot microsoftautoupdate microsoftcompanyportal microsoftdefender microsoftexcel microsoftoffice365 microsoftofficebusinesspro microsoftonedrive-deferred microsoftonedrive-rollingout microsoftonedrive-rollingoutdeferred microsoftonedrive microsoftonedrivesuinsiders microsoftonedrivesuprod microsoftonenote microsoftoutlook microsoftpowerpoint microsoftremotehelp microsoftsharepointplugin microsoftskypeforbusiness microsoftteams-rollingout microsoftteams microsoftteamsnew microsoftwindowsapp microsoftword"
 
-    static let microsoftEdgeLabels: String = "microsoftedge"
+    static let microsoftEdgeLabels: String = "microsoftedge microsoftedgebeta microsoftedgedev"
 
 }
