@@ -331,6 +331,18 @@ struct Preferences {
         prefs["FocusCheckEnabled"] as? Bool ?? true
     }
 
+    /// Space-separated list of process names to ignore when checking for display-sleep
+    /// assertions (`pmset -g assertions`). If the process holding the assertion resolves
+    /// to a name that matches an entry here (case-insensitive), the assertion is not
+    /// treated as a blocker and patching may proceed.
+    /// Useful for music/media apps (e.g. Spotify, Deezer, Music) that hold a display
+    /// assertion during playback but shouldn't defer patching.
+    /// Example: "Spotify Deezer Music"
+    var focusIgnoredProcesses: [String] {
+        guard let value = prefs["FocusIgnoredProcesses"] as? String else { return [] }
+        return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+    }
+
     // MARK: - Aggressive patch-day deferral
 
     /// When true, deferral options are progressively capped on patch day (monthly mode)
