@@ -141,7 +141,7 @@ struct PatcherScheduler {
         if stageDue && networkOK {
             let bypassFocus = isFocusDeadlineReached(state: state, now: now) || isHardDeadlineReached(state: state, now: now)
             if prefs.focusCheckEnabled && !bypassFocus,
-               let presenter = FocusDetector.activeDisplayAssertion() {
+               let presenter = FocusDetector.activeDisplayAssertion(ignoredProcesses: prefs.focusIgnoredProcesses) {
                 Logger.log("⏸️ Stage deferred — display assertion held by '\(presenter)'")
             } else {
                 writeActivePhase("stage")
@@ -169,7 +169,7 @@ struct PatcherScheduler {
             if deferralState.isActive(now: now) {
                 Logger.log("⏸️ Apply: deferral active — \(formatDeferralDuration(deferralState.remainingMinutes(now: now))) remaining.")
             } else if prefs.focusCheckEnabled && !applySchedule.focusDeadlineReached && !applySchedule.hardDeadlineReached,
-               let blocker = FocusDetector.activeBlocker() {
+               let blocker = FocusDetector.activeBlocker(ignoredProcesses: prefs.focusIgnoredProcesses) {
                 let focusMins = prefs.deferralTimerFocus
                 var deferral = DeferralState.load()
                 deferral.recordFocusDeferral(minutes: focusMins)

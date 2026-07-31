@@ -17,8 +17,11 @@ struct FocusDetector {
     // MARK: - Public interface
 
     /// Returns a human-readable description of the active blocker, or nil if patching may proceed.
-    static func activeBlocker() -> String? {
-        if let process = activeDisplayAssertion() {
+    /// - Parameter ignoredProcesses: Admin-configured process names (from
+    ///   `Preferences.focusIgnoredProcesses`) that should not be treated as display-assertion
+    ///   blockers, e.g. music players that legitimately prevent display sleep during playback.
+    static func activeBlocker(ignoredProcesses: [String] = []) -> String? {
+        if let process = activeDisplayAssertion(ignoredProcesses: ignoredProcesses) {
             return "display assertion held by '\(process)' (presentation / screen share active)"
         }
         if isFocusModeActive() {
@@ -37,8 +40,12 @@ struct FocusDetector {
     /// Catches Keynote, Zoom, Webex, Teams, FaceTime, QuickTime screen recording, and any
     /// other app that calls `IOPMAssertionCreateWithName` to prevent display sleep.
     ///
-    /// Returns the process name of the first qualifying holder, or nil if none is active.
-    static func activeDisplayAssertion() -> String? {
+    /// - Parameter ignoredProcesses: Admin-configured process names to exclude — see
+    ///   `Preferences.focusIgnoredProcesses`. Matched case-insensitively against the resolved
+    ///   process name.
+    /// Returns a comma-separated list of every qualifying holder's process name (so the log can
+    /// show, e.g., "PowerPoint, Zoom" when more than one is active), or nil if none is active.
+    static func activeDisplayAssertion(ignoredProcesses: [String] = []) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         process.arguments = ["-g", "assertions"]
@@ -58,11 +65,13 @@ struct FocusDetector {
         let data   = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8) else { return nil }
 
-        return parseDisplayAssertion(from: output)
+        let holders = parseDisplayAssertion(from: output, ignoredProcesses: ignoredProcesses)
+        guard !holders.isEmpty else { return nil }
+        return holders.joined(separator: ", ")
     }
 
     /// Parses `pmset -g assertions` output for lines that reference a display-preventing
-    /// assertion type held by a non-system process.
+    /// assertion type held by a non-system, non-ignored process.
     ///
     /// Relevant assertion types:
     ///   PreventUserIdleDisplaySleep  — most common (Zoom, Teams, Webex, …)
@@ -70,7 +79,14 @@ struct FocusDetector {
     ///
     /// Per-process lines look like:
     ///   "   pid 1234(Keynote): [0x000c00…] 00:01:23 NoDisplaySleepAssertion named: "Presenting""
-    private static func parseDisplayAssertion(from output: String) -> String? {
+    ///
+    /// The name pmset prints between parens can be truncated or a generic helper name, so the
+    /// PID is also resolved through `ps` to get the assertion holder's real executable name
+    /// before it's checked against `ignoredProcesses`.
+    ///
+    /// Scans every line rather than stopping at the first hit, so callers can log every
+    /// distinct blocking process (e.g. PowerPoint and Zoom both holding assertions at once).
+    private static func parseDisplayAssertion(from output: String, ignoredProcesses: [String]) -> [String] {
         let watchedTypes: Set<String> = [
             "PreventUserIdleDisplaySleep",
             "NoDisplaySleepAssertion"
@@ -78,26 +94,84 @@ struct FocusDetector {
 
         // System process names that legitimately hold these assertions without
         // indicating a user presentation.
-        let ignoredProcesses: Set<String> = [
+        let systemIgnoredProcesses: Set<String> = [
             "kernel_task", "powerd", "coreaudiod", "sharingd",
             "bluetoothd", "WindowServer", "tccd"
         ]
+
+        var holders: [String] = []
 
         for line in output.components(separatedBy: "\n") {
             // Only look at lines that mention a watched assertion type
             guard watchedTypes.contains(where: { line.contains($0) }) else { continue }
 
-            // Extract the process name from the "pid NNNN(ProcessName):" prefix
-            guard let openParen  = line.range(of: "("),
+            // Extract the pid and process name from the "pid NNNN(ProcessName):" prefix
+            guard let pidRange   = line.range(of: "pid "),
+                  let openParen  = line.range(of: "(", range: pidRange.upperBound..<line.endIndex),
                   let closeRange = line.range(of: "):", range: openParen.upperBound..<line.endIndex) else {
                 continue
             }
+            let pidString   = String(line[pidRange.upperBound..<openParen.lowerBound])
             let processName = String(line[openParen.upperBound..<closeRange.lowerBound])
-            guard !processName.isEmpty, !ignoredProcesses.contains(processName) else { continue }
+            guard !processName.isEmpty, !systemIgnoredProcesses.contains(processName) else { continue }
 
-            return processName
+            // Resolve the real executable name behind the PID — pmset's own name can be
+            // truncated or a generic sandboxed-helper name that doesn't match the admin's
+            // ignore-list entry for the app the user actually sees (e.g. "Spotify").
+            let resolvedName = pid(from: pidString).flatMap(processName(forPID:)) ?? processName
+
+            if matches(processName: resolvedName, orFallback: processName, ignoredProcesses: ignoredProcesses) {
+                Logger.log("ℹ️ FocusDetector: display assertion by '\(resolvedName)' ignored (matches FocusIgnoredProcesses).")
+                continue
+            }
+
+            if !holders.contains(resolvedName) {
+                holders.append(resolvedName)
+            }
         }
-        return nil
+        return holders
+    }
+
+    /// True if either the resolved process name or the raw pmset-reported name matches
+    /// (case-insensitively, substring match) any entry in the admin-configured ignore list.
+    private static func matches(processName resolvedName: String, orFallback fallbackName: String, ignoredProcesses: [String]) -> Bool {
+        guard !ignoredProcesses.isEmpty else { return false }
+        return ignoredProcesses.contains { ignored in
+            resolvedName.localizedCaseInsensitiveContains(ignored) ||
+            fallbackName.localizedCaseInsensitiveContains(ignored)
+        }
+    }
+
+    private static func pid(from pidString: String) -> Int32? {
+        Int32(pidString)
+    }
+
+    /// Resolves the executable name for a given PID via `ps`, returning just the last
+    /// path component (e.g. "Spotify" from "/Applications/Spotify.app/Contents/MacOS/Spotify").
+    /// Returns nil if the process has already exited or `ps` fails.
+    private static func processName(forPID pid: Int32) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-p", String(pid), "-o", "comm="]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError  = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty else {
+            return nil
+        }
+
+        return (output as NSString).lastPathComponent
     }
 
 
