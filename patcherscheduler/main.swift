@@ -74,7 +74,7 @@ Logger.log("ℹ️ XPC listener active on '\(AppConstants.patcherXPCServiceName)
 
 // MARK: - Scheduled cycle timer
 
-let cycleInterval: TimeInterval = 600
+let cycleInterval: TimeInterval = AppConstants.schedulerCycleIntervalSeconds
 
 let cycleTimer: DispatchSourceTimer = {
     let t = DispatchSource.makeTimerSource(queue: .global())

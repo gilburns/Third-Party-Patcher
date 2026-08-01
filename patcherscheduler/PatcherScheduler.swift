@@ -43,13 +43,25 @@ struct PatcherScheduler {
                            !FileManager.default.fileExists(atPath: AppConstants.swiftDialogBinaryURL.path)
         let metadataDue  = shouldRunMetadataSync(state: state, now: now)
 
+        // ── Apply lookahead ────────────────────────────────────────────────────
+        // If apply's schedule condition would already be satisfied one cycle from now,
+        // and discovered items still need downloading, stage them a cycle early so
+        // apply runs as a full pass instead of a partial one once its window opens.
+        let applyDueNextCycle = resolveApplySchedule(
+            state: state, now: now.addingTimeInterval(AppConstants.schedulerCycleIntervalSeconds)
+        ) != nil
+        let stageCatchUpNeeded = !stageDue && applyDueNextCycle && hasUnstagedPendingUpdates()
+        if stageCatchUpNeeded {
+            Logger.log("ℹ️ Stage: apply due next cycle with unstaged updates — staging early.")
+        }
+
         // ── Internet connectivity check ───────────────────────────────────────
         // Performed once, only when at least one phase requires the network.
         // Verifies real internet access AND rules out captive-portal situations
         // by confirming the response body from captive.apple.com says "Success".
         // apply is intentionally excluded — it runs from already-staged files.
         // lightScan is included because scanSingleLabel (called on hits) needs the network.
-        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || dialogDue || metadataDue
+        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || stageCatchUpNeeded || dialogDue || metadataDue
         let networkOK: Bool
         if networkPhaseDue {
             networkOK = isInternetAvailable()
@@ -136,9 +148,11 @@ struct PatcherScheduler {
 
         // ── Stage ─────────────────────────────────────────────────────────────
         // Same interval as check (default 24 h). Downloads pending updates.
+        // Also runs early (stageCatchUpNeeded) when apply is due next cycle and
+        // items are still unstaged, so apply doesn't run a partial pass.
         // Check display assertions — a download can saturate bandwidth during a
         // presentation. Focus/DND alone doesn't block a silent background download.
-        if stageDue && networkOK {
+        if (stageDue || stageCatchUpNeeded) && networkOK {
             let bypassFocus = isFocusDeadlineReached(state: state, now: now) || isHardDeadlineReached(state: state, now: now)
             if prefs.focusCheckEnabled && !bypassFocus,
                let presenter = FocusDetector.activeDisplayAssertion(ignoredProcesses: prefs.focusIgnoredProcesses) {
@@ -184,6 +198,23 @@ struct PatcherScheduler {
                 let daysPending = state.firstPendingDate.map {
                     Calendar.current.dateComponents([.day], from: $0, to: now).day ?? 0
                 } ?? 0
+
+                // Safety net: the apply lookahead normally stages everything a cycle early,
+                // but a new item can be discovered this same cycle, or a large download from
+                // the lookahead pass may still be in flight. Catch up here so apply still runs
+                // as a full pass rather than silently skipping unstaged items.
+                if hasUnstagedPendingUpdates() {
+                    if isInternetAvailable() {
+                        Logger.log("⚠️ Apply: unstaged updates found — staging before apply to avoid a partial pass.")
+                        writeActivePhase("stage")
+                        runSubcommand("stage")
+                        clearActivePhase()
+                        state.lastStageDate = now
+                        dirty = true
+                    } else {
+                        Logger.log("⚠️ Apply: unstaged updates found but no internet connectivity — proceeding with apply for what's already staged.")
+                    }
+                }
 
                 // Silent pre-pass: install anything whose blocking process isn't running.
                 // Skipped items are not counted as deferrals.
@@ -824,6 +855,45 @@ struct PatcherScheduler {
             if hasStagedFile { return true }
         }
         return false
+    }
+
+    /// Returns true when a discovered item needs updating (updateStatus == "updateRequired")
+    /// but has no staged file waiting in Cache/ yet — i.e. apply would have to skip it today.
+    /// Used to decide whether to run a catch-up stage pass ahead of, or immediately before, apply.
+    private func hasUnstagedPendingUpdates() -> Bool {
+        let fm = FileManager.default
+
+        let stagedLabels: Set<String> = {
+            guard let labelDirs = try? fm.contentsOfDirectory(
+                at: AppConstants.patcherCacheFolderURL, includingPropertiesForKeys: [.isDirectoryKey]
+            ) else { return [] }
+            return Set(labelDirs.compactMap { labelDir -> String? in
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: labelDir.path, isDirectory: &isDir), isDir.boolValue else { return nil }
+                let contents = (try? fm.contentsOfDirectory(
+                    at: labelDir, includingPropertiesForKeys: nil
+                )) ?? []
+                let hasStagedFile = contents.contains {
+                    $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != "history.json"
+                }
+                return hasStagedFile ? labelDir.lastPathComponent : nil
+            })
+        }()
+
+        guard let plists = try? fm.contentsOfDirectory(
+            at: AppConstants.patcherDiscoveredFolderURL, includingPropertiesForKeys: nil
+        ) else { return false }
+
+        return plists.contains { url in
+            guard url.pathExtension == "plist" else { return false }
+            let label = url.deletingPathExtension().lastPathComponent
+            guard !stagedLabels.contains(label),
+                  let data = try? Data(contentsOf: url),
+                  let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let status = dict["updateStatus"] as? String
+            else { return false }
+            return status == "updateRequired"
+        }
     }
 
 
