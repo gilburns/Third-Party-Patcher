@@ -32,6 +32,10 @@
 	<false/>
 	<key>IgnoredLabels</key>
 	<string>bbedit brave firefox_da firefox_intl firefox firefoxesr_intl firefoxesr firefoxpkg_intl googlechrome* microsoft* nudge* renew-noagent thunderbird_intl thunderbirdesr zoomclient zoomgov zulujdk*</string>
+	<key>IgnoreNonProductionLabels</key>
+	<true/>
+	<key>NonProductionLabelSuffixes</key>
+	<string>beta canary dev</string>
 	<key>InstallomatorGitHubAccount</key>
 	<string>Installomator</string>
 	<key>InstallomatorGitHubBranch</key>

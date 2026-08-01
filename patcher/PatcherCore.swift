@@ -288,8 +288,12 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     let preferences = Preferences()
     Logger.log("📋 Preferences source: \(preferences.source)")
 
+    // Retrieve and filter ".sh" files, merging managed label overrides/additions
+    let shFiles = buildLabelFileList()
+
     var ignoredPatterns = preferences.ignoredLabels
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
+    appendNonProductionLabels(to: &ignoredPatterns, allLabels: shFiles.map { $0.deletingPathExtension().lastPathComponent }, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -312,9 +316,6 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     }
 
     do {
-        // Retrieve and filter ".sh" files, merging managed label overrides/additions
-        let shFiles = buildLabelFileList()
-
         guard !shFiles.isEmpty else {
             Logger.log("❌ No label files found — nothing to scan. Add managed labels or enable Installomator labels.")
             return
@@ -535,6 +536,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
 
     var ignoredPatterns = preferences.ignoredLabels
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
+    appendNonProductionLabels(to: &ignoredPatterns, allLabels: buildLabelFileList().map { $0.deletingPathExtension().lastPathComponent }, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -757,6 +759,34 @@ private func appendManagedAppLabels(to patterns: inout [String], preferences: Pr
         let labels = AppConstants.googleDriveLabels.split(separator: " ").map(String.init)
         patterns.append(contentsOf: labels)
         Logger.log("☁️ Google Drive MDM-managed — appending \(labels.count) labels to ignored list")
+    }
+}
+
+/// Appends non-production label variants (e.g. "beta", "canary", "dev" suffixed labels) to
+/// `patterns` when `IgnoreNonProductionLabels` is enabled. A label is only treated as a
+/// non-production variant when a production label of the same base name also exists in
+/// `allLabels` — e.g. "microsoftedgebeta" and "microsoftedgedev" are ignored because
+/// "microsoftedge" is also present, but a label like "figma" is untouched, and a
+/// hypothetical "somethingbeta" is left alone if "something" is not also a known label.
+private func appendNonProductionLabels(to patterns: inout [String], allLabels: [String], preferences: Preferences) {
+    guard preferences.ignoreNonProductionLabels else { return }
+    let suffixes = preferences.nonProductionLabelSuffixes
+    guard !suffixes.isEmpty else { return }
+
+    let labelSet = Set(allLabels)
+    var nonProductionLabels: [String] = []
+    for label in allLabels {
+        for suffix in suffixes where label.count > suffix.count && label.hasSuffix(suffix) {
+            let baseName = String(label.dropLast(suffix.count))
+            if labelSet.contains(baseName) {
+                nonProductionLabels.append(label)
+                break
+            }
+        }
+    }
+    if !nonProductionLabels.isEmpty {
+        patterns.append(contentsOf: nonProductionLabels)
+        Logger.log("🧪 Non-production label variants — appending \(nonProductionLabels.count) labels to ignored list: \(nonProductionLabels.sorted().joined(separator: ", "))")
     }
 }
 
