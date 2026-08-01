@@ -35,6 +35,10 @@ struct AppConstants {
 
     static let patcherXPCServiceName = "com.gilburns.patcher.xpc"
 
+    /// patcherscheduler's fixed timer cadence — shared so scheduling logic can reason
+    /// about "next cycle" without duplicating the literal used to schedule the timer.
+    static let schedulerCycleIntervalSeconds: TimeInterval = 600
+
     static let applicationSupportURL: URL = {
         FileManager.default.urls(for: .libraryDirectory, in: .localDomainMask)
             .first?
