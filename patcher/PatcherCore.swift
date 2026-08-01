@@ -1607,6 +1607,57 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 }
             }
 
+            // Pre-resolve app-based install targets before touching the progress UI.
+            // Doing this now — rather than inside the switch below, after setInProgress
+            // has already put the item in the animated "wait" state — means a label that
+            // is guaranteed to be skipped (every recorded path excluded by
+            // IgnoreAppsInHomeFolder, or the only remaining target sitting on an unmounted
+            // volume) never starts the spinner in the first place. Previously such items
+            // could sit "Installing…" indefinitely, or (for the unmounted-volume case) show
+            // a skipped reason while swiftDialog's spinner kept animating because the row had
+            // already entered the "wait" status.
+            let cliInstaller = plist["CLIInstaller"] as? String
+            let useCLI = !(cliInstaller?.isEmpty ?? true)
+            var resolvedTargets: [String] = []
+            var resolvedToDelete: [String] = []
+            if !isPkgBased, !useCLI {
+                let (targets, toDelete) = resolveInstallTargets(
+                    foundInstalls: foundInstalls,
+                    appName: appName,
+                    name: name,
+                    label: label,
+                    ignoreAppsInHomeFolder: ignoreAppsInHomeFolder,
+                    effectiveConvert: effectiveConvert
+                )
+                guard !targets.isEmpty else {
+                    Logger.log("⏭️ \(label) — no install targets after applying preferences")
+                    dialog?.setSkipped(item: dialogItem, reason: "No install target")
+                    skippedCount += 1
+                    continue
+                }
+
+                // If any target is under /Volumes/, verify the volume is mounted.
+                // A missing volume is not an install failure — keep the staged file
+                // and retry next cycle when the drive may be reconnected.
+                let unmountedVolumes: [String] = targets.compactMap { path in
+                    guard path.hasPrefix("/Volumes/") else { return nil }
+                    let parts = path.dropFirst("/Volumes/".count).components(separatedBy: "/")
+                    guard let volName = parts.first, !volName.isEmpty else { return nil }
+                    let mountPoint = "/Volumes/\(volName)"
+                    return fileManager.fileExists(atPath: mountPoint) ? nil : mountPoint
+                }
+                if !unmountedVolumes.isEmpty {
+                    let names = Array(Set(unmountedVolumes)).sorted().joined(separator: ", ")
+                    dialog?.setSkipped(item: dialogItem, reason: "Unavailable Drive")
+                    Logger.log("⏭️ \(label) — skipping, volume not mounted: \(names)")
+                    skippedCount += 1
+                    continue
+                }
+
+                resolvedTargets = targets
+                resolvedToDelete = toDelete
+            }
+
             // Determine blocking processes:
             //   ["NONE"]  → nothing blocks
             //   []        → the label's "name" value is the blocker
@@ -1716,11 +1767,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
             default:
                 // App-based types: dmg, zip, tbz, appInDmgInZip
-                let cliInstaller  = plist["CLIInstaller"]  as? String
                 let installerTool = plist["installerTool"] as? String
                 let cliArguments  = plist["CLIArguments"]  as? String
                 let updateToolRunAsCurrentUser = !((plist["updateToolRunAsCurrentUser"] as? String) ?? "").isEmpty
-                let useCLI = !(cliInstaller?.isEmpty ?? true)
 
                 let targets: [String]
                 let toDelete: [String]
@@ -1731,37 +1780,8 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     targets  = []
                     toDelete = []
                 } else {
-                    (targets, toDelete) = resolveInstallTargets(
-                        foundInstalls: foundInstalls,
-                        appName: appName,
-                        name: name,
-                        label: label,
-                        ignoreAppsInHomeFolder: ignoreAppsInHomeFolder,
-                        effectiveConvert: effectiveConvert
-                    )
-                    guard !targets.isEmpty else {
-                        Logger.log("⏭️ \(label) — no install targets after applying preferences")
-                        skippedCount += 1
-                        continue
-                    }
-
-                    // If any target is under /Volumes/, verify the volume is mounted.
-                    // A missing volume is not an install failure — keep the staged file
-                    // and retry next cycle when the drive may be reconnected.
-                    let unmountedVolumes: [String] = targets.compactMap { path in
-                        guard path.hasPrefix("/Volumes/") else { return nil }
-                        let parts = path.dropFirst("/Volumes/".count).components(separatedBy: "/")
-                        guard let volName = parts.first, !volName.isEmpty else { return nil }
-                        let mountPoint = "/Volumes/\(volName)"
-                        return fileManager.fileExists(atPath: mountPoint) ? nil : mountPoint
-                    }
-                    if !unmountedVolumes.isEmpty {
-                        let names = Array(Set(unmountedVolumes)).sorted().joined(separator: ", ")
-                        dialog?.setSkipped(item: dialogItem, reason: "Unavailable Drive")
-                        Logger.log("⏭️ \(label) — skipping, volume not mounted: \(names)")
-                        skippedCount += 1
-                        continue
-                    }
+                    targets  = resolvedTargets
+                    toDelete = resolvedToDelete
                 }
 
                 success = installAppFromStagedFile(
