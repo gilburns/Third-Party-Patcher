@@ -1220,8 +1220,18 @@ private func runMdfind(appWithExtension: String, ignoreExternalVolumes: Bool = f
     return output.components(separatedBy: "\0").filter { path in
         guard !path.isEmpty else { return false }
         if ignoreExternalVolumes && path.hasPrefix("/Volumes/") { return false }
+        if isIgnoredScanPath(path) { return false }
         return !path.hasPrefix("/Library/") && !path.hasPrefix("/System/")
     }
+}
+
+/// Paths that mdfind may surface but should never be treated as real installs
+/// (Trash contents, and Parallels/Virtual Machines shared Applications folders).
+private func isIgnoredScanPath(_ path: String) -> Bool {
+    if path.contains("/.Trash/") { return true }
+    if path.contains("/Applications (Parallels)/") { return true }
+    if path.contains("/Applications (Virtual Machines)/") { return true }
+    return false
 }
 
 
