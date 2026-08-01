@@ -159,6 +159,26 @@ struct Preferences {
         return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
     }
 
+    /// When true, non-production label variants (labels whose name ends with one of
+    /// `NonProductionLabelSuffixes`) are automatically added to the ignored list, but only
+    /// when a production label of the same base name also exists.
+    /// E.g. with the default suffixes, "microsoftedgebeta" and "microsoftedgedev" are ignored
+    /// because "microsoftedge" also exists as a label; a label like "figma" with no
+    /// suffix is untouched, and a hypothetical "somethingbeta" is left alone if "something"
+    /// does not also exist as a label.
+    /// Default is true. Set to false to manage non-production labels yourself via IgnoredLabels.
+    var ignoreNonProductionLabels: Bool {
+        prefs["IgnoreNonProductionLabels"] as? Bool ?? true
+    }
+
+    /// Space-separated list of suffixes that mark a label as a non-production variant of a
+    /// base label (e.g. "beta canary dev"). Only used when IgnoreNonProductionLabels is true.
+    /// Defaults to "beta canary dev".
+    var nonProductionLabelSuffixes: [String] {
+        let value = prefs["NonProductionLabelSuffixes"] as? String ?? "beta canary dev"
+        return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+    }
+
     /// Space-separated list of label name patterns that are required.
     /// Does NOT Support `*` and `?` wildcards (e.g. `"google* microsoft*"`).
     var requiredLabels: [String] {
