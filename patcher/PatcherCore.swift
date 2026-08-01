@@ -290,10 +290,12 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
 
     // Retrieve and filter ".sh" files, merging managed label overrides/additions
     let shFiles = buildLabelFileList()
+    let allLabelNames = shFiles.map { $0.deletingPathExtension().lastPathComponent }
 
     var ignoredPatterns = preferences.ignoredLabels
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
-    appendNonProductionLabels(to: &ignoredPatterns, allLabels: shFiles.map { $0.deletingPathExtension().lastPathComponent }, preferences: preferences)
+    appendNonProductionLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
+    appendPkgLabelDuplicates(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -534,9 +536,12 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
     let preferences = Preferences()
     Logger.log("📋 Preferences source: \(preferences.source)")
 
+    let allLabelNames = buildLabelFileList().map { $0.deletingPathExtension().lastPathComponent }
+
     var ignoredPatterns = preferences.ignoredLabels
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
-    appendNonProductionLabels(to: &ignoredPatterns, allLabels: buildLabelFileList().map { $0.deletingPathExtension().lastPathComponent }, preferences: preferences)
+    appendNonProductionLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
+    appendPkgLabelDuplicates(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -787,6 +792,27 @@ private func appendNonProductionLabels(to patterns: inout [String], allLabels: [
     if !nonProductionLabels.isEmpty {
         patterns.append(contentsOf: nonProductionLabels)
         Logger.log("🧪 Non-production label variants — appending \(nonProductionLabels.count) labels to ignored list: \(nonProductionLabels.sorted().joined(separator: ", "))")
+    }
+}
+
+/// Appends one label of each pkg/non-pkg label pair to `patterns`, keeping only the label
+/// preferred by `PreferPkgLabels`. E.g. "bbedit" and "bbeditpkg" both exist as separate
+/// Installomator labels delivering the same app via different installer mechanisms — only one
+/// should ever be active. When `PreferPkgLabels` is true (default) the non-pkg label
+/// ("bbedit") is ignored in favor of the pkg label; when false, the pkg label is ignored
+/// in favor of the non-pkg label.
+private func appendPkgLabelDuplicates(to patterns: inout [String], allLabels: [String], preferences: Preferences) {
+    let pkgSuffix = "pkg"
+    let labelSet = Set(allLabels)
+    var duplicateLabels: [String] = []
+    for label in allLabels where label.count > pkgSuffix.count && label.hasSuffix(pkgSuffix) {
+        let baseName = String(label.dropLast(pkgSuffix.count))
+        guard labelSet.contains(baseName) else { continue }
+        duplicateLabels.append(preferences.preferPkgLabels ? baseName : label)
+    }
+    if !duplicateLabels.isEmpty {
+        patterns.append(contentsOf: duplicateLabels)
+        Logger.log("📦 Pkg/non-pkg label duplicates — appending \(duplicateLabels.count) labels to ignored list: \(duplicateLabels.sorted().joined(separator: ", "))")
     }
 }
 

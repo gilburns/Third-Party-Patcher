@@ -179,6 +179,15 @@ struct Preferences {
         return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
     }
 
+    /// When a label and its "pkg"-suffixed counterpart both exist (e.g. "bbedit" and
+    /// "bbeditpkg"), they deliver the same app via different installer mechanisms and only
+    /// one should ever be active. When true (the default), the pkg-suffixed label is
+    /// preferred and the non-pkg label is added to the ignored list. When false, the non-pkg
+    /// label is preferred and the pkg-suffixed label is ignored instead.
+    var preferPkgLabels: Bool {
+        prefs["PreferPkgLabels"] as? Bool ?? true
+    }
+
     /// Space-separated list of label name patterns that are required.
     /// Does NOT Support `*` and `?` wildcards (e.g. `"google* microsoft*"`).
     var requiredLabels: [String] {
