@@ -36,6 +36,8 @@
 	<true/>
 	<key>NonProductionLabelSuffixes</key>
 	<string>beta canary dev</string>
+	<key>PreferPkgLabels</key>
+	<true/>
 	<key>InstallomatorGitHubAccount</key>
 	<string>Installomator</string>
 	<key>InstallomatorGitHubBranch</key>
