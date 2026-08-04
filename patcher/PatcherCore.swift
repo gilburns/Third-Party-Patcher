@@ -293,6 +293,7 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     let allLabelNames = shFiles.map { $0.deletingPathExtension().lastPathComponent }
 
     var ignoredPatterns = preferences.ignoredLabels
+    appendSelfProtectionLabel(to: &ignoredPatterns)
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
     appendNonProductionLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     appendPkgLabelDuplicates(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
@@ -539,6 +540,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
     let allLabelNames = buildLabelFileList().map { $0.deletingPathExtension().lastPathComponent }
 
     var ignoredPatterns = preferences.ignoredLabels
+    appendSelfProtectionLabel(to: &ignoredPatterns)
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
     appendNonProductionLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     appendPkgLabelDuplicates(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
@@ -741,6 +743,16 @@ private func isGoogleAppManaged(_ appID: String) -> Bool {
 
 private func isGoogleChromeManaged() -> Bool { isGoogleAppManaged("com.google.Chrome") }
 private func isGoogleDriveManaged()  -> Bool { isGoogleAppManaged("com.google.GoogleDrive") }
+
+/// Unconditionally appends Third Party Patcher's own Installomator label ("thirdpartypatcher")
+/// to `patterns` so the app can never target itself for patching, regardless of user
+/// preferences. This guards against the label being picked up as an update once it exists
+/// in the Installomator labels repo.
+private func appendSelfProtectionLabel(to patterns: inout [String]) {
+    let selfLabel = "thirdpartypatcher"
+    guard !patterns.contains(selfLabel) else { return }
+    patterns.append(selfLabel)
+}
 
 /// Appends any MDM-managed vendor label sets to `patterns` when `IgnoreManagedApps` is enabled.
 private func appendManagedAppLabels(to patterns: inout [String], preferences: Preferences) {
