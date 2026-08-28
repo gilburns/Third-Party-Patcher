@@ -1510,12 +1510,16 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
             var displayName = lbl
             var iconPath: String? = nil
+            var installedVersion: String? = nil
+            var newVersion: String? = nil
 
             if let data = try? Data(contentsOf: plistURL),
                let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
                 if let n = plist["name"] as? String, !n.isEmpty {
                     displayName = n
                 }
+                installedVersion = plist["installedVersion"] as? String
+                newVersion       = plist["appNewVersion"] as? String
                 // Use the first existing .app bundle path as the icon source.
                 // swiftDialog's JSON listitem format accepts .app bundle paths directly.
                 if let installs = plist["foundInstalls"] as? [[String: Any]] {
@@ -1537,7 +1541,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     }
                 }
             }
-            dialogItems.append(SwiftDialogController.ApplyItem(label: lbl, displayName: displayName, iconPath: iconPath))
+            dialogItems.append(SwiftDialogController.ApplyItem(label: lbl, displayName: displayName, iconPath: iconPath, installedVersion: installedVersion, newVersion: newVersion))
         }
 
         // ── Deferral gate + progress dialog ────────────────────────────────────

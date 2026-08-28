@@ -87,14 +87,18 @@ struct SwiftDialogController {
     // MARK: Patcher Progress main dialog
 
     struct ApplyItem {
-        let label:       String
-        let displayName: String
-        let iconPath:    String?
+        let label:            String
+        let displayName:      String
+        let iconPath:         String?
+        let installedVersion: String?
+        let newVersion:       String?
 
-        init(label: String, displayName: String, iconPath: String? = nil) {
-            self.label       = label
-            self.displayName = displayName
-            self.iconPath    = iconPath
+        init(label: String, displayName: String, iconPath: String? = nil, installedVersion: String? = nil, newVersion: String? = nil) {
+            self.label            = label
+            self.displayName      = displayName
+            self.iconPath         = iconPath
+            self.installedVersion = installedVersion
+            self.newVersion       = newVersion
         }
     }
 
@@ -113,19 +117,24 @@ struct SwiftDialogController {
         // Build the listitem array as structured JSON so swiftDialog parses
         // title, icon, and status correctly from the start.
         let listItems: [[String: String]] = items.map { item in
-            [
+            var listItem: [String: String] = [
                 "title":      item.displayName,
                 "icon":       item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns",
                 "status":     "pending",
                 "statustext": "Waiting",
             ]
+            if let installedVersion = item.installedVersion, !installedVersion.isEmpty,
+               let newVersion = item.newVersion, !newVersion.isEmpty {
+                listItem["subtitle"] = "\(installedVersion) → \(newVersion)"
+            }
+            return listItem
         }
         
         let listItemsCount = listItems.count
 
         var jsonDict: [String: Any] = [
             "presentation":    true,
-            "width":           750,
+            "width":           770,
             "height":          min(450, max(520, 220 + items.count * 60)),
             "title":           prefs.appTitle,
             "titlefont":       "size=18",
@@ -163,14 +172,13 @@ struct SwiftDialogController {
 
     /// Marks a list item as in-progress (spinner) and updates the progress text.
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
-        sendCommand("progresstext: [\(current)/\(total)] Installing \(item.displayName)…")
+        sendCommand("progresstext: Update \(current) of \(total) - Installing: \(item.displayName)…")
         sendCommand("listitem: title: \(item.displayName), status: wait, statustext: Installing…")
     }
 
     /// Marks a list item as successfully applied.
     func setSuccess(item: ApplyItem, toVersion: String) {
-        let text = toVersion.isEmpty ? "Updated" : "→ \(toVersion)"
-        sendCommand("listitem: title: \(item.displayName), status: success, statustext: \(text)")
+        sendCommand("listitem: title: \(item.displayName), status: success, statustext: Updated")
     }
 
     /// Marks a list item as failed.
