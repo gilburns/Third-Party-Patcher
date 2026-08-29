@@ -1512,6 +1512,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             var iconPath: String? = nil
             var installedVersion: String? = nil
             var newVersion: String? = nil
+            var isBlocked = false
 
             if let data = try? Data(contentsOf: plistURL),
                let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
@@ -1520,6 +1521,23 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 }
                 installedVersion = plist["installedVersion"] as? String
                 newVersion       = plist["appNewVersion"] as? String
+
+                // Determine blocking processes (same rules applied at apply time):
+                //   ["NONE"]  → nothing blocks
+                //   []        → the label's "name" value is the blocker
+                //   [...]     → the listed process names are blockers
+                let rawBlockers = plist["blockingProcesses"] as? [String] ?? []
+                let blockerName = plist["name"] as? String
+                let effectiveBlockers: [String]
+                if rawBlockers == ["NONE"] {
+                    effectiveBlockers = []
+                } else if rawBlockers.isEmpty {
+                    effectiveBlockers = blockerName.map { [$0] } ?? []
+                } else {
+                    effectiveBlockers = rawBlockers
+                }
+                isBlocked = effectiveBlockers.contains(where: { isProcessRunning($0) })
+
                 // Use the first existing .app bundle path as the icon source.
                 // swiftDialog's JSON listitem format accepts .app bundle paths directly.
                 if let installs = plist["foundInstalls"] as? [[String: Any]] {
@@ -1541,7 +1559,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     }
                 }
             }
-            dialogItems.append(SwiftDialogController.ApplyItem(label: lbl, displayName: displayName, iconPath: iconPath, installedVersion: installedVersion, newVersion: newVersion))
+            dialogItems.append(SwiftDialogController.ApplyItem(label: lbl, displayName: displayName, iconPath: iconPath, installedVersion: installedVersion, newVersion: newVersion, isBlocked: isBlocked))
         }
 
         // ── Deferral gate + progress dialog ────────────────────────────────────

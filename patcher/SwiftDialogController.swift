@@ -92,13 +92,15 @@ struct SwiftDialogController {
         let iconPath:         String?
         let installedVersion: String?
         let newVersion:       String?
+        let isBlocked:        Bool
 
-        init(label: String, displayName: String, iconPath: String? = nil, installedVersion: String? = nil, newVersion: String? = nil) {
+        init(label: String, displayName: String, iconPath: String? = nil, installedVersion: String? = nil, newVersion: String? = nil, isBlocked: Bool = false) {
             self.label            = label
             self.displayName      = displayName
             self.iconPath         = iconPath
             self.installedVersion = installedVersion
             self.newVersion       = newVersion
+            self.isBlocked        = isBlocked
         }
     }
 
@@ -336,15 +338,26 @@ struct SwiftDialogController {
         } else if daysPending > 0 {
             message += "\n\nThese \(itemWord) have been pending for **\(daysPending) day\(daysPending == 1 ? "" : "s")**."
         }
-        let maxVisible  = 7
-        let sortedNames = items.map { $0.displayName }.sorted()
-        let overflow    = sortedNames.count - maxVisible
-        var listLines   = sortedNames.prefix(overflow == 1 ? maxVisible + 1 : maxVisible).map { "- \($0)" }
-        if overflow > 1 {
-            listLines.append("- And \(overflow) additional updates")
+
+        // Build the listitem array so each pending update shows its icon, name, and
+        // version transition — mirroring the progress dialog's listitem presentation.
+        // Unlike the old text-based message list, this is not truncated to the first
+        // several items; swiftDialog scrolls the list when it overflows the window.
+        let sortedItems = items.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        let listItems: [[String: String]] = sortedItems.map { item in
+            var listItem: [String: String] = [
+                "title":      item.displayName,
+                "icon":       item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns",
+                "status":     item.isBlocked ? "error" : "success",
+                "statustext": item.isBlocked ? "Needs to be closed" : "Ready",
+            ]
+            if let installedVersion = item.installedVersion, !installedVersion.isEmpty,
+               let newVersion = item.newVersion, !newVersion.isEmpty {
+                listItem["subtitle"] = "\(installedVersion) → \(newVersion)"
+            }
+            return listItem
         }
-        message += "\n\n" + listLines.joined(separator: "\n")
-                
+
         var jsonDict: [String: Any] = [
             "bannertitle":     prefs.appTitle,
             "titlefont":       "shadow=1,size=22,alignment=left,colour=\(prefs.brandColorFont)",
@@ -355,11 +368,12 @@ struct SwiftDialogController {
             "messagefont":     "size=14",
             "button2text":     "Continue",
             "infobox":         infoboxMessage,
+            "listitem":        listItems,
             "moveable":        true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenPosition,
-            "height":          400,
-            "width":           600,
+            "height":          min(700, max(440, 300 + itemCount * 55)),
+            "width":           650,
             "timer":           countdown,
         ]
         if let overlay = resolveOverlayIcon(prefs: prefs) { jsonDict["overlayicon"] = overlay }
