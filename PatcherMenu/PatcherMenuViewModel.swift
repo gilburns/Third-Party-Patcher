@@ -37,6 +37,28 @@ final class PatcherMenuViewModel: ObservableObject {
     struct DeferralStateData: Codable {
         var expiryDate: Date?
         var count: Int = 0
+        var userDeferralCount: Int = 0
+        var timedOutDeferralCount: Int = 0
+        var blockingProcessDeferralCount: Int = 0
+
+        private enum CodingKeys: String, CodingKey {
+            case expiryDate, count, userDeferralCount, timedOutDeferralCount, blockingProcessDeferralCount
+        }
+
+        // Lenient decode — the split counters were added after the first releases,
+        // so older deferral_state.json files won't carry them.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            expiryDate                   = try c.decodeIfPresent(Date.self, forKey: .expiryDate)
+            count                        = try c.decodeIfPresent(Int.self, forKey: .count) ?? 0
+            userDeferralCount            = try c.decodeIfPresent(Int.self, forKey: .userDeferralCount) ?? 0
+            timedOutDeferralCount        = try c.decodeIfPresent(Int.self, forKey: .timedOutDeferralCount) ?? 0
+            blockingProcessDeferralCount = try c.decodeIfPresent(Int.self, forKey: .blockingProcessDeferralCount) ?? 0
+        }
+    }
+
+    enum DeferralCountDisplay {
+        case combined, split, userOnly
     }
 
     struct StagedPatch: Identifiable {
@@ -59,6 +81,35 @@ final class PatcherMenuViewModel: ObservableObject {
     var hasDetectedUpdates: Bool { !detectedPatches.isEmpty }
 
     var deferralCount: Int { deferralState?.count ?? schedulerState?.deferralCount ?? 0 }
+
+    /// Deferrals the user actively chose in the prompt.
+    var userDeferralCount: Int { deferralState?.userDeferralCount ?? 0 }
+
+    /// Auto-deferrals: prompt timer time-outs plus blocking-process skips.
+    var autoDeferralCount: Int {
+        (deferralState?.timedOutDeferralCount ?? 0) + (deferralState?.blockingProcessDeferralCount ?? 0)
+    }
+
+    var deferralCountDisplay: DeferralCountDisplay {
+        switch preferences.menuDeferralCountDisplay.lowercased() {
+        case "split":    return .split
+        case "useronly": return .userOnly
+        default:         return .combined
+        }
+    }
+
+    /// The deferral-count line shown in the popover, honoring `MenuDeferralCountDisplay`.
+    var deferralCountText: String {
+        func times(_ n: Int) -> String { "\(n) time\(n == 1 ? "" : "s")" }
+        switch deferralCountDisplay {
+        case .combined:
+            return "Deferred \(times(deferralCount)) (includes auto-deferrals)"
+        case .split:
+            return "Deferred \(times(userDeferralCount)) by you · \(times(autoDeferralCount)) automatically"
+        case .userOnly:
+            return "Deferred \(times(userDeferralCount)) by you"
+        }
+    }
 
     /// Approximate label for when the next apply prompt will appear.
     /// Coarsely bucketed — no exact countdown — because the prompt fires on the next

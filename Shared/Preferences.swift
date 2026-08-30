@@ -584,6 +584,18 @@ struct Preferences {
         prefs["ShowActivitySection"] as? Bool ?? true
     }
 
+    /// Controls how the deferral count is shown in the menu bar popover.
+    /// Options: combined | split | userOnly
+    ///   combined — one total covering every deferral, including auto-deferrals
+    ///              (timer time-outs and blocking-process skips). Current behavior.
+    ///   split    — two figures: deferrals the user actively chose, and auto-deferrals
+    ///              (timer time-outs + blocking-process skips) combined.
+    ///   userOnly — only the count of deferrals the user actively chose.
+    /// Defaults to "combined".
+    var menuDeferralCountDisplay: String {
+        pref("MenuDeferralCountDisplay", default: "combined")
+    }
+
     /// When true, a Quit button is shown in the menu bar popover footer.
     /// Defaults to false.
     var showQuitButton: Bool {
