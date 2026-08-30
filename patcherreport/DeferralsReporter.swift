@@ -10,6 +10,12 @@
 //  outcome, forced deadline, and user-continue event.  Intended to give admins
 //  a verifiable record when a user claims they never saw a patching notification.
 //
+//  Deferrals are broken out by how they occurred, matching the counters tracked
+//  in deferral_state.json:
+//    • user            — the user actively chose a defer duration in the prompt
+//    • timed-out        — the prompt countdown expired and auto-deferred
+//    • blocking-process — a label was skipped because its blocking process was running
+//
 
 import Foundation
 
@@ -25,6 +31,100 @@ private let dialogEventTypes: Set<String> = [
     LabelHistoryEvent.EventType.blockingProcessTimedOut,
     LabelHistoryEvent.EventType.blockingProcessQuit,
 ]
+
+// MARK: - Deferral categorisation
+
+/// The three ways a deferral is recorded, mirroring `DeferralState` / `DeferralKind`.
+enum DeferralCategory: String, CaseIterable {
+    case user            = "user"
+    case timedOut        = "timed-out"
+    case blockingProcess = "blocking-process"
+
+    /// JSON-friendly camelCase key.
+    var jsonKey: String {
+        switch self {
+        case .user:            return "user"
+        case .timedOut:        return "timedOut"
+        case .blockingProcess: return "blockingProcess"
+        }
+    }
+}
+
+/// Maps a dialog event type to the deferral category it counts toward, or nil when
+/// the event is not itself a deferral (e.g. the process was quit and patching proceeded).
+func deferralCategory(for eventType: String) -> DeferralCategory? {
+    switch eventType {
+    case LabelHistoryEvent.EventType.userDeferred:
+        return .user
+    case LabelHistoryEvent.EventType.timedOutDeferred:
+        return .timedOut
+    case LabelHistoryEvent.EventType.blockingProcessSkipped,
+         LabelHistoryEvent.EventType.blockingProcessNotified:
+        return .blockingProcess
+    default:
+        return nil
+    }
+}
+
+/// Per-category deferral tallies.
+struct DeferralCounts {
+    var user            = 0
+    var timedOut        = 0
+    var blockingProcess = 0
+
+    var total: Int { user + timedOut + blockingProcess }
+
+    mutating func add(_ category: DeferralCategory) {
+        switch category {
+        case .user:            user            += 1
+        case .timedOut:        timedOut        += 1
+        case .blockingProcess: blockingProcess += 1
+        }
+    }
+
+    mutating func add(_ other: DeferralCounts) {
+        user            += other.user
+        timedOut        += other.timedOut
+        blockingProcess += other.blockingProcess
+    }
+
+    subscript(_ category: DeferralCategory) -> Int {
+        switch category {
+        case .user:            return user
+        case .timedOut:        return timedOut
+        case .blockingProcess: return blockingProcess
+        }
+    }
+
+    /// Non-zero categories as "2 user · 1 blocking-process".
+    var breakdown: String {
+        DeferralCategory.allCases
+            .filter { self[$0] > 0 }
+            .map { "\(self[$0]) \($0.rawValue)" }
+            .joined(separator: " · ")
+    }
+
+    /// A human phrase for a per-label header:
+    ///   "2 user deferrals"                                   (single category)
+    ///   "4 deferrals (2 user · 1 timed-out · 1 blocking-process)"  (mixed)
+    var tag: String {
+        let nonZero = DeferralCategory.allCases.filter { self[$0] > 0 }
+        guard total > 0 else { return "" }
+        if nonZero.count == 1 {
+            let c = nonZero[0]
+            return "\(self[c]) \(c.rawValue) deferral\(self[c] == 1 ? "" : "s")"
+        }
+        return "\(total) deferrals (\(breakdown))"
+    }
+}
+
+func deferralCounts(for events: [LabelHistoryEvent]) -> DeferralCounts {
+    var counts = DeferralCounts()
+    for event in events {
+        if let category = deferralCategory(for: event.type) { counts.add(category) }
+    }
+    return counts
+}
 
 
 // MARK: - DeferralsReporter
@@ -80,30 +180,25 @@ struct DeferralsReporter {
             return lines.joined(separator: "\n")
         }
 
-        let totalDeferrals = labelsWithEvents.reduce(0) { sum, item in
-            sum + item.events.filter {
-                $0.type == LabelHistoryEvent.EventType.userDeferred ||
-                $0.type == LabelHistoryEvent.EventType.timedOutDeferred
-            }.count
-        }
+        var totals = DeferralCounts()
+        for (_, events) in labelsWithEvents { totals.add(deferralCounts(for: events)) }
+
         let forcedCount = labelsWithEvents.filter { item in
             item.events.contains { $0.type == LabelHistoryEvent.EventType.deadlineForced }
         }.count
 
-        lines.append(" \(labelsWithEvents.count) label(s)  ·  \(totalDeferrals) deferral(s)  ·  \(forcedCount) deadline(s) forced")
+        let breakdown = totals.total > 0 ? " (\(totals.breakdown))" : ""
+        lines.append(" \(labelsWithEvents.count) label(s)  ·  \(totals.total) deferral(s)\(breakdown)  ·  \(forcedCount) deadline(s) forced")
 
         for (label, events) in labelsWithEvents {
-            let deferCount = events.filter {
-                $0.type == LabelHistoryEvent.EventType.userDeferred ||
-                $0.type == LabelHistoryEvent.EventType.timedOutDeferred
-            }.count
+            let counts = deferralCounts(for: events)
             let forced = events.contains { $0.type == LabelHistoryEvent.EventType.deadlineForced }
 
             var header = " \(label)"
             var tags: [String] = []
-            if deferCount > 0 { tags.append("\(deferCount) deferral\(deferCount == 1 ? "" : "s")") }
-            if forced          { tags.append("deadline forced") }
-            if !tags.isEmpty   { header += "  (\(tags.joined(separator: " · ")))" }
+            if counts.total > 0 { tags.append(counts.tag) }
+            if forced           { tags.append("deadline forced") }
+            if !tags.isEmpty    { header += "  (\(tags.joined(separator: ", ")))" }
 
             lines.append("")
             lines.append(header)
@@ -126,24 +221,45 @@ struct DeferralsReporter {
         let iso = ISO8601DateFormatter()
         let labelsWithEvents = labelDialogEvents(ctx)
 
+        var totals = DeferralCounts()
+        var forcedTotal = 0
+
         let arr: [[String: Any]] = labelsWithEvents.map { (label, events) in
             let evts: [[String: Any]] = events.map { event in
                 var d: [String: Any] = ["type": event.type, "date": iso.string(from: event.date)]
+                if let c = deferralCategory(for: event.type) { d["deferralCategory"] = c.rawValue }
                 if let v = event.deferralMinutes     { d["deferralMinutes"]     = v }
                 if let v = event.blockingProcessName { d["blockingProcessName"] = v }
                 return d
             }
-            let deferCount = events.filter {
-                $0.type == LabelHistoryEvent.EventType.userDeferred ||
-                $0.type == LabelHistoryEvent.EventType.timedOutDeferred
-            }.count
+            let counts = deferralCounts(for: events)
             let forced = events.contains { $0.type == LabelHistoryEvent.EventType.deadlineForced }
-            return ["label": label, "deferralCount": deferCount, "deadlineForced": forced, "events": evts]
+            totals.add(counts)
+            if forced { forcedTotal += 1 }
+            return [
+                "label":          label,
+                "deferralCount":  counts.total,
+                "deferralsByType": [
+                    "user":            counts.user,
+                    "timedOut":        counts.timedOut,
+                    "blockingProcess": counts.blockingProcess,
+                ],
+                "deadlineForced": forced,
+                "events":         evts,
+            ]
         }
 
         let out: [String: Any] = [
             "generatedAt": iso.string(from: ctx.now),
-            "labels":      arr,
+            "totals": [
+                "labels":          arr.count,
+                "deferrals":       totals.total,
+                "user":            totals.user,
+                "timedOut":        totals.timedOut,
+                "blockingProcess": totals.blockingProcess,
+                "deadlinesForced": forcedTotal,
+            ],
+            "labels": arr,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
         return String(data: data, encoding: .utf8) ?? "{}"
@@ -153,13 +269,14 @@ struct DeferralsReporter {
 
     private func buildCSV(_ ctx: ReportContext) -> String {
         let labelsWithEvents = labelDialogEvents(ctx)
-        var rows = [csvRow(["label", "date", "eventType", "deferralMinutes", "blockingProcessName"])]
+        var rows = [csvRow(["label", "date", "eventType", "deferralCategory", "deferralMinutes", "blockingProcessName"])]
         for (label, events) in labelsWithEvents {
             for event in events {
                 rows.append(csvRow([
                     label,
                     shortDateTime(event.date),
                     event.type,
+                    deferralCategory(for: event.type)?.rawValue ?? "",
                     event.deferralMinutes.map    { "\($0)" } ?? "",
                     event.blockingProcessName    ?? "",
                 ]))
