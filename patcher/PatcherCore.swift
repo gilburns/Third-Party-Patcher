@@ -1588,15 +1588,15 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 switch promptResult {
                 case .deferred(let minutes):
                     recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
-                    deferralState.recordDeferral(minutes: minutes)
+                    deferralState.recordDeferral(minutes: minutes, kind: .user)
                     deferralState.save()
-                    Logger.log("⏸️ Apply deferred for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count)). Exiting.")
+                    Logger.log("⏸️ Apply deferred for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count), user #\(deferralState.userDeferralCount)). Exiting.")
                     return
                 case .timedOutDeferred(let minutes):
                     recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
-                    deferralState.recordDeferral(minutes: minutes)
+                    deferralState.recordDeferral(minutes: minutes, kind: .timedOut)
                     deferralState.save()
-                    Logger.log("⏸️ Apply auto-deferred (timer) for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count)). Exiting.")
+                    Logger.log("⏸️ Apply auto-deferred (timer) for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count), timed-out #\(deferralState.timedOutDeferralCount)). Exiting.")
                     return
                 case .deadlineForced:
                     recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
@@ -1978,9 +1978,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         // installs and should not advance the deadline counter.
         if blockedSkipOccurred, !silentApply {
             var deferralState = DeferralState.load()
-            deferralState.count += 1
+            deferralState.recordBlockingProcessSkip()
             deferralState.save()
-            Logger.log("ℹ️ Blocking-process skip recorded as deferral #\(deferralState.count).")
+            Logger.log("ℹ️ Blocking-process skip recorded as deferral #\(deferralState.count) (blocking-process #\(deferralState.blockingProcessDeferralCount)).")
         }
 
         // Reset deferral only when all staged updates have been applied.

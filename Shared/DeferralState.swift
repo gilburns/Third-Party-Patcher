@@ -11,17 +11,56 @@
 
 import Foundation
 
+/// Distinguishes how a deferral was initiated.
+enum DeferralKind {
+    /// The user actively clicked "Defer" in the prompt.
+    case user
+    /// The prompt's countdown timer expired without the user choosing.
+    case timedOut
+}
+
 struct DeferralState: Codable {
 
     /// Expiry of the most recently recorded deferral. nil = no active deferral.
     var expiryDate: Date?
 
-    /// Running total of deferrals recorded in the current apply cycle.
+    /// Running total of deferrals recorded in the current apply cycle
+    /// (user-initiated + timed-out + blocking-process + any other source).
     /// Reset to 0 when the deferral is cleared after a successful apply.
     var count: Int = 0
 
+    /// Deferrals in the current apply cycle where the user actively clicked "Defer".
+    var userDeferralCount: Int = 0
+
+    /// Deferrals in the current apply cycle where the prompt's countdown timer
+    /// expired without the user making a choice.
+    var timedOutDeferralCount: Int = 0
+
+    /// Deferrals in the current apply cycle caused by a label being skipped because
+    /// its blocking process was still running (the user never saw a prompt).
+    var blockingProcessDeferralCount: Int = 0
+
     private static let stateURL: URL = AppConstants.patcherConfigFolderURL
         .appendingPathComponent("deferral_state.json")
+
+    // MARK: Codable
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case expiryDate, count, userDeferralCount, timedOutDeferralCount, blockingProcessDeferralCount
+    }
+
+    /// Lenient decoder — the split counters were added later, so state files
+    /// written by earlier versions won't contain them.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        expiryDate                   = try c.decodeIfPresent(Date.self, forKey: .expiryDate)
+        count                        = try c.decodeIfPresent(Int.self, forKey: .count) ?? 0
+        userDeferralCount            = try c.decodeIfPresent(Int.self, forKey: .userDeferralCount) ?? 0
+        timedOutDeferralCount       = try c.decodeIfPresent(Int.self, forKey: .timedOutDeferralCount) ?? 0
+        blockingProcessDeferralCount = try c.decodeIfPresent(Int.self, forKey: .blockingProcessDeferralCount) ?? 0
+    }
 
     // MARK: Persistence
 
@@ -66,10 +105,15 @@ struct DeferralState: Codable {
 
     // MARK: Mutations
 
-    /// Records a new deferral for `minutes` from `now`, incrementing the count.
-    mutating func recordDeferral(minutes: Int, now: Date = Date()) {
+    /// Records a new deferral for `minutes` from `now`, incrementing the total
+    /// count and the counter for the given `kind`.
+    mutating func recordDeferral(minutes: Int, kind: DeferralKind = .user, now: Date = Date()) {
         expiryDate = now.addingTimeInterval(TimeInterval(minutes * 60))
         count += 1
+        switch kind {
+        case .user:     userDeferralCount += 1
+        case .timedOut: timedOutDeferralCount += 1
+        }
     }
 
     /// Records an automatic Focus/DND deferral for `minutes` from `now`.
@@ -78,10 +122,22 @@ struct DeferralState: Codable {
         expiryDate = now.addingTimeInterval(TimeInterval(minutes * 60))
     }
 
+    /// Records a blocking-process skip — a label was skipped during apply because its
+    /// blocking process was still running. Bumps the total and blocking-process
+    /// counters but does NOT set an expiry: the skip is retried on the next apply
+    /// cycle, not after a timer.
+    mutating func recordBlockingProcessSkip() {
+        count += 1
+        blockingProcessDeferralCount += 1
+    }
+
     /// Clears any active deferral and resets the count (call after successful apply).
     mutating func reset() {
-        expiryDate = nil
-        count      = 0
+        expiryDate                   = nil
+        count                        = 0
+        userDeferralCount            = 0
+        timedOutDeferralCount        = 0
+        blockingProcessDeferralCount = 0
     }
 }
 

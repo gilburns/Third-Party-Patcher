@@ -128,6 +128,61 @@ struct DeferralStateTests {
         state.recordDeferral(minutes: 30)
         #expect(state.count == 3)
     }
+
+    @Test func splitCountersTrackKindSeparately() {
+        var state = DeferralState()
+        state.recordDeferral(minutes: 30, kind: .user)
+        state.recordDeferral(minutes: 30, kind: .timedOut)
+        state.recordDeferral(minutes: 30, kind: .user)
+        state.recordBlockingProcessSkip()
+        #expect(state.count == 4)
+        #expect(state.userDeferralCount == 2)
+        #expect(state.timedOutDeferralCount == 1)
+        #expect(state.blockingProcessDeferralCount == 1)
+    }
+
+    @Test func blockingProcessSkipDoesNotSetExpiry() {
+        var state = DeferralState()
+        state.recordBlockingProcessSkip()
+        #expect(state.expiryDate == nil)
+        #expect(!state.isActive())
+        #expect(state.count == 1)
+        #expect(state.blockingProcessDeferralCount == 1)
+    }
+
+    @Test func resetClearsSplitCounters() {
+        var state = DeferralState()
+        state.recordDeferral(minutes: 30, kind: .user)
+        state.recordDeferral(minutes: 30, kind: .timedOut)
+        state.recordBlockingProcessSkip()
+        state.reset()
+        #expect(state.userDeferralCount == 0)
+        #expect(state.timedOutDeferralCount == 0)
+        #expect(state.blockingProcessDeferralCount == 0)
+    }
+
+    @Test func decodesLegacyStateWithoutSplitCounters() throws {
+        let json = #"{"count":2}"#.data(using: .utf8)!
+        let state = try JSONDecoder().decode(DeferralState.self, from: json)
+        #expect(state.count == 2)
+        #expect(state.userDeferralCount == 0)
+        #expect(state.timedOutDeferralCount == 0)
+        #expect(state.blockingProcessDeferralCount == 0)
+    }
+
+    @Test func splitCountersRoundTripThroughJSON() throws {
+        var state = DeferralState()
+        state.recordDeferral(minutes: 60, kind: .user)
+        state.recordDeferral(minutes: 60, kind: .timedOut)
+        state.recordBlockingProcessSkip()
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(DeferralState.self, from: try encoder.encode(state))
+        #expect(decoded.count == 3)
+        #expect(decoded.userDeferralCount == 1)
+        #expect(decoded.timedOutDeferralCount == 1)
+        #expect(decoded.blockingProcessDeferralCount == 1)
+    }
 }
 
 

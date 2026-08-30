@@ -396,7 +396,7 @@ struct MenuStatusView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.uturn.backward")
                         .frame(width: 14)
-                    Text("Deferred \(vm.deferralCount) time\(vm.deferralCount == 1 ? "" : "s") (Includes auto-deferrals)")
+                    Text(vm.deferralCountText)
                         .font(.caption)
                 }
                 .foregroundStyle(.secondary)
