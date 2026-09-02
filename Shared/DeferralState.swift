@@ -58,7 +58,7 @@ struct DeferralState: Codable {
         expiryDate                   = try c.decodeIfPresent(Date.self, forKey: .expiryDate)
         count                        = try c.decodeIfPresent(Int.self, forKey: .count) ?? 0
         userDeferralCount            = try c.decodeIfPresent(Int.self, forKey: .userDeferralCount) ?? 0
-        timedOutDeferralCount       = try c.decodeIfPresent(Int.self, forKey: .timedOutDeferralCount) ?? 0
+        timedOutDeferralCount        = try c.decodeIfPresent(Int.self, forKey: .timedOutDeferralCount) ?? 0
         blockingProcessDeferralCount = try c.decodeIfPresent(Int.self, forKey: .blockingProcessDeferralCount) ?? 0
     }
 
@@ -90,6 +90,12 @@ struct DeferralState: Codable {
     }
 
     // MARK: Queries
+
+    /// Deferrals in the current apply cycle that happened without the user actively
+    /// choosing — prompt-timer time-outs plus blocking-process skips.
+    var automatedDeferralCount: Int {
+        timedOutDeferralCount + blockingProcessDeferralCount
+    }
 
     /// True when there is an unexpired deferral.
     func isActive(now: Date = Date()) -> Bool {

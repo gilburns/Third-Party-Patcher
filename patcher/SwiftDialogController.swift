@@ -372,7 +372,7 @@ struct SwiftDialogController {
             "moveable":        true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenPosition,
-            "height":          min(700, max(440, 300 + itemCount * 55)),
+            "height":          min(720, max(440, 300 + itemCount * 55)),
             "width":           650,
             "timer":           countdown,
         ]
@@ -892,13 +892,8 @@ private func buildInfoboxMessage() -> String {
 private func buildDeferralInfoboxMessage(daysPending: Int, deferralState: DeferralState) -> String {
     var msg = "**Deferral Status:**\n"
     msg += "- **Days Pending:** \(daysPending)"
-    msg += "\n- **Times Deferred:** \(deferralState.count)"
-
-//    if deferralState.isActive(){
-//        msg += "\n- **Remaining:** \(formatDeferralDuration(deferralState.remainingMinutes()))"
-//    } else {
-//        msg += "\n- **Deferred Until:** None"
-//    }
+    msg += "\n- **User Deferrals:** \(deferralState.userDeferralCount)"
+    msg += "\n- **Auto Deferrals:** \(deferralState.automatedDeferralCount)"
 
     return msg
 }
