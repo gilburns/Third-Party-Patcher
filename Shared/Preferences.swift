@@ -573,9 +573,9 @@ struct Preferences {
     /// When true, patcherscheduler installs and loads the PatcherMenu LaunchAgent
     /// for the current console user. When false, the LaunchAgent is unloaded and
     /// the plist removed. Managed automatically by patcherscheduler at each run.
-    /// Defaults to false (opt-in).
+    /// Defaults to true (opt-out).
     var showMenuBarApp: Bool {
-        prefs["ShowMenuBarApp"] as? Bool ?? false
+        prefs["ShowMenuBarApp"] as? Bool ?? true
     }
 
     /// When true, the Last Activity section (scan / check / stage / apply dates)
