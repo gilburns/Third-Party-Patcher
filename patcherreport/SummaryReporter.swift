@@ -79,12 +79,23 @@ struct SummaryReporter {
         lines.append(runLine("Last check:", startKey: "lastCheckStart",    countKey: "lastCheckLabelCount",    countNoun: "checked"))
         lines.append(runLine("Last stage:", startKey: "lastStageStart",    countKey: "lastStagedCount",        countNoun: "staged"))
         lines.append(runLine("Last apply:", startKey: "lastApplyStart",    countKey: "lastApplyCount",         countNoun: "applied"))
+        lines.append(String(repeating: "─", count: w))
+
+        lines.append(contentsOf: DeadlineSummary(ctx, pendingItems: buildPendingItems(ctx)).tableLines())
         lines.append(String(repeating: "═", count: w))
 
         return lines.joined(separator: "\n")
     }
 
     private func buildJSON(_ ctx: ReportContext) -> String {
+        guard let data = try? JSONSerialization.data(
+                withJSONObject: jsonObject(ctx),
+                options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    /// The `summary --json` payload. Also consumed by the `get` subcommand.
+    func jsonObject(_ ctx: ReportContext) -> [String: Any] {
         let iso = ISO8601DateFormatter()
         let sc = statusCounts(ctx)
         let everApplied = ctx.histories.filter {
@@ -116,8 +127,9 @@ struct SummaryReporter {
         addRun("lastStage",  startKey: "lastStageStart",    countKey: "lastStagedCount")
         addRun("lastApply",  startKey: "lastApplyStart",    countKey: "lastApplyCount")
 
-        guard let data = try? JSONSerialization.data(withJSONObject: d, options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
-        return String(data: data, encoding: .utf8) ?? "{}"
+        d["deadline"] = DeadlineSummary(ctx, pendingItems: buildPendingItems(ctx)).jsonObject()
+
+        return d
     }
 
     private func buildCSV(_ ctx: ReportContext) -> String {
@@ -125,7 +137,7 @@ struct SummaryReporter {
         let everApplied = ctx.histories.filter {
             $0.history.events.contains { $0.type == LabelHistoryEvent.EventType.applied }
         }.count
-        let rows: [[String]] = [
+        var rows: [[String]] = [
             ["metric", "value"],
             ["totalDiscovered",    "\(ctx.discoveredPlists.count)"],
             ["upToDate",           "\(sc["upToDate"]      ?? 0)"],
@@ -138,6 +150,7 @@ struct SummaryReporter {
             ["scanBrokenCount",    "\((ctx.config["lastScanBrokenLabels"] as? [String] ?? []).count)"],
             ["stageBrokenCount",   "\((ctx.config["stageBrokenLabels"]    as? [String] ?? []).count)"],
         ]
+        rows.append(contentsOf: DeadlineSummary(ctx, pendingItems: buildPendingItems(ctx)).csvRows())
         return rows.map(csvRow).joined(separator: "\n")
     }
 }

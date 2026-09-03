@@ -12,6 +12,7 @@
 //    patcherreport never-updated             Labels discovered but never applied
 //    patcherreport broken                    Broken scan and stage labels
 //    patcherreport deferrals [--days N]      Dialog interaction history (deferrals, blocking-process)
+//    patcherreport get <key> [--from src]    Print one scalar value from a report's JSON payload
 //
 //  Output options (apply to any subcommand):
 //    --json                                  Output as JSON
@@ -64,6 +65,14 @@ case "deferrals":
     let days = flagInt(cliArgs, flag: "--days")
     DeferralsReporter(days: days, format: outputFormat).run(to: outputPath)
 
+case "get":
+    guard let key = cliArgs.dropFirst().first(where: { !$0.hasPrefix("-") }) else {
+        fputs("patcherreport: 'get' requires a key, e.g. 'patcherreport get updateRequired'\n", stderr); exit(1)
+    }
+    let source = flagString(cliArgs, flag: "--from") ?? "summary"
+    let days   = flagInt(cliArgs, flag: "--days")
+    GetReporter(key: key, source: source, days: days).run(to: outputPath)
+
 case "help":
     printUsage(); exit(0)
 
@@ -87,6 +96,18 @@ func printUsage() {
       never-updated             Labels discovered but never applied
       broken                    Broken scan and stage labels
       deferrals [--days N]      Dialog interaction history: deferrals, blocking-process outcomes
+      get <key> [--from src]    Print one scalar value from a report's JSON payload
+
+    'get' options:
+      --from <src>              summary (default), pending, deferrals, broken, deadline
+      --days N                  History window when --from is 'deferrals'
+
+      Examples:
+        patcherreport get updateRequired
+        patcherreport get labelsPending
+        patcherreport get deadline.daysUntilHardDeadline
+        patcherreport get lastApply.lastRun
+        patcherreport get totals.deferrals --from deferrals --days 30
 
     Options:
       --json                    Output as JSON
@@ -147,6 +168,11 @@ func col(_ s: String, _ width: Int) -> String {
 private func flagInt(_ args: [String], flag: String) -> Int? {
     guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else { return nil }
     return Int(args[idx + 1])
+}
+
+private func flagString(_ args: [String], flag: String) -> String? {
+    guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else { return nil }
+    return args[idx + 1]
 }
 
 /// Wraps a CSV field in quotes if it contains commas, quotes, or newlines.
