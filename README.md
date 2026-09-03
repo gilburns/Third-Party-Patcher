@@ -115,12 +115,13 @@ The `patcherreport` binary generates compliance reports from local state files w
 | `never-updated` | Apps with no successful apply on record |
 | `label` | Full chronological event history for one app |
 | `deferrals` | Audit log of every dialog interaction and user choice |
-| `get` | One scalar value from a report's JSON payload (for Jamf Extension Attributes) |
+| `get` | One scalar value from a report's JSON payload (for MDM inventory scripts) |
 
 `summary` and `pending` also report a deadline block (patching mode, oldest pending age, Focus/hard deadline dates, days remaining).
 
-Ready-to-use Jamf Pro Extension Attribute scripts built on `patcherreport get` are in
-[`MDM Examples/Jamf Extension Attributes/`](MDM%20Examples/Jamf%20Extension%20Attributes/).
+Ready-to-use inventory scripts built on `patcherreport get` are in `MDM Examples/`:
+[Jamf Extension Attributes](MDM%20Examples/Jamf%20Extension%20Attributes/) and
+[Intune Custom Attributes](MDM%20Examples/Intune%20Custom%20Attributes/).
 
 See the **[Reporting wiki page](../../wiki/Reporting)** for usage and output format.
 
