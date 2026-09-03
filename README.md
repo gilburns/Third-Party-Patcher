@@ -115,6 +115,9 @@ The `patcherreport` binary generates compliance reports from local state files w
 | `never-updated` | Apps with no successful apply on record |
 | `label` | Full chronological event history for one app |
 | `deferrals` | Audit log of every dialog interaction and user choice |
+| `get` | One scalar value from a report's JSON payload (for Jamf Extension Attributes) |
+
+`summary` and `pending` also report a deadline block (patching mode, oldest pending age, Focus/hard deadline dates, days remaining).
 
 See the **[Reporting wiki page](../../wiki/Reporting)** for usage and output format.
 

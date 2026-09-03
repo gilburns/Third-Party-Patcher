@@ -218,6 +218,14 @@ struct DeferralsReporter {
     // MARK: JSON
 
     private func buildJSON(_ ctx: ReportContext) -> String {
+        guard let data = try? JSONSerialization.data(
+                withJSONObject: jsonObject(ctx),
+                options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    /// The `deferrals --json` payload. Also consumed by the `get` subcommand.
+    func jsonObject(_ ctx: ReportContext) -> [String: Any] {
         let iso = ISO8601DateFormatter()
         let labelsWithEvents = labelDialogEvents(ctx)
 
@@ -261,8 +269,7 @@ struct DeferralsReporter {
             ],
             "labels": arr,
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
-        return String(data: data, encoding: .utf8) ?? "{}"
+        return out
     }
 
     // MARK: CSV

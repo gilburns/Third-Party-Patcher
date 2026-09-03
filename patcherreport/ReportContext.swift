@@ -17,9 +17,15 @@ struct ReportContext {
     let discoveredPlists: [String: [String: Any]]
     /// Contents of config.json.
     let config:           [String: Any]
+    /// Managed / local preferences (deadline thresholds, patching cadence, …).
+    let prefs:            Preferences
+    /// Snapshot of the scheduler's persistent state (firstPendingDate, lastApplyDate).
+    let schedulerState:   SchedulerStateSnapshot
 
     init() {
         now = Date()
+        prefs = Preferences()
+        schedulerState = SchedulerStateSnapshot.load()
         let fm = FileManager.default
 
         // History files: Cache/<label>/history.json

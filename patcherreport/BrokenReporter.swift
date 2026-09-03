@@ -59,6 +59,14 @@ struct BrokenReporter {
     }
 
     private func buildJSON(_ ctx: ReportContext) -> String {
+        guard let data = try? JSONSerialization.data(
+                withJSONObject: jsonObject(ctx),
+                options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    /// The `broken --json` payload. Also consumed by the `get` subcommand.
+    func jsonObject(_ ctx: ReportContext) -> [String: Any] {
         let iso            = ISO8601DateFormatter()
         let scanBroken     = (ctx.config["lastScanBrokenLabels"] as? [String] ?? []).sorted()
         let stageBroken    = (ctx.config["stageBrokenLabels"]    as? [String] ?? []).sorted()
@@ -71,13 +79,11 @@ struct BrokenReporter {
             if let a = failedAttempts[label] { d["failedAttempts"] = a }
             return d
         }
-        let out: [String: Any] = [
+        return [
             "generatedAt": iso.string(from: ctx.now),
             "scanBroken":  ["installomatorVersion": scanVersion, "labels": scanBroken],
             "stageBroken": ["installomatorVersion": stageVersion, "labels": stageArr]
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
-        return String(data: data, encoding: .utf8) ?? "{}"
     }
 
     private func buildCSV(_ ctx: ReportContext) -> String {
