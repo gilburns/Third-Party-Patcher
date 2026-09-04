@@ -372,7 +372,7 @@ struct SwiftDialogController {
             "moveable":        true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenPosition,
-            "height":          min(720, max(440, 300 + itemCount * 55)),
+            "height":          min(670, max(440, 270 + itemCount * 55)),
             "width":           650,
             "timer":           countdown,
         ]
