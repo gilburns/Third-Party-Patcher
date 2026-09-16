@@ -2211,6 +2211,7 @@ private func findAndInstallApp(in directory: String, appName: String?, name: Str
     for target in targets {
         if copyApp(from: sourceApp, to: target, label: label) {
             Logger.log("✅ Installed to: \(target)")
+            clearQuarantineIfPresent(at: target, label: label)
         } else {
             Logger.log("❌ Failed to install to: \(target)")
             allSucceeded = false
@@ -2335,6 +2336,49 @@ private func copyApp(from sourceApp: String, to targetPath: String, label: Strin
         return false
     }
     return fileManager.fileExists(atPath: targetPath)
+}
+
+
+/// Checks the newly installed app for a com.apple.quarantine attribute and strips it if found.
+/// Our own download/extract pipeline (URLSession/curl, ditto, hdiutil) never applies this
+/// attribute, but some vendor archives ship it already set on the app bundle. Left in place,
+/// it triggers an "unidentified developer" Gatekeeper prompt the next time the app is opened
+/// (e.g. via relaunchApp's `open` call), which would block an otherwise-unattended install.
+private func clearQuarantineIfPresent(at path: String, label: String) {
+    let check = Process()
+    check.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+    check.arguments = ["-p", "com.apple.quarantine", path]
+    check.standardOutput = Pipe()
+    check.standardError = Pipe()
+    do {
+        try check.run()
+    } catch {
+        return
+    }
+    check.waitUntilExit()
+    guard check.terminationStatus == 0 else { return }
+
+    Logger.log("⚠️ Quarantine attribute found on installed app for \(label) — removing.")
+
+    let remove = Process()
+    remove.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+    remove.arguments = ["-rd", "com.apple.quarantine", path]
+    remove.standardOutput = Pipe()
+    let errPipe = Pipe()
+    remove.standardError = errPipe
+    do {
+        try remove.run()
+        remove.waitUntilExit()
+    } catch {
+        Logger.log("❌ xattr launch error while removing quarantine for \(label): \(error)")
+        return
+    }
+    if remove.terminationStatus == 0 {
+        Logger.log("✅ Quarantine attribute removed for \(label).")
+    } else {
+        let msg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        Logger.log("❌ Failed to remove quarantine attribute for \(label): \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
+    }
 }
 
 
