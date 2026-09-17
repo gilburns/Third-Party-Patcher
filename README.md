@@ -2,6 +2,8 @@
 
 # Third Party Patcher
 
+🌐 **[thirdpartypatcher.org](https://thirdpartypatcher.org)**
+
 Third Party Patcher (TPP) is a macOS daemon-based patching system for IT administrators. It automatically discovers installed third-party applications, checks for available updates, downloads installers in the background, and applies them — with optional user-facing prompts via [swiftDialog](https://github.com/swiftDialog/swiftDialog) so users stay informed without being blocked.
 
 Updates are driven by [Installomator](https://github.com/Installomator/Installomator) label files, which Third Party Patcher downloads and keeps current automatically. Custom and override labels can be supplied by the IT team without modifying the Installomator project.
@@ -217,3 +219,7 @@ Full IT-admin documentation is available in the [project wiki](../../wiki):
 ## License
 
 Third Party Patcher is released under the [MIT License](LICENSE).
+
+---
+
+🌐 [thirdpartypatcher.org](https://thirdpartypatcher.org)
