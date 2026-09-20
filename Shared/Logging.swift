@@ -34,6 +34,15 @@ class Logger {
             } catch {
                 fputs("Failed to create log directory at \(logPath.path): \(error.localizedDescription)\n", stderr)
             }
+        } else if let mode = (try? fileManager.attributesOfItem(atPath: logPath.path))?[.posixPermissions] as? NSNumber,
+                  mode.intValue & 0o755 != 0o755 {
+            // launchd creates the parent of StandardErrorPath itself (root-only, 0700)
+            // before we run, which keeps standard users from opening the folder in Finder.
+            do {
+                try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: logPath.path)
+            } catch {
+                fputs("Failed to fix permissions on \(logPath.path): \(error.localizedDescription)\n", stderr)
+            }
         }
 
         return logPath

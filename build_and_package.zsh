@@ -284,6 +284,12 @@ PREINSTALL
 
 cat > "$SCRIPTS_DIR/postinstall" << 'POSTINSTALL'
 #!/bin/zsh
+# Create the log folder before the daemon loads. Otherwise launchd creates it
+# (root-only, 0700) for StandardErrorPath, and standard users can't open it in Finder.
+/bin/mkdir -p /Library/Logs/Patcher
+/usr/sbin/chown root:wheel /Library/Logs/Patcher
+/bin/chmod 755 /Library/Logs/Patcher
+
 sleep 10
 # Load (or reload) the scheduler daemon.
 /bin/launchctl bootstrap system /Library/LaunchDaemons/com.gilburns.patcher.scheduler.plist
