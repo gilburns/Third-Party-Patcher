@@ -594,6 +594,40 @@ struct CatalogView: View {
     }
 }
 
+// MARK: - Catalog tile container
+
+/// Tappable tile used by the grids. macOS 26+ keeps the original accessoryBar
+/// button; macOS 14/15 collapsed that layout (nested button + Spacer in a
+/// LazyVGrid cell) to a sliver, so they get a plain container with a fixed height.
+private struct CatalogTile<Content: View>: View {
+    let height: CGFloat
+    let minHeight: CGFloat
+    let onSelect: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            Button(action: onSelect) {
+                content()
+                    .padding(10)
+                    .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+            }
+            .buttonStyle(.accessoryBar)
+            .background(Color.secondary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else {
+            content()
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: height)
+                .background(Color.secondary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .contentShape(RoundedRectangle(cornerRadius: 10))
+                .onTapGesture { onSelect() }
+        }
+    }
+}
+
 // MARK: - Catalog Grid item
 
 private struct CatalogGridItem: View {
@@ -606,9 +640,7 @@ private struct CatalogGridItem: View {
     private var anyActive: Bool    { vm.activeLabel != nil }
 
     var body: some View {
-        Button {
-            onSelect()
-        } label: {
+        CatalogTile(height: 110, minHeight: 82, onSelect: { onSelect() }) {
             HStack(alignment: .top, spacing: 12) {
                 appIcon
 
@@ -633,17 +665,11 @@ private struct CatalogGridItem: View {
                         Spacer()
                         installControl
                             .padding(.top, 2)
-
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
         }
-        .buttonStyle(.accessoryBar)
-        .background(Color.secondary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var appIcon: some View {
@@ -1065,7 +1091,7 @@ private struct PendingUpdatesGrid: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(patches) { patch in
-                        Button { onSelect(patch) } label: {
+                        CatalogTile(height: 96, minHeight: 76, onSelect: { onSelect(patch) }) {
                             HStack(alignment: .top, spacing: 12) {
                                 CachedAsyncImage(url: patch.iconURL) { img in
                                     img.resizable().scaledToFit()
@@ -1088,12 +1114,7 @@ private struct PendingUpdatesGrid: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(10)
-                            .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
                         }
-                        .buttonStyle(.accessoryBar)
-                        .background(Color.secondary.opacity(0.06))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
                 .padding(12)
@@ -1245,7 +1266,7 @@ private struct ManagedSoftwareGrid: View {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 10) {
                             ForEach(filteredApps) { app in
-                                Button { onSelect(app) } label: {
+                                CatalogTile(height: 96, minHeight: 82, onSelect: { onSelect(app) }) {
                                     HStack(alignment: .top, spacing: 12) {
                                         CachedAsyncImage(url: app.iconURL) { img in
                                             img.resizable().scaledToFit()
@@ -1276,12 +1297,7 @@ private struct ManagedSoftwareGrid: View {
                                         }
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                     }
-                                    .padding(10)
-                                    .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
                                 }
-                                .buttonStyle(.accessoryBar)
-                                .background(Color.secondary.opacity(0.06))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
                         }
                         .padding(12)
@@ -1345,7 +1361,7 @@ private struct PendingDownloadsGrid: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(apps) { app in
-                        Button { onSelect(app) } label: {
+                        CatalogTile(height: 96, minHeight: 76, onSelect: { onSelect(app) }) {
                             HStack(alignment: .top, spacing: 12) {
                                 CachedAsyncImage(url: app.iconURL) { img in
                                     img.resizable().scaledToFit()
@@ -1364,12 +1380,7 @@ private struct PendingDownloadsGrid: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(10)
-                            .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
                         }
-                        .buttonStyle(.accessoryBar)
-                        .background(Color.secondary.opacity(0.06))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
                 .padding(12)
