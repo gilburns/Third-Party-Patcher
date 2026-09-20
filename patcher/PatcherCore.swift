@@ -923,7 +923,11 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
         let installedVersion: String?
         var foundInstalls: [FoundInstall]? = nil
 
-        if !appCustomVersion.isEmpty {
+        if !appCustomVersion.isEmpty && isBogusInstalledVersion(appCustomVersion) {
+            Logger.log("⚠️ Ignoring invalid appCustomVersion for \(label): \(appCustomVersion)")
+        }
+
+        if !appCustomVersion.isEmpty && !isBogusInstalledVersion(appCustomVersion) {
             Logger.log("🔍 appCustomVersion resolved: \(appCustomVersion)")
             installedVersion = appCustomVersion
         } else if !packageID.isEmpty {
@@ -2022,6 +2026,22 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 /// HTML garbage or other scraping noise. Two rules are applied:
 ///   1. Length > 40 characters → rejected (all known real version strings fit well within this)
 ///   2. Any character outside [0-9 A-Z a-z . - _ + :] → rejected (catches HTML entities, spaces, tags)
+/// Returns true if an `appCustomVersion` result cannot be a real installed version.
+/// A denylist on purpose: versions containing text are legitimate. Mirrors
+/// `isBogusInstalledVersion` in the label-processing zsh script (Shared/Constants.swift).
+private func isBogusInstalledVersion(_ raw: String) -> Bool {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return true }
+    // nothing but zeros and separators, e.g. "0", ".", "0.0.0"
+    let filler = CharacterSet(charactersIn: "0._-").union(.whitespacesAndNewlines)
+    if trimmed.unicodeScalars.allSatisfy({ filler.contains($0) }) { return true }
+    // error text a tool wrote to stdout
+    let lower = trimmed.lowercased()
+    let errorPhrases = ["does not exist", "doesn't exist", "will create", "no such file",
+                        "domain/default pair", "could not", "not found"]
+    return errorPhrases.contains { lower.contains($0) }
+}
+
 private func sanitizedVersion(_ raw: String) -> String {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return "" }

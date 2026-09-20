@@ -266,6 +266,26 @@ if typeset -f appCustomVersion > /dev/null 2>&1; then
     resolvedCustomVersion=$(appCustomVersion 2>/dev/null) || resolvedCustomVersion=""
 fi
 
+# Some appCustomVersion functions still produce output when the app is missing
+# (e.g. "." from string concatenation, "0" as a fallback, or a tool's error text
+# on stdout). Discard those so the normal not-installed handling applies.
+# This is deliberately a denylist: versions containing text are legitimate.
+isBogusInstalledVersion() {
+    local v="$1"
+    # empty or whitespace only
+    [[ -z "${v//[[:space:]]/}" ]] && return 0
+    # nothing but zeros and separators, e.g. "0", ".", "0.0.0", "-"
+    [[ -z "${v//[0._[:space:]-]/}" ]] && return 0
+    # error text a tool wrote to stdout
+    case "${v:l}" in
+        *"does not exist"*|*"doesn't exist"*|*"will create"*|*"no such file"*|*"domain/default pair"*|*"could not"*|*"not found"*) return 0 ;;
+    esac
+    return 1
+}
+if [[ -n "$resolvedCustomVersion" ]] && isBogusInstalledVersion "$resolvedCustomVersion"; then
+    resolvedCustomVersion=""
+fi
+
 timeStamp=$(/bin/date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Serialize blockingProcesses array as newline-separated string so each element
