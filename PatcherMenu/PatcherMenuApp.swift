@@ -61,13 +61,21 @@ private struct MenuBarIconView: View {
         return result
     }
 
+    private var statusSymbolName: String {
+        if #available(macOS 26, *) {
+            return hasPending ? "plus.arrow.trianglehead.clockwise"
+                              : "checkmark.arrow.trianglehead.clockwise"
+        }
+        return hasPending ? "plus.rectangle" : "checkmark.rectangle"
+    }
+
     @ViewBuilder
     private func iconContent() -> some View {
         if icon.isEmpty {
             // Switch between two symbols to convey pending state — no badge needed.
-            Image(systemName: hasPending
-                  ? "plus.arrow.trianglehead.clockwise"
-                  : "checkmark.arrow.trianglehead.clockwise")
+            // The trianglehead symbols don't render on macOS 15 and earlier, so use
+            // rectangle variants there.
+            Image(systemName: statusSymbolName)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 16, height: 16)
