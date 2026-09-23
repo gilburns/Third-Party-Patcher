@@ -45,6 +45,20 @@ enum BlockingActionResponse {
     case skip            // user or policy chose to skip this label
 }
 
+/// Size/style of the apply-phase progress dialog. A string-backed preference
+/// (ApplyDialogSize) selects this so additional sizes can be added later
+/// without introducing a new preference key.
+enum ApplyDialogSize: Equatable {
+    case large, compact
+
+    init(rawValue: String) {
+        switch rawValue.lowercased() {
+        case "compact": self = .compact
+        default:        self = .large
+        }
+    }
+}
+
 enum DeferralPromptResult {
     case proceed                         // user clicked Continue
     case deferred(minutes: Int)          // user explicitly clicked Defer
@@ -60,6 +74,16 @@ struct SwiftDialogController {
     private let commandFileURL: URL
     private let userUID: uid_t
     private var dialogProcess: Process?
+    /// Set by `launchProgressDialog(items:)` from the ApplyDialogSize preference.
+    /// Downstream update methods (setInProgress/setSuccess/setFailed/setSkipped/complete)
+    /// branch on this to speak the right swiftDialog command syntax for the style in use.
+    private var dialogSize: ApplyDialogSize = .large
+    /// The compact dialog's original icon and overlay icon (computer icon / MDM badge),
+    /// captured at launch. While an item is active its icon is swapped in as the main
+    /// "icon" with this original composited as the overlay badge — the same swap used
+    /// by the scan/check/stage mini windows (UserProgressDialog). Restored by `complete()`.
+    private var compactDialogIcon: String?
+    private var compactOverlayIcon: String?
 
     // MARK: Factory
 
@@ -104,18 +128,32 @@ struct SwiftDialogController {
         }
     }
 
-    /// Launches swiftDialog showing a progress list of all items about to be applied.
+    /// Launches swiftDialog showing progress for all items about to be applied.
     /// This is fire-and-continue — the patcher does not wait for the dialog to exit.
+    /// Style (full listitem window vs. a smaller "mini" window) is chosen by the
+    /// ApplyDialogSize preference; downstream update calls adapt automatically.
     mutating func launchProgressDialog(items: [ApplyItem]) {
         guard !items.isEmpty else { return }
 
+        dialogSize = ApplyDialogSize(rawValue: Preferences().applyDialogSize)
+
+        switch dialogSize {
+        case .large:
+            launchLargeProgressDialog(items: items)
+        case .compact:
+            launchCompactProgressDialog(items: items)
+        }
+    }
+
+    /// The original full-size, listitem-based progress window.
+    private mutating func launchLargeProgressDialog(items: [ApplyItem]) {
         let prefs        = Preferences()
         let dialogIcon   = resolveDialogIcon(prefs: prefs)
         let overlayIcon  = resolveOverlayIcon(prefs: prefs)
         let startISO     = ISO8601DateFormatter().string(from: Date())
         let helpMessage  = buildHelpMessage(prefs: prefs, startISO: startISO)
 //        let infoboxMessage = buildInfoboxMessage()
-        
+
         // Build the listitem array as structured JSON so swiftDialog parses
         // title, icon, and status correctly from the start.
         let listItems: [[String: String]] = items.map { item in
@@ -131,7 +169,7 @@ struct SwiftDialogController {
             }
             return listItem
         }
-        
+
         let listItemsCount = listItems.count
 
         var jsonDict: [String: Any] = [
@@ -154,8 +192,11 @@ struct SwiftDialogController {
             "button1text":     "Updating…",
             "button1disabled": true,
             "listitem":        listItems,
-            "moveable":        true,
+            "blurscreen":      prefs.dialogBlurscreen,
+            "hideotherapps":   prefs.dialogHideotherapps,
+            "moveable":        prefs.dialogMoveable,
             "ontop":           prefs.dialogOnTop,
+            "windowbuttons":   prefs.dialogShowWindowButtons,
         ]
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
 
@@ -172,25 +213,125 @@ struct SwiftDialogController {
         Thread.sleep(forTimeInterval: 1.5)
     }
 
+    /// A smaller "mini" progress window — no listitem list, just a title/message/progress
+    /// bar that's updated in place. Sized similarly to the window used for the
+    /// user-initiated scan/check/download progress in `launchProgressWindow`.
+    private mutating func launchCompactProgressDialog(items: [ApplyItem]) {
+        let prefs       = Preferences()
+        let dialogIcon  = resolveDialogIcon(prefs: prefs)
+        let overlayIcon = resolveOverlayIcon(prefs: prefs)
+        let itemCount   = items.count
+        let itemWord    = itemCount == 1 ? "update" : "updates"
+
+        var jsonDict: [String: Any] = [
+            "title":           prefs.appTitle,
+            "titlefont":       "shadow=1,size=18,alignment=left",
+            "icon":            dialogIcon,
+            "message":         "There are **\(itemCount) \(itemWord)** waiting.\n\nPreparing…",
+            "messagefont":     "size=14",
+            "progress":        itemCount,
+            "progresstext":    "Preparing…",
+            "commandfile":     commandFileURL.path,
+            "mini":            true,
+            "moveable":        prefs.dialogMoveable,
+            "ontop":           prefs.dialogOnTop,
+            "position":        prefs.dialogScreenProgressPosition,
+        ]
+        if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
+
+        // Captured so per-item icon updates can composite the original icon as
+        // an overlay badge, and so complete() can restore both afterward.
+        compactDialogIcon  = dialogIcon
+        compactOverlayIcon = overlayIcon
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonDict),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            Logger.log("❌ SwiftDialogController: failed to serialise compact dialog JSON")
+            return
+        }
+
+        dialogProcess = launchAsUser(["--jsonstring", jsonString])
+        Logger.log("ℹ️ swiftDialog (compact) launched (pid \(dialogProcess?.processIdentifier ?? -1))")
+
+        // Allow swiftDialog to initialise before the first command-file update.
+        Thread.sleep(forTimeInterval: 1.5)
+    }
+
     /// Marks a list item as in-progress (spinner) and updates the progress text.
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
+        guard dialogSize == .large else {
+            setCompactItemIcon(item)
+            sendCommand("progress: \(current)")
+            sendCommand("progresstext: Update \(current) of \(total)")
+            sendCommand("message: Installing: \(item.displayName)\(versionSuffix(item.newVersion))…")
+            return
+        }
         sendCommand("progresstext: Update \(current) of \(total) - Installing: \(item.displayName)…")
         sendCommand("listitem: title: \(item.displayName), status: wait, statustext: Installing…")
     }
 
+    /// Formats a trailing " → 1.2.3" version suffix for the compact dialog's single-line
+    /// status message, or "" when no version is known. Kept compact since there's only
+    /// room for one line — no room for the "current → new" pair the large dialog's
+    /// listitem subtitle can afford.
+    private func versionSuffix(_ version: String?) -> String {
+        guard let version, !version.isEmpty else { return "" }
+        return " → \(version)"
+    }
+
+    /// How long a per-item result (success/failed/skipped) is held on screen in the
+    /// compact dialog before the next item's "Installing…" message overwrites it.
+    /// The large dialog doesn't need this — its listitem list keeps every prior
+    /// result visible — but the compact dialog only ever shows one line of status,
+    /// so without a pause here a result flashes and is gone before it's readable.
+    private static let compactResultHoldSeconds: TimeInterval = 1.5
+
     /// Marks a list item as successfully applied.
     func setSuccess(item: ApplyItem, toVersion: String) {
+        guard dialogSize == .large else {
+            setCompactItemIcon(item)
+            // toVersion is the actual installed version — more authoritative than
+            // item.newVersion (what was expected before install ran).
+            sendCommand("message: ✅ Updated: \(item.displayName)\(versionSuffix(toVersion))")
+            Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
+            return
+        }
         sendCommand("listitem: title: \(item.displayName), status: success, statustext: Updated")
     }
 
     /// Marks a list item as failed.
     func setFailed(item: ApplyItem) {
+        guard dialogSize == .large else {
+            setCompactItemIcon(item)
+            sendCommand("message: ❌ Failed: \(item.displayName)\(versionSuffix(item.newVersion))")
+            Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
+            return
+        }
         sendCommand("listitem: title: \(item.displayName), status: fail, statustext: Failed")
     }
 
     /// Marks a list item as skipped.
     func setSkipped(item: ApplyItem, reason: String = "Skipped") {
+        guard dialogSize == .large else {
+            setCompactItemIcon(item)
+            sendCommand("message: ⚠️ \(item.displayName) — \(reason)")
+            Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
+            return
+        }
         sendCommand("listitem: title: \(item.displayName), status: error, statustext: \(reason)")
+    }
+
+    /// Swaps in `item`'s icon as the compact dialog's main icon, compositing the
+    /// dialog's original icon as the overlay badge — the same icon-swap pattern
+    /// used by the scan/check/stage mini windows (see `UserProgressDialog.setProgress`
+    /// / `beginItem`). Called for every status transition (not just setInProgress) so
+    /// an item skipped before ever reaching "Installing…" still shows its own icon.
+    private func setCompactItemIcon(_ item: ApplyItem) {
+        let iconPath = item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns"
+        sendCommand("icon: \(iconPath)")
+        if let compactDialogIcon, !compactDialogIcon.isEmpty {
+            sendCommand("overlayicon: \(compactDialogIcon)")
+        }
     }
 
     /// Updates only the progress bar text without touching list items.
@@ -211,6 +352,39 @@ struct SwiftDialogController {
         } else {
             summary = "\(applied) update\(applied == 1 ? "" : "s") applied successfully"
         }
+
+        guard dialogSize == .large else {
+            // Mini windows don't render an interactive button (button1/button1text
+            // are effectively no-ops here), so there's no Done for the user to
+            // click and nothing to wait on. Show the summary briefly — matching
+            // the scan/check/stage mini progress windows — then dismiss it
+            // ourselves rather than leaving it to `waitForDialog`'s click/timeout
+            // path, which never resolves for a mini window with no button.
+            //
+            // Restore the original icon/overlay (same as UserProgressDialog.resetIcons())
+            // before showing the completion summary, replacing the last app's icon.
+            if let compactDialogIcon, !compactDialogIcon.isEmpty {
+                sendCommand("icon: \(compactDialogIcon)")
+            }
+            if let compactOverlayIcon, !compactOverlayIcon.isEmpty {
+                sendCommand("overlayicon: \(compactOverlayIcon)")
+            } else {
+                sendCommand("overlayicon: none")
+            }
+            sendCommand("message: **All possible updates have been applied**.\n\n\(summary)")
+            sendCommand("progress: complete")
+            sendCommand("progresstext: Complete — \(summary)")
+            Thread.sleep(forTimeInterval: 3.0)
+            sendCommand("quit:")
+            // `quit:` isn't always honoured by mini windows — fall back to
+            // terminating the launchctl process, same as UserProgressDialog.close().
+            Thread.sleep(forTimeInterval: 1.0)
+            if dialogProcess?.isRunning == true {
+                dialogProcess?.terminate()
+            }
+            return
+        }
+
         sendCommand("infobox: :\(brandColorHex(prefs.brandColorFont))[\(prefs.appTitle)]")
         sendCommand("infobox: + \n")
         sendCommand("infobox: + \n")
@@ -254,7 +428,7 @@ struct SwiftDialogController {
             "progress":        total > 0 ? total : 0,
             "progresstext":    "",
             "commandfile":     cmdURL.path,
-            "moveable":        true,
+            "moveable":        prefs.dialogMoveable,
             "mini":            true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenProgressPosition,
@@ -369,7 +543,7 @@ struct SwiftDialogController {
             "button2text":     "Continue",
             "infobox":         infoboxMessage,
             "listitem":        listItems,
-            "moveable":        true,
+            "moveable":        prefs.dialogMoveable,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenPosition,
             "height":          min(685, max(426, 280 + itemCount * 72)),
