@@ -446,6 +446,24 @@ struct Preferences {
         pref("OverlayIcon", default: "")
     }
 
+    /// Swift Dialog window blur all screen content behind the dialog window
+    /// Defaults to false
+    var dialogBlurscreen: Bool {
+        prefs["DialogBlurscreen"] as? Bool ?? false
+    }
+
+    /// Swift Dialog window hide all other apps on launch
+    /// Defaults to false
+    var dialogHideotherapps: Bool {
+        prefs["DialogHideotherapps"] as? Bool ?? false
+    }
+
+    /// Swift Dialog window allow the window to be dragged
+    /// Defaults to true
+    var dialogMoveable: Bool {
+        prefs["DialogMoveable"] as? Bool ?? true
+    }
+
     /// Swift Dialog screen postion
     /// Defaults to center
     /// topleft | left | bottomleft | top | center/centre | bottom | topright | right | bottomright
@@ -459,7 +477,24 @@ struct Preferences {
     var dialogScreenProgressPosition: String {
         pref("DialogScreenProgressPosition", default: "bottomright")
     }
-    
+
+    /// Swift Dialog patch window enable window close/minimise/maximise buttons
+    /// Defaults to false
+    var dialogShowWindowButtons: Bool {
+        prefs["DialogShowWindowButtons"] as? Bool ?? false
+    }
+
+    /// Controls the size/style of the apply-phase progress dialog (launchProgressDialog).
+    /// A string (rather than a bool) so additional sizes can be added later without a new key.
+    /// Options: large | compact
+    ///   large   — the full listitem-based progress window (default; unchanged behaviour)
+    ///   compact — a smaller "mini" progress window, similar in size to the window used for
+    ///             the user-initiated scan/check/download progress (launchProgressWindow)
+    /// Defaults to "large".
+    var applyDialogSize: String {
+        pref("ApplyDialogSize", default: "large")
+    }
+
     /// Deterines if swift dialog should automatically close after completion
     /// if there is no response from the end-user.
     /// Defaults to true.
