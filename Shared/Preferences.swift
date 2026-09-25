@@ -479,9 +479,9 @@ struct Preferences {
     }
 
     /// Swift Dialog patch window enable window close/minimise/maximise buttons
-    /// Defaults to false
-    var dialogShowWindowButtons: Bool {
-        prefs["DialogShowWindowButtons"] as? Bool ?? false
+    /// Defaults to "",  You can enable specific buttons: close, min, max, or comma separated combos of
+    var dialogShowWindowButtons: String {
+        pref("DialogShowWindowButtons", default: "")
     }
 
     /// Controls the size/style of the apply-phase progress dialog (launchProgressDialog).

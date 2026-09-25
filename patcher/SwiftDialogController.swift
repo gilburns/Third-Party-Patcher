@@ -150,6 +150,7 @@ struct SwiftDialogController {
         let prefs        = Preferences()
         let dialogIcon   = resolveDialogIcon(prefs: prefs)
         let overlayIcon  = resolveOverlayIcon(prefs: prefs)
+        let windowButtons = prefs.dialogShowWindowButtons
         let startISO     = ISO8601DateFormatter().string(from: Date())
         let helpMessage  = buildHelpMessage(prefs: prefs, startISO: startISO)
 //        let infoboxMessage = buildInfoboxMessage()
@@ -196,8 +197,8 @@ struct SwiftDialogController {
             "hideotherapps":   prefs.dialogHideotherapps,
             "moveable":        prefs.dialogMoveable,
             "ontop":           prefs.dialogOnTop,
-            "windowbuttons":   prefs.dialogShowWindowButtons,
         ]
+        if !windowButtons.isEmpty { jsonDict["windowbuttons"] = windowButtons }
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonDict),
