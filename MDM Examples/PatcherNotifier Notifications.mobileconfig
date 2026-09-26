@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>NotificationSettings</key>
+			<array>
+				<dict>
+					<key>BundleIdentifier</key>
+					<string>com.gilburns.PatcherNotifier</string>
+					<key>NotificationsEnabled</key>
+					<true/>
+					<!-- 0 = None, 1 = Temporary banner, 2 = Persistent (stays until dismissed) -->
+					<key>AlertType</key>
+					<integer>2</integer>
+					<key>ShowInNotificationCenter</key>
+					<true/>
+					<key>ShowInLockScreen</key>
+					<true/>
+					<key>BadgesEnabled</key>
+					<true/>
+					<key>SoundsEnabled</key>
+					<true/>
+					<key>CriticalAlertEnabled</key>
+					<false/>
+					<!-- 0 = Always, 1 = When unlocked, 2 = Never -->
+					<key>PreviewType</key>
+					<integer>1</integer>
+					<!-- 0 = Automatic, 1 = By app, 2 = Off -->
+					<key>GroupingType</key>
+					<integer>0</integer>
+				</dict>
+			</array>
+			<key>PayloadDisplayName</key>
+			<string>Notifications</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.notificationsettings.9B30C0CC-F7EB-42D4-A9D2-0829916FC1E3</string>
+			<key>PayloadType</key>
+			<string>com.apple.notificationsettings</string>
+			<key>PayloadUUID</key>
+			<string>9B30C0CC-F7EB-42D4-A9D2-0829916FC1E3</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>Allows and enforces notification settings for Third Party Patcher's PatcherNotifier so update notifications cannot be turned off by the user.</string>
+	<key>PayloadDisplayName</key>
+	<string>Third Party Patcher Notifications</string>
+	<key>PayloadIdentifier</key>
+	<string>com.gilburns.patcher.notifications.7308C3DE-CA91-4889-AD1C-D022902B68DD</string>
+	<key>PayloadOrganization</key>
+	<string>Third Party Patcher</string>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>7308C3DE-CA91-4889-AD1C-D022902B68DD</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>
