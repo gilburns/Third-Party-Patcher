@@ -2,8 +2,8 @@
 #
 #  build_and_package.zsh
 #
-#  Builds the three patcher CLI tools, the PatcherMenu app bundle, and the
-#  Available Software app bundle, signs them, assembles a distribution pkg with
+#  Builds the three patcher CLI tools, the PatcherMenu and PatcherNotifier app
+#  bundles, and the Available Software app bundle, signs them, assembles a distribution pkg with
 #  the LaunchDaemon plist, signs and notarizes the pkg, then staples the ticket.
 #
 #  Requirements:
@@ -141,6 +141,35 @@ xcodebuild \
 
 print "✅  PatcherMenu built"
 
+# ── Build PatcherNotifier app bundle ─────────────────────────────────────────
+
+print ""
+print "🔨 Building PatcherNotifier..."
+LOG="$BUILD_DIR/build_PatcherNotifier.log"
+
+xcodebuild \
+    -project    "$XCODEPROJ" \
+    -scheme     "PatcherNotifier" \
+    -configuration Release \
+    -derivedDataPath "$DERIVED_DATA" \
+    ARCHS="arm64 x86_64" \
+    ONLY_ACTIVE_ARCH=NO \
+    CODE_SIGN_IDENTITY="" \
+    CODE_SIGNING_REQUIRED=NO \
+    CODE_SIGNING_ALLOWED=NO \
+    build > "$LOG" 2>&1 || {
+        print "❌  Build failed for PatcherNotifier — see $LOG" >&2
+        tail -20 "$LOG" >&2
+        exit 1
+    }
+
+[[ -d "$RELEASE_DIR/PatcherNotifier.app" ]] || {
+    print "❌  Expected app bundle not found: $RELEASE_DIR/PatcherNotifier.app" >&2
+    exit 1
+}
+
+print "✅  PatcherNotifier built"
+
 # ── Build Available Software app bundle ──────────────────────────────────────
 
 print ""
@@ -215,6 +244,29 @@ codesign --verify --strict --verbose=1 "$APP_BUNDLE" 2>&1 \
     | grep -v "^$" || true
 print "✅  Signed PatcherMenu.app"
 
+# Sign PatcherNotifier.app — binary first (inside-out), then the bundle seal
+print ""
+print "✍️  Signing PatcherNotifier.app..."
+NOTIFIER_BUNDLE="$RELEASE_DIR/PatcherNotifier.app"
+
+codesign \
+    --sign "$APP_SIGN_ID" \
+    --options runtime \
+    --timestamp \
+    --force \
+    "$NOTIFIER_BUNDLE/Contents/MacOS/PatcherNotifier"
+
+codesign \
+    --sign "$APP_SIGN_ID" \
+    --options runtime \
+    --timestamp \
+    --force \
+    "$NOTIFIER_BUNDLE"
+
+codesign --verify --strict --verbose=1 "$NOTIFIER_BUNDLE" 2>&1 \
+    | grep -v "^$" || true
+print "✅  Signed PatcherNotifier.app"
+
 # Sign Available Software.app — binary first (inside-out), then the bundle seal
 print ""
 print "✍️  Signing Available Software.app..."
@@ -253,6 +305,7 @@ done
 
 # ditto preserves bundle structure, extended attributes, and resource forks
 ditto "$RELEASE_DIR/PatcherMenu.app"         "$PAYLOAD_DIR${INSTALL_BIN_DIR}/PatcherMenu.app"
+ditto "$RELEASE_DIR/PatcherNotifier.app"     "$PAYLOAD_DIR${INSTALL_BIN_DIR}/PatcherNotifier.app"
 ditto "$RELEASE_DIR/Available Software.app"  "$PAYLOAD_DIR${APPLICATIONS_DIR}/Available Software.app"
 
 install -m 0644 "$LAUNCHDAEMON_SRC" "$PAYLOAD_DIR${LAUNCHDAEMON_DIR}/${LAUNCHDAEMON_LABEL}.plist"
@@ -267,17 +320,18 @@ cat > "$SCRIPTS_DIR/preinstall" << 'PREINSTALL'
 # Unload the scheduler if it is currently running (handles upgrades).
 /bin/launchctl bootout system/com.gilburns.patcher.scheduler 2>/dev/null
 
-# Unload PatcherMenu LaunchAgent for the console user if it is installed.
-MENU_PLIST="/Library/LaunchAgents/com.gilburns.patcher.menu.plist"
-if [[ -f "$MENU_PLIST" ]]; then
+# Unload the PatcherMenu and PatcherNotifier LaunchAgents for the console user if installed.
+for AGENT_PLIST in /Library/LaunchAgents/com.gilburns.patcher.menu.plist \
+                   /Library/LaunchAgents/com.gilburns.patcher.notifier.plist; do
+    [[ -f "$AGENT_PLIST" ]] || continue
     CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
     if [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != "root" && "$CONSOLE_USER" != "loginwindow" ]]; then
         CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null)
         if [[ -n "$CONSOLE_UID" ]]; then
-            /bin/launchctl bootout gui/${CONSOLE_UID} "$MENU_PLIST" 2>/dev/null
+            /bin/launchctl bootout gui/${CONSOLE_UID} "$AGENT_PLIST" 2>/dev/null
         fi
     fi
-fi
+done
 
 exit 0
 PREINSTALL
@@ -294,17 +348,18 @@ sleep 10
 # Load (or reload) the scheduler daemon.
 /bin/launchctl bootstrap system /Library/LaunchDaemons/com.gilburns.patcher.scheduler.plist
 
-# Load PatcherMenu LaunchAgent for the console user if it is installed.
-MENU_PLIST="/Library/LaunchAgents/com.gilburns.patcher.menu.plist"
-if [[ -f "$MENU_PLIST" ]]; then
+# Load the PatcherMenu and PatcherNotifier LaunchAgents for the console user if installed.
+for AGENT_PLIST in /Library/LaunchAgents/com.gilburns.patcher.menu.plist \
+                   /Library/LaunchAgents/com.gilburns.patcher.notifier.plist; do
+    [[ -f "$AGENT_PLIST" ]] || continue
     CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null)
     if [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != "root" && "$CONSOLE_USER" != "loginwindow" ]]; then
         CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null)
         if [[ -n "$CONSOLE_UID" ]]; then
-            /bin/launchctl bootstrap gui/${CONSOLE_UID} "$MENU_PLIST"
+            /bin/launchctl bootstrap gui/${CONSOLE_UID} "$AGENT_PLIST"
         fi
     fi
-fi
+done
 
 exit 0
 POSTINSTALL
