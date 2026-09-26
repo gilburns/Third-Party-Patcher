@@ -19,6 +19,7 @@ func setupApplicationSupportFolders() {
         AppConstants.patcherFolderURL.path,
         AppConstants.patcherCacheFolderURL.path,
         AppConstants.patcherConfigFolderURL.path,
+        AppConstants.patcherNotificationQueueFolderURL.path,
         AppConstants.patcherDiscoveredFolderURL.path,
         AppConstants.installomatorFolderURL.path,
         AppConstants.managedLabelsFolderURL.path,
@@ -1621,6 +1622,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         var failedCount = 0
         var currentItemIndex = 0
         var blockedSkipOccurred = false
+        var quietInstalled: [(item: SwiftDialogController.ApplyItem, version: String)] = []
 
         for labelDirURL in labelDirs {
             let label = labelDirURL.lastPathComponent
@@ -1939,6 +1941,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 dialog?.setSuccess(item: dialogItem, toVersion: effectiveToVersion)
                 Logger.log("✅ Successfully installed \(label)")
                 appliedCount += 1
+                if silentApply { quietInstalled.append((dialogItem, effectiveToVersion)) }
                 applyFailedAttempts.removeValue(forKey: label)
                 applyBrokenVersions.removeValue(forKey: label)
                 if shouldRelaunchBlockedApp, let uid = consoleUserUID {
@@ -1968,6 +1971,10 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         let duration = applyEnd.timeIntervalSince(applyStart)
         Logger.log("--------------------------------------------------")
         Logger.log("✅ Apply complete — \(appliedCount) installed, \(nothingToInstallCount) nothing-to-install, \(skippedCount) skipped, \(failedCount) failed, \(String(format: "%.2f", duration))s")
+
+        if silentApply, prefs.quietApplyNotifications, !quietInstalled.isEmpty {
+            queueQuietApplyNotifications(quietInstalled)
+        }
 
         dialog?.complete(applied: appliedCount, skipped: skippedCount, failed: failedCount)
         // Wait for the user to click Done (or for the auto-dismiss timer to fire).
@@ -2021,6 +2028,35 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
     }
 }
 
+
+/// Posts "X was updated" notifications for items installed by the quiet apply pass.
+/// Up to two items get their own notification (with the app's icon); three or more
+/// are combined into a single summary so a large pass doesn't flood Notification Center.
+private func queueQuietApplyNotifications(_ installed: [(item: SwiftDialogController.ApplyItem, version: String)]) {
+    let threadID = "quietApply"
+    if installed.count <= 2 {
+        for (item, version) in installed {
+            UserNotificationQueue.enqueue(PatcherNotificationEvent(
+                kind:     .quietApplyInstalled,
+                title:    "\(item.displayName) Updated",
+                body:     version.isEmpty
+                    ? "\(item.displayName) was updated in the background."
+                    : "\(item.displayName) was updated to version \(version) in the background.",
+                threadID: threadID,
+                iconPath: item.iconPath,
+                label:    item.label
+            ))
+        }
+    } else {
+        let lines = installed.map { $0.version.isEmpty ? $0.item.displayName : "\($0.item.displayName) \($0.version)" }
+        UserNotificationQueue.enqueue(PatcherNotificationEvent(
+            kind:     .quietApplyInstalled,
+            title:    "\(installed.count) Apps Updated",
+            body:     lines.joined(separator: ", "),
+            threadID: threadID
+        ))
+    }
+}
 
 /// Returns the version string as-is if it looks like a real version, or "" if it looks like
 /// HTML garbage or other scraping noise. Two rules are applied:

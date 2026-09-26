@@ -410,6 +410,14 @@ struct Preferences {
         prefs["QuietApplyEnabled"] as? Bool ?? false
     }
 
+    /// When true (and QuietApplyEnabled is true), each item installed by the quiet apply pass
+    /// posts a macOS notification via PatcherNotifier so the user knows it was updated.
+    /// Also causes patcherscheduler to install the PatcherNotifier LaunchAgent.
+    /// Defaults to false.
+    var quietApplyNotifications: Bool {
+        prefs["QuietApplyNotifications"] as? Bool ?? false
+    }
+
     /// When true, swiftDialog is used to show apply progress and handle blocking processes.
     /// Automatically disabled if swiftDialog is not installed. Defaults to true.
     var swiftDialogEnabled: Bool {

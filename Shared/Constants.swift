@@ -33,6 +33,10 @@ struct AppConstants {
     static let patcherMenuLaunchAgentLabel = "com.gilburns.patcher.menu"
     static let patcherMenuLaunchAgentURL   = URL(fileURLWithPath: "/Library/LaunchAgents/com.gilburns.patcher.menu.plist")
 
+    static let patcherNotifierAppURL           = URL(fileURLWithPath: "\(installPrefix)/PatcherNotifier.app")
+    static let patcherNotifierLaunchAgentLabel = "com.gilburns.patcher.notifier"
+    static let patcherNotifierLaunchAgentURL   = URL(fileURLWithPath: "/Library/LaunchAgents/com.gilburns.patcher.notifier.plist")
+
     static let patcherXPCServiceName = "com.gilburns.patcher.xpc"
 
     /// patcherscheduler's fixed timer cadence — shared so scheduling logic can reason
@@ -64,6 +68,13 @@ struct AppConstants {
     static let patcherConfigFolderURL: URL = {
         patcherFolderURL
             .appendingPathComponent("Config")
+    }()
+
+    /// Queue of user-facing notification events written by patcher (root) and
+    /// delivered to Notification Center by PatcherNotifier (console user).
+    static let patcherNotificationQueueFolderURL: URL = {
+        patcherConfigFolderURL
+            .appendingPathComponent("Notifications")
     }()
 
     static let patcherDiscoveredFolderURL: URL = {
