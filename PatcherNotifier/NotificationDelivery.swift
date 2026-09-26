@@ -1,0 +1,93 @@
+//
+//  NotificationDelivery.swift
+//  PatcherNotifier
+//
+//  Reads pending events from the shared queue and posts each one to Notification
+//  Center exactly once. Delivered event IDs are kept in this user's defaults; the
+//  queue itself is root-owned and pruned by patcherscheduler.
+//
+
+import AppKit
+import OSLog
+import UserNotifications
+
+final class NotificationDelivery {
+
+    private static let deliveredIDsKey = "DeliveredEventIDs"
+
+    private var isDelivering = false
+
+    func deliverPending() async {
+        // Watcher events can arrive in bursts; one pass at a time is enough.
+        guard !isDelivering else { return }
+        isDelivering = true
+        defer { isDelivering = false }
+
+        let defaults  = UserDefaults.standard
+        let pending   = UserNotificationQueue.pendingEvents()
+        var delivered = Set(defaults.stringArray(forKey: Self.deliveredIDsKey) ?? [])
+
+        for event in pending where !delivered.contains(event.id) {
+            do {
+                try await UNUserNotificationCenter.current().add(request(for: event))
+                notifierLog.info("Delivered \(event.kind.rawValue, privacy: .public) \(event.id, privacy: .public): \(event.title, privacy: .public)")
+            } catch {
+                // Leave undelivered so the next launch retries until the event expires.
+                notifierLog.error("Failed to deliver \(event.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                continue
+            }
+            delivered.insert(event.id)
+        }
+
+        // Forget IDs whose events have been pruned or expired so the set stays small.
+        let pendingIDs = Set(pending.map(\.id))
+        defaults.set(Array(delivered.intersection(pendingIDs)), forKey: Self.deliveredIDsKey)
+    }
+
+    private func request(for event: PatcherNotificationEvent) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title            = event.title
+        content.body             = event.body
+        content.threadIdentifier = event.threadID
+        content.sound            = event.playSound ? .default : nil
+        content.userInfo         = ["eventID": event.id, "kind": event.kind.rawValue, "label": event.label ?? ""]
+        if let iconPath = event.iconPath,
+           let attachment = iconAttachment(for: iconPath, eventID: event.id) {
+            content.attachments = [attachment]
+        }
+        return UNNotificationRequest(identifier: event.id, content: content, trigger: nil)
+    }
+
+    /// Renders an app bundle's icon (or an image file) to a PNG attachment.
+    /// UNNotificationAttachment moves the file into the notification store, so it is
+    /// written to a per-event temp file.
+    private func iconAttachment(for path: String, eventID: String) -> UNNotificationAttachment? {
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        let image = path.hasSuffix(".app")
+            ? NSWorkspace.shared.icon(forFile: path)
+            : NSImage(contentsOfFile: path)
+        guard let image, let png = pngData(from: image, pixels: 256) else { return nil }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(eventID).png")
+        do {
+            try png.write(to: url, options: .atomic)
+            return try UNNotificationAttachment(identifier: "icon", url: url, options: nil)
+        } catch {
+            notifierLog.error("Icon attachment failed for \(path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    private func pngData(from image: NSImage, pixels: Int) -> Data? {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        let size = NSSize(width: pixels, height: pixels)
+        rep.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
+    }
+}

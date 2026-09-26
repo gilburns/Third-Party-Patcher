@@ -21,8 +21,9 @@ struct PatcherScheduler {
             return
         }
 
-        // 2. MenuBar app LaunchAgent management.
+        // 2. User LaunchAgent management (menu bar app, notifier).
         manageMenuBarApp()
+        manageNotifierApp()
 
         var state   = SchedulerState.load()
         let now     = Date()
@@ -733,62 +734,106 @@ struct PatcherScheduler {
 
     /// Returns true if any label cache directory contains a staged install file
     /// (i.e. any file other than metadata.json and history.json).
-    // MARK: - MenuBar app LaunchAgent management
+    // MARK: - User LaunchAgent management
 
-    /// Reconciles the `ShowMenuBarApp` preference against the actual LaunchAgent plist.
+    /// Reconciles the `ShowMenuBarApp` preference against the PatcherMenu LaunchAgent.
     /// Called once per scheduler wake — is a no-op in the common case where state already matches.
     private func manageMenuBarApp() {
-        let plistURL   = AppConstants.patcherMenuLaunchAgentURL
+        let binaryURL = AppConstants.patcherMenuAppURL.appendingPathComponent("Contents/MacOS/PatcherMenu")
+        reconcileLaunchAgent(
+            name:     "PatcherMenu",
+            enabled:  prefs.showMenuBarApp,
+            plistURL: AppConstants.patcherMenuLaunchAgentURL,
+            binaryURL: binaryURL,
+            plist: [
+                "Label":            AppConstants.patcherMenuLaunchAgentLabel,
+                "ProgramArguments": [binaryURL.path],
+                "RunAtLoad":        true,
+                "KeepAlive":        true
+            ]
+        )
+    }
+
+    /// Reconciles the PatcherNotifier LaunchAgent against the preferences that use it.
+    /// The agent is launched on demand by launchd whenever the notification queue folder
+    /// changes (WatchPaths), and at login to deliver anything queued while logged out.
+    private func manageNotifierApp() {
+        let binaryURL = AppConstants.patcherNotifierAppURL.appendingPathComponent("Contents/MacOS/PatcherNotifier")
+        let enabled   = prefs.quietApplyEnabled && prefs.quietApplyNotifications
+        if enabled {
+            try? FileManager.default.createDirectory(
+                at: AppConstants.patcherNotificationQueueFolderURL,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o755]
+            )
+        }
+        reconcileLaunchAgent(
+            name:     "PatcherNotifier",
+            enabled:  enabled,
+            plistURL: AppConstants.patcherNotifierLaunchAgentURL,
+            binaryURL: binaryURL,
+            plist: [
+                "Label":                  AppConstants.patcherNotifierLaunchAgentLabel,
+                "ProgramArguments":       [binaryURL.path],
+                "RunAtLoad":              true,
+                "WatchPaths":             [AppConstants.patcherNotificationQueueFolderURL.path],
+                "LimitLoadToSessionType": "Aqua",
+                "ProcessType":            "Interactive"
+            ]
+        )
+        UserNotificationQueue.pruneExpired()
+    }
+
+    /// Installs, updates, or removes a per-user LaunchAgent in /Library/LaunchAgents and
+    /// bootstraps/boots it out for the current console user. The plist is rewritten (and the
+    /// agent reloaded) only when its contents differ from what is on disk.
+    private func reconcileLaunchAgent(name: String, enabled: Bool, plistURL: URL, binaryURL: URL, plist: [String: Any]) {
         let plistExists = FileManager.default.fileExists(atPath: plistURL.path)
 
-        if prefs.showMenuBarApp {
-            guard !plistExists else { return }
-            let binaryURL = AppConstants.patcherMenuAppURL
-                .appendingPathComponent("Contents/MacOS/PatcherMenu")
+        if enabled {
+            let current = NSDictionary(contentsOf: plistURL)
+            if let current, current.isEqual(to: plist) { return }
             guard FileManager.default.fileExists(atPath: binaryURL.path) else {
-                Logger.log("⚠️ PatcherMenu binary not found at \(binaryURL.path) — skipping LaunchAgent install.")
+                Logger.log("⚠️ \(name) binary not found at \(binaryURL.path) — skipping LaunchAgent install.")
                 return
             }
-            guard writePatcherMenuLaunchAgent(to: plistURL) else { return }
-            guard let uid = consoleUserUID() else {
-                Logger.log("⚠️ PatcherMenu: could not determine console user UID — LaunchAgent written but not bootstrapped.")
+            let uid = consoleUserUID()
+            if plistExists, let uid {
+                // Contents changed — unload the old definition before loading the new one.
+                runLaunchctl(["bootout", "gui/\(uid)", plistURL.path])
+            }
+            guard writeLaunchAgent(plist, name: name, to: plistURL) else { return }
+            guard let uid else {
+                Logger.log("⚠️ \(name): could not determine console user UID — LaunchAgent written but not bootstrapped.")
                 return
             }
             let rc = runLaunchctl(["bootstrap", "gui/\(uid)", plistURL.path])
             // exit 36 = already bootstrapped; treat as success
             Logger.log(rc == 0 || rc == 36
-                ? "✅ PatcherMenu LaunchAgent bootstrapped for uid \(uid)."
-                : "⚠️ PatcherMenu LaunchAgent bootstrap exited \(rc).")
+                ? "✅ \(name) LaunchAgent bootstrapped for uid \(uid)."
+                : "⚠️ \(name) LaunchAgent bootstrap exited \(rc).")
         } else {
             guard plistExists else { return }
             if let uid = consoleUserUID() {
                 let rc = runLaunchctl(["bootout", "gui/\(uid)", plistURL.path])
                 Logger.log(rc == 0
-                    ? "✅ PatcherMenu LaunchAgent unloaded for uid \(uid)."
-                    : "⚠️ PatcherMenu LaunchAgent bootout exited \(rc) — removing plist anyway.")
+                    ? "✅ \(name) LaunchAgent unloaded for uid \(uid)."
+                    : "⚠️ \(name) LaunchAgent bootout exited \(rc) — removing plist anyway.")
             } else {
-                Logger.log("⚠️ PatcherMenu: could not determine console user UID — removing plist without bootout.")
+                Logger.log("⚠️ \(name): could not determine console user UID — removing plist without bootout.")
             }
             do {
                 try FileManager.default.removeItem(at: plistURL)
-                Logger.log("✅ PatcherMenu LaunchAgent plist removed.")
+                Logger.log("✅ \(name) LaunchAgent plist removed.")
             } catch {
-                Logger.log("❌ Failed to remove PatcherMenu LaunchAgent plist: \(error)")
+                Logger.log("❌ Failed to remove \(name) LaunchAgent plist: \(error)")
             }
         }
     }
 
-    /// Writes the PatcherMenu LaunchAgent plist to the given URL.
+    /// Writes a LaunchAgent plist to the given URL (root:wheel 644).
     @discardableResult
-    private func writePatcherMenuLaunchAgent(to url: URL) -> Bool {
-        let binaryPath = AppConstants.patcherMenuAppURL
-            .appendingPathComponent("Contents/MacOS/PatcherMenu").path
-        let plist: [String: Any] = [
-            "Label":           AppConstants.patcherMenuLaunchAgentLabel,
-            "ProgramArguments": [binaryPath],
-            "RunAtLoad":       true,
-            "KeepAlive":       true
-        ]
+    private func writeLaunchAgent(_ plist: [String: Any], name: String, to url: URL) -> Bool {
         do {
             let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
             try FileManager.default.createDirectory(
@@ -798,10 +843,10 @@ struct PatcherScheduler {
             )
             try data.write(to: url, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
-            Logger.log("✅ PatcherMenu LaunchAgent written to \(url.path)")
+            Logger.log("✅ \(name) LaunchAgent written to \(url.path)")
             return true
         } catch {
-            Logger.log("❌ Failed to write PatcherMenu LaunchAgent: \(error)")
+            Logger.log("❌ Failed to write \(name) LaunchAgent: \(error)")
             return false
         }
     }

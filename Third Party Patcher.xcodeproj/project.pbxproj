@@ -45,6 +45,7 @@
 		1B319BD52F8BEE1100860CB7 /* patcherreport */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = patcherreport; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B319C072F90650200860CB7 /* patcherschedulerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = patcherschedulerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B319C352F925CD300860CB7 /* patcherTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = patcherTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B6C4ABB30682955002EBD6D /* PatcherNotifier.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PatcherNotifier.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1BAFE18B2F96F13700E18CFB /* patcherscheduler */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = patcherscheduler; sourceTree = BUILT_PRODUCTS_DIR; };
 		1BAFE1DB2F98ED4E00E18CFB /* PatcherMenu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PatcherMenu.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1BAFE4DF2F9D421600E18CFB /* Available Software.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Available Software.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -89,6 +90,11 @@
 		1B319C362F925CD300860CB7 /* patcherTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = patcherTests;
+			sourceTree = "<group>";
+		};
+		1B6C4ABC30682955002EBD6D /* PatcherNotifier */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PatcherNotifier;
 			sourceTree = "<group>";
 		};
 		1B8E96262FDDF8420071142C /* Shared */ = {
@@ -149,6 +155,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1B6C4AB830682955002EBD6D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		1BAFE1882F96F13700E18CFB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -182,6 +195,7 @@
 				1B319BD62F8BEE1200860CB7 /* patcherreport */,
 				1BAFE4E02F9D421600E18CFB /* Available Software */,
 				1BAFE1DC2F98ED4E00E18CFB /* PatcherMenu */,
+				1B6C4ABC30682955002EBD6D /* PatcherNotifier */,
 				1B319C082F90650200860CB7 /* patcherschedulerTests */,
 				1B319C362F925CD300860CB7 /* patcherTests */,
 				1B3193A32F7F478400860CB7 /* Products */,
@@ -198,6 +212,7 @@
 				1BAFE18B2F96F13700E18CFB /* patcherscheduler */,
 				1BAFE1DB2F98ED4E00E18CFB /* PatcherMenu.app */,
 				1BAFE4DF2F9D421600E18CFB /* Available Software.app */,
+				1B6C4ABB30682955002EBD6D /* PatcherNotifier.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -298,6 +313,29 @@
 			productReference = 1B319C352F925CD300860CB7 /* patcherTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		1B6C4ABA30682955002EBD6D /* PatcherNotifier */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B6C4AC33068295C002EBD6D /* Build configuration list for PBXNativeTarget "PatcherNotifier" */;
+			buildPhases = (
+				1B6C4AB730682955002EBD6D /* Sources */,
+				1B6C4AB830682955002EBD6D /* Frameworks */,
+				1B6C4AB930682955002EBD6D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1B6C4ABC30682955002EBD6D /* PatcherNotifier */,
+				1B8E96262FDDF8420071142C /* Shared */,
+			);
+			name = PatcherNotifier;
+			packageProductDependencies = (
+			);
+			productName = PatcherNotifier;
+			productReference = 1B6C4ABB30682955002EBD6D /* PatcherNotifier.app */;
+			productType = "com.apple.product-type.application";
+		};
 		1BAFE18A2F96F13700E18CFB /* patcherscheduler */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1BAFE1912F96F13700E18CFB /* Build configuration list for PBXNativeTarget "patcherscheduler" */;
@@ -374,7 +412,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2620;
+				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					1B3193A12F7F478400860CB7 = {
@@ -388,6 +426,9 @@
 					};
 					1B319C342F925CD300860CB7 = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					1B6C4ABA30682955002EBD6D = {
+						CreatedOnToolsVersion = 27.0;
 					};
 					1BAFE18A2F96F13700E18CFB = {
 						CreatedOnToolsVersion = 26.2;
@@ -422,6 +463,7 @@
 				1B319BD42F8BEE1100860CB7 /* patcherreport */,
 				1BAFE4DE2F9D421600E18CFB /* Available Software */,
 				1BAFE1DA2F98ED4E00E18CFB /* PatcherMenu */,
+				1B6C4ABA30682955002EBD6D /* PatcherNotifier */,
 				1B319C062F90650200860CB7 /* patcherschedulerTests */,
 				1B319C342F925CD300860CB7 /* patcherTests */,
 			);
@@ -437,6 +479,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1B319C332F925CD300860CB7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1B6C4AB930682955002EBD6D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -482,6 +531,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1B319C312F925CD300860CB7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1B6C4AB730682955002EBD6D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -768,6 +824,72 @@
 			};
 			name = Release;
 		};
+		1B6C4AC43068295C002EBD6D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1.0.0;
+				DEVELOPMENT_TEAM = G4MQ57TVLE;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.PatcherNotifier;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		1B6C4AC53068295C002EBD6D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1.0.0;
+				DEVELOPMENT_TEAM = G4MQ57TVLE;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.PatcherNotifier;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		1BAFE18F2F96F13700E18CFB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -972,6 +1094,15 @@
 			buildConfigurations = (
 				1B319C3A2F925CD300860CB7 /* Debug */,
 				1B319C3B2F925CD300860CB7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1B6C4AC33068295C002EBD6D /* Build configuration list for PBXNativeTarget "PatcherNotifier" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1B6C4AC43068295C002EBD6D /* Debug */,
+				1B6C4AC53068295C002EBD6D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
