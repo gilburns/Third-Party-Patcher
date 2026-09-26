@@ -139,12 +139,13 @@ Three command-line tools are installed to `/usr/local/bin/tpp/`:
 | `patcherscheduler` | Daemon entrypoint; also provides a `status` subcommand |
 | `patcherreport` | Generates patch compliance reports |
 
-Two optional user-facing apps are installed to `/Applications/`:
+Optional user-facing apps:
 
-| App | Purpose |
-|-----|---------|
-| `PatcherMenu.app` | Menu bar status and Run Now trigger (LaunchAgent) |
-| `Available Software.app` | Self-service catalog and management view |
+| App | Location | Purpose |
+|-----|----------|---------|
+| `PatcherMenu.app` | `/usr/local/bin/tpp/` | Menu bar status and Run Now trigger (LaunchAgent) |
+| `PatcherNotifier.app` | `/usr/local/bin/tpp/` | Posts update notifications to Notification Center (LaunchAgent) |
+| `Available Software.app` | `/Applications/` | Self-service catalog and management view |
 
 See the **[Command-Line Reference wiki page](../../wiki/Command-Line-Reference)** for full CLI documentation.
 
