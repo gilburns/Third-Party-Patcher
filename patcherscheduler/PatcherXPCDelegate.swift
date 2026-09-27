@@ -2,12 +2,17 @@
 //  PatcherXPCDelegate.swift
 //  patcherscheduler
 //
-//  NSXPCListenerDelegate that accepts connections from PatcherMenu and
-//  dispatches phase requests onto the shared serial work queue.
+//  NSXPCListenerDelegate that accepts connections from PatcherMenu, Available Software,
+//  and PatcherNotifier, and dispatches phase requests onto the shared serial work queue.
+//
+//  Only those apps may connect: each must carry its expected bundle identifier and be
+//  signed by the same Apple team as this daemon. The daemon runs as root and can install
+//  software and quit apps, so arbitrary local processes must not be able to drive it.
 //
 
 import AppKit
 import Foundation
+import Security
 
 // MARK: - Listener delegate
 
@@ -19,8 +24,57 @@ final class PatcherXPCDelegate: NSObject, NSXPCListenerDelegate {
         self.workQueue = workQueue
     }
 
+    private static let clientBundleIDs = [
+        "com.gilburns.PatcherMenu",
+        AppConstants.availableSoftwareBundleID,
+        "com.gilburns.PatcherNotifier"
+    ]
+
+    /// Code-signing requirement a client must satisfy, or nil when this daemon has no
+    /// team identifier (unsigned or ad-hoc build) — in which case every client is refused.
+    private static let clientRequirement: String? = {
+        guard let teamID = ownTeamIdentifier() else {
+            Logger.log("⚠️ XPC: patcherscheduler has no signing team identifier — all XPC clients will be refused.")
+            return nil
+        }
+        let identifiers = clientBundleIDs.map { "identifier \"\($0)\"" }.joined(separator: " or ")
+        return "anchor apple generic and certificate leaf[subject.OU] = \"\(teamID)\" and (\(identifiers))"
+    }()
+
+    private static func ownTeamIdentifier() -> String? {
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var info: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let info = info as? [String: Any]
+        else { return nil }
+        return info[kSecCodeInfoTeamIdentifier as String] as? String
+    }
+
+    /// Up-front check by pid so a rejected client is refused (and logged) immediately.
+    /// pid lookups can race with pid reuse, so `setCodeSigningRequirement` below is what
+    /// actually enforces the requirement on every message.
+    private static func client(pid: pid_t, satisfies requirement: String) -> Bool {
+        var code: SecCode?
+        var secRequirement: SecRequirement?
+        let attributes = [kSecGuestAttributePid: pid] as CFDictionary
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code,
+              SecRequirementCreateWithString(requirement as CFString, [], &secRequirement) == errSecSuccess,
+              let secRequirement
+        else { return false }
+        return SecCodeCheckValidity(code, [], secRequirement) == errSecSuccess
+    }
+
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         let pid = newConnection.processIdentifier
+        guard let requirement = Self.clientRequirement,
+              Self.client(pid: pid, satisfies: requirement) else {
+            Logger.log("⛔️ XPC: rejected connection from pid \(pid) — client does not satisfy the code-signing requirement.")
+            return false
+        }
+        newConnection.setCodeSigningRequirement(requirement)
         newConnection.exportedInterface = NSXPCInterface(with: PatcherXPCProtocol.self)
         newConnection.exportedObject = PatcherXPCHandler(workQueue: workQueue)
         newConnection.invalidationHandler = {
