@@ -28,4 +28,12 @@ import Foundation
     ///   - bundlePath: Absolute path to the .app bundle to modify.
     ///   - reply: Called with (true, "ok") on success, or (false, reason) on failure.
     func setAppIcon(iconPath: String?, bundlePath: String, reply: @escaping (Bool, String) -> Void)
+
+    /// Relay a user's response to an actionable notification (sent by PatcherNotifier).
+    /// The daemon records it for the patcher process waiting on that event.
+    /// - Parameters:
+    ///   - eventID: The PatcherNotificationEvent id the user responded to.
+    ///   - action: A NotificationResponseAction raw value ("quitAndUpdate" or "skip").
+    ///   - reply: Called with (true, "recorded") on success, or (false, reason) on failure.
+    func respondToNotification(_ eventID: String, action: String, reply: @escaping (Bool, String) -> Void)
 }

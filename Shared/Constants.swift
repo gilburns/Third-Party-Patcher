@@ -77,6 +77,13 @@ struct AppConstants {
             .appendingPathComponent("Notifications")
     }()
 
+    /// Responses to actionable notifications, written by patcherscheduler (relayed from
+    /// PatcherNotifier over XPC) and consumed by the patcher process waiting on them.
+    static let patcherNotificationResponseFolderURL: URL = {
+        patcherConfigFolderURL
+            .appendingPathComponent("NotificationResponses")
+    }()
+
     static let patcherDiscoveredFolderURL: URL = {
         patcherFolderURL
             .appendingPathComponent("Discovered")

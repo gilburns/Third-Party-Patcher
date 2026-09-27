@@ -19,11 +19,24 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private let delivery = NotificationDelivery()
     private var queueWatcher: DispatchSourceFileSystemObject?
     private var idleTimer: Timer?
+    private var retryTimer: Timer?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Must be set before launch completes so a notification click that
         // relaunched the app is routed to this delegate.
         UNUserNotificationCenter.current().delegate = self
+        registerCategories()
+    }
+
+    /// Blocking-app prompts carry one button; closing the notification means "skip",
+    /// which needs .customDismissAction for the dismissal to reach the delegate.
+    private func registerCategories() {
+        let quit = UNNotificationAction(identifier: NotificationResponseAction.quitAndUpdate.rawValue,
+                                        title: "Quit & Update", options: [])
+        let prompt = UNNotificationCategory(identifier: PatcherNotificationEvent.blockingPromptCategory,
+                                            actions: [quit], intentIdentifiers: [],
+                                            options: [.customDismissAction])
+        UNUserNotificationCenter.current().setNotificationCategories([prompt])
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -35,10 +48,31 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
             } catch {
                 notifierLog.error("Notification authorization failed: \(error.localizedDescription, privacy: .public)")
             }
-            await delivery.deliverPending()
             startWatchingQueue()
             resetIdleTimer()
+            deliver()
         }
+    }
+
+    // MARK: - Delivery
+
+    private func deliver() {
+        Task {
+            scheduleRetry(after: await delivery.deliverPending())
+        }
+    }
+
+    /// Re-runs delivery once a held-back replacement is due, and keeps the agent
+    /// alive until then so it isn't stranded in the queue until the next launch.
+    private func scheduleRetry(after seconds: TimeInterval?) {
+        guard let seconds else { return }
+        retryTimer?.invalidate()
+        retryTimer = Timer.scheduledTimer(withTimeInterval: seconds + 0.25, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.deliver()
+            }
+        }
+        resetIdleTimer()
     }
 
     // MARK: - Queue watching
@@ -64,7 +98,7 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     private func queueChanged() {
         resetIdleTimer()
-        Task { await delivery.deliverPending() }
+        deliver()
     }
 
     // MARK: - Idle exit
@@ -81,7 +115,11 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private func quitWhenIdle() {
         Task {
             // Final pass closes the window between the last watcher event and exit.
-            await delivery.deliverPending()
+            if let retry = await delivery.deliverPending() {
+                // A replacement is still being held on screen — stay for it.
+                scheduleRetry(after: retry)
+                return
+            }
             queueWatcher?.cancel()
             NSApp.terminate(nil)
         }
@@ -98,11 +136,36 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
-        let id = response.notification.request.identifier
-        notifierLog.info("Notification response '\(response.actionIdentifier, privacy: .public)' for \(id, privacy: .public)")
+        let content          = response.notification.request.content
+        let eventID          = content.userInfo["eventID"] as? String ?? ""
+        let category         = content.categoryIdentifier
+        let actionIdentifier = response.actionIdentifier
+        notifierLog.info("Notification response '\(actionIdentifier, privacy: .public)' for \(eventID, privacy: .public)")
+
         Task { @MainActor in
             self.resetIdleTimer()
-            completionHandler()
+            self.handleResponse(actionIdentifier: actionIdentifier, eventID: eventID,
+                                category: category, completion: completionHandler)
+        }
+    }
+
+    private func handleResponse(actionIdentifier: String, eventID: String, category: String,
+                                completion: @escaping () -> Void) {
+        let action: NotificationResponseAction?
+        switch actionIdentifier {
+        case NotificationResponseAction.quitAndUpdate.rawValue: action = .quitAndUpdate
+        // Clicking the notification body removes it just like Close does, leaving nothing
+        // to answer — treat both as "skip" rather than letting the timer force-quit the app.
+        case UNNotificationDismissActionIdentifier,
+             UNNotificationDefaultActionIdentifier:             action = .skip
+        default:                                                action = nil
+        }
+        guard category == PatcherNotificationEvent.blockingPromptCategory, let action, !eventID.isEmpty else {
+            completion()
+            return
+        }
+        SchedulerRelay.send(eventID: eventID, action: action) {
+            Task { @MainActor in completion() }
         }
     }
 }

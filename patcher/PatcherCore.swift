@@ -20,6 +20,7 @@ func setupApplicationSupportFolders() {
         AppConstants.patcherCacheFolderURL.path,
         AppConstants.patcherConfigFolderURL.path,
         AppConstants.patcherNotificationQueueFolderURL.path,
+        AppConstants.patcherNotificationResponseFolderURL.path,
         AppConstants.patcherDiscoveredFolderURL.path,
         AppConstants.installomatorFolderURL.path,
         AppConstants.managedLabelsFolderURL.path,
@@ -1495,7 +1496,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
     let fileManager = FileManager.default
 
     // Declared before do/catch so it's accessible in the catch block for cleanup.
-    var dialog: SwiftDialogController? = nil
+    var dialog: (any ApplyPresenter)? = nil
 
     do {
         var labelDirs = try fileManager.contentsOfDirectory(at: cacheBaseURL, includingPropertiesForKeys: [.isDirectoryKey])
@@ -1568,7 +1569,17 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         }
 
         // ── Deferral gate + progress dialog ────────────────────────────────────
-        if !suppressDialog, !silentApply, !dialogItems.isEmpty, let controller = SwiftDialogController.makeIfAvailable() {
+        if !suppressDialog, !silentApply, !dialogItems.isEmpty, prefs.applyNotificationsEnabled,
+           let presenter = NotificationApplyPresenter.makeIfAvailable() {
+            // Notification mode has no up-front deferral prompt: apps that aren't running are
+            // installed straight away, and each running app gets its own Quit & Update prompt.
+            // Skipped prompts still count as deferrals (blockedSkipOccurred below).
+            Logger.log("▶️ Apply: notification mode — no deferral prompt.")
+            dialog = presenter
+        } else if !suppressDialog, !silentApply, !dialogItems.isEmpty, let controller = SwiftDialogController.makeIfAvailable() {
+            if prefs.applyNotificationsEnabled {
+                Logger.log("ℹ️ Apply: notifications unavailable — falling back to swiftDialog.")
+            }
 
             if userInitiated {
                 // User explicitly chose to apply from PatcherMenu — skip the deferral prompt
@@ -1973,7 +1984,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         Logger.log("✅ Apply complete — \(appliedCount) installed, \(nothingToInstallCount) nothing-to-install, \(skippedCount) skipped, \(failedCount) failed, \(String(format: "%.2f", duration))s")
 
         if silentApply, prefs.quietApplyNotifications, !quietInstalled.isEmpty {
-            queueQuietApplyNotifications(quietInstalled)
+            queueInstalledNotifications(quietInstalled, kind: .quietApplyInstalled, threadID: "quietApply", background: true)
         }
 
         dialog?.complete(applied: appliedCount, skipped: skippedCount, failed: failedCount)
@@ -2029,35 +2040,6 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 }
 
 
-/// Posts "X was updated" notifications for items installed by the quiet apply pass.
-/// Up to two items get their own notification (with the app's icon); three or more
-/// are combined into a single summary so a large pass doesn't flood Notification Center.
-private func queueQuietApplyNotifications(_ installed: [(item: SwiftDialogController.ApplyItem, version: String)]) {
-    let threadID = "quietApply"
-    if installed.count <= 2 {
-        for (item, version) in installed {
-            UserNotificationQueue.enqueue(PatcherNotificationEvent(
-                kind:     .quietApplyInstalled,
-                title:    "\(item.displayName) Updated",
-                body:     version.isEmpty
-                    ? "\(item.displayName) was updated in the background."
-                    : "\(item.displayName) was updated to version \(version) in the background.",
-                threadID: threadID,
-                iconPath: item.iconPath,
-                label:    item.label
-            ))
-        }
-    } else {
-        let lines = installed.map { $0.version.isEmpty ? $0.item.displayName : "\($0.item.displayName) \($0.version)" }
-        UserNotificationQueue.enqueue(PatcherNotificationEvent(
-            kind:     .quietApplyInstalled,
-            title:    "\(installed.count) Apps Updated",
-            body:     lines.joined(separator: ", "),
-            threadID: threadID
-        ))
-    }
-}
-
 /// Returns the version string as-is if it looks like a real version, or "" if it looks like
 /// HTML garbage or other scraping noise. Two rules are applied:
 ///   1. Length > 40 characters → rejected (all known real version strings fit well within this)
@@ -2090,7 +2072,7 @@ private func sanitizedVersion(_ raw: String) -> String {
 
 /// Returns true if a process with the given name is currently running.
 /// Uses `pgrep -x` for an exact-name match.
-private func isProcessRunning(_ processName: String) -> Bool {
+func isProcessRunning(_ processName: String) -> Bool {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
     process.arguments = ["-x", processName]

@@ -50,11 +50,14 @@ enum BlockingActionResponse {
 /// without introducing a new preference key.
 enum ApplyDialogSize: Equatable {
     case large, compact
+    /// No swiftDialog window — see NotificationApplyPresenter.
+    case notifications
 
     init(rawValue: String) {
         switch rawValue.lowercased() {
-        case "compact": self = .compact
-        default:        self = .large
+        case "compact":       self = .compact
+        case "notifications": self = .notifications
+        default:              self = .large
         }
     }
 }
@@ -138,7 +141,10 @@ struct SwiftDialogController {
         dialogSize = ApplyDialogSize(rawValue: Preferences().applyDialogSize)
 
         switch dialogSize {
-        case .large:
+        case .large, .notifications:
+            // .notifications only reaches swiftDialog as a fallback when PatcherNotifier
+            // isn't available — use the default window.
+            dialogSize = .large
             launchLargeProgressDialog(items: items)
         case .compact:
             launchCompactProgressDialog(items: items)
