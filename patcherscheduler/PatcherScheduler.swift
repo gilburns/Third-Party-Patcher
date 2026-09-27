@@ -754,12 +754,14 @@ struct PatcherScheduler {
         )
     }
 
-    /// Reconciles the PatcherNotifier LaunchAgent against the preferences that use it.
+    /// Reconciles the PatcherNotifier LaunchAgent against the preferences that use it
+    /// (QuietApplyNotifications, ApplyDialogSize = notifications).
     /// The agent is launched on demand by launchd whenever the notification queue folder
     /// changes (WatchPaths), and at login to deliver anything queued while logged out.
     private func manageNotifierApp() {
         let binaryURL = AppConstants.patcherNotifierAppURL.appendingPathComponent("Contents/MacOS/PatcherNotifier")
-        let enabled   = prefs.quietApplyEnabled && prefs.quietApplyNotifications
+        let enabled   = (prefs.quietApplyEnabled && prefs.quietApplyNotifications)
+                     || prefs.applyNotificationsEnabled
         if enabled {
             try? FileManager.default.createDirectory(
                 at: AppConstants.patcherNotificationQueueFolderURL,

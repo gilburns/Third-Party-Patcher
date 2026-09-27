@@ -494,13 +494,21 @@ struct Preferences {
 
     /// Controls the size/style of the apply-phase progress dialog (launchProgressDialog).
     /// A string (rather than a bool) so additional sizes can be added later without a new key.
-    /// Options: large | compact
+    /// Options: large | compact | notifications
     ///   large   — the full listitem-based progress window (default; unchanged behaviour)
     ///   compact — a smaller "mini" progress window, similar in size to the window used for
     ///             the user-initiated scan/check/download progress (launchProgressWindow)
+    ///   notifications — no window; results and blocking-app prompts are macOS notifications
+    ///             posted by PatcherNotifier (falls back to 'large' if PatcherNotifier isn't loaded)
     /// Defaults to "large".
     var applyDialogSize: String {
         pref("ApplyDialogSize", default: "large")
+    }
+
+    /// True when ApplyDialogSize is "notifications": the apply phase uses PatcherNotifier
+    /// notifications instead of swiftDialog windows.
+    var applyNotificationsEnabled: Bool {
+        applyDialogSize.lowercased() == "notifications"
     }
 
     /// Deterines if swift dialog should automatically close after completion

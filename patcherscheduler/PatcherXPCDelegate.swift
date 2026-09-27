@@ -92,4 +92,22 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
         }
         reply(true, "ok")
     }
+
+    func respondToNotification(_ eventID: String, action: String, reply: @escaping (Bool, String) -> Void) {
+        guard let parsed = NotificationResponseAction(rawValue: action) else {
+            reply(false, "Unknown action '\(action)'.")
+            return
+        }
+        // Only accept responses for a prompt that is still queued (and so still being
+        // waited on) — this also validates the id before it is used as a filename.
+        guard let event = UserNotificationQueue.event(withID: eventID), event.kind == .blockingPrompt else {
+            reply(false, "No pending prompt with id '\(eventID)'.")
+            return
+        }
+        let recorded = UserNotificationQueue.writeResponse(
+            PatcherNotificationResponse(eventID: event.id, action: parsed, date: Date())
+        )
+        Logger.log("🔔 XPC: notification response '\(parsed.rawValue)' for \(event.label ?? event.id)\(recorded ? "" : " — failed to record").")
+        reply(recorded, recorded ? "recorded" : "Failed to record response.")
+    }
 }
