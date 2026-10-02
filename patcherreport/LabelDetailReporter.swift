@@ -125,6 +125,8 @@ func labelEventDetail(_ event: LabelHistoryEvent) -> String {
         return "timer expired, process killed — \(event.blockingProcessName ?? "")"
     case LabelHistoryEvent.EventType.blockingProcessQuit:
         return "user clicked Quit App — \(event.blockingProcessName ?? "")"
+    case LabelHistoryEvent.EventType.blockingProcessScreenLocked:
+        return "skipped, screen locked — \(event.blockingProcessName ?? "")"
     default:
         return ""
     }

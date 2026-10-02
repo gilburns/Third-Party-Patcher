@@ -30,6 +30,7 @@ private let dialogEventTypes: Set<String> = [
     LabelHistoryEvent.EventType.blockingProcessSkipped,
     LabelHistoryEvent.EventType.blockingProcessTimedOut,
     LabelHistoryEvent.EventType.blockingProcessQuit,
+    LabelHistoryEvent.EventType.blockingProcessScreenLocked,
 ]
 
 // MARK: - Deferral categorisation
@@ -59,7 +60,8 @@ func deferralCategory(for eventType: String) -> DeferralCategory? {
     case LabelHistoryEvent.EventType.timedOutDeferred:
         return .timedOut
     case LabelHistoryEvent.EventType.blockingProcessSkipped,
-         LabelHistoryEvent.EventType.blockingProcessNotified:
+         LabelHistoryEvent.EventType.blockingProcessNotified,
+         LabelHistoryEvent.EventType.blockingProcessScreenLocked:
         return .blockingProcess
     default:
         return nil

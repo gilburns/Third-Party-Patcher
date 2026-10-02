@@ -645,7 +645,8 @@ struct SwiftDialogController {
         processName:      String,
         item:             ApplyItem,
         action:           BlockingProcessAction,
-        countdownSeconds: Int
+        countdownSeconds: Int,
+        deferIfScreenLocks: Bool
     ) -> BlockingActionResponse {
 
         switch action {
@@ -666,7 +667,8 @@ struct SwiftDialogController {
             return handleNotify(processName: processName, item: item)
 
         case .prompt:
-            return handlePrompt(processName: processName, item: item, countdownSeconds: countdownSeconds)
+            return handlePrompt(processName: processName, item: item, countdownSeconds: countdownSeconds,
+                                deferIfScreenLocks: deferIfScreenLocks)
         }
     }
 
@@ -706,7 +708,8 @@ struct SwiftDialogController {
     }
 
     // handleBlockingProcess = prompt
-    private func handlePrompt(processName: String, item: ApplyItem, countdownSeconds: Int) -> BlockingActionResponse {
+    private func handlePrompt(processName: String, item: ApplyItem, countdownSeconds: Int,
+                              deferIfScreenLocks: Bool) -> BlockingActionResponse {
         Logger.log("ℹ️ BlockingProcessAction=prompt — showing blocking-process dialog for '\(processName)'")
 
         // Pause the progress dialog while waiting for user input
@@ -741,7 +744,19 @@ struct SwiftDialogController {
         args += ["--overlayicon", overlayIcon]
 
         let prompt = launchAsUser(args)
-        prompt.waitUntilExit()
+        // Poll rather than waitUntilExit() so a screen lock mid-prompt can be caught.
+        while prompt.isRunning {
+            if deferIfScreenLocks, isConsoleScreenLocked {
+                prompt.terminate()
+                prompt.waitUntilExit()
+                Logger.log("🔒 Screen locked while prompting for '\(processName)' — skipping \(item.label)")
+                recordBlockingProcessEvent(label: item.label,
+                                           type: LabelHistoryEvent.EventType.blockingProcessScreenLocked,
+                                           processName: processName, date: Date())
+                return .skip
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
 
         switch prompt.terminationStatus {
         case 0:

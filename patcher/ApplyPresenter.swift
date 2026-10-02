@@ -20,8 +20,12 @@ protocol ApplyPresenter {
     func setFailed(item: ApplyItem)
     func setSkipped(item: ApplyItem, reason: String)
     /// Resolves a running blocking process for `item`; may block while waiting for the user.
+    /// When `deferIfScreenLocks` is true, a prompt that is still waiting when the screen
+    /// locks is withdrawn and the item skipped, rather than timing out and force-quitting
+    /// an app nobody is there to save. (False once the hard deadline is reached.)
     func handleBlockingProcess(processName: String, item: ApplyItem,
-                               action: BlockingProcessAction, countdownSeconds: Int) -> BlockingActionResponse
+                               action: BlockingProcessAction, countdownSeconds: Int,
+                               deferIfScreenLocks: Bool) -> BlockingActionResponse
     func complete(applied: Int, skipped: Int, failed: Int)
     func waitForDialog(timeout: TimeInterval?)
     func dismiss()
