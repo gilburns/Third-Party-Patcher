@@ -1490,6 +1490,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         Logger.log("⚡ IgnoreAppsInHomeFolder bypassed — user-space copy will be converted to /Applications")
     }
     let blockingAction = BlockingProcessAction(rawValue: prefs.blockingProcessAction)
+    let hardDeadlineReached = prefs.deadlineDaysHard > 0 && effectiveDaysPending >= prefs.deadlineDaysHard
     let countdownSeconds = prefs.blockingProcessCountdownSeconds
 
     let cacheBaseURL = AppConstants.patcherCacheFolderURL
@@ -1585,17 +1586,22 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 // User explicitly chose to apply from PatcherMenu — skip the deferral prompt
                 // entirely and go straight to the patching window.
                 Logger.log("▶️ Apply: user-initiated — skipping deferral prompt.")
+            } else if !hardDeadlineReached, isConsoleScreenLocked {
+                // Nobody is there to answer — the prompt would time out and auto-defer the
+                // whole run. A locked Mac is a good time to patch: proceed, and let the
+                // blocking-process check skip any app that is running. Not recorded as a
+                // deferral outcome, since no choice was made.
+                Logger.log("🔒 Apply: screen is locked — skipping deferral prompt; running apps will be skipped.")
             } else {
                 // Check for an unexpired deferral recorded in a previous run.
                 var deferralState = DeferralState.load()
 
                 // Show the pre-install deferral prompt.
-                let hardDeadline = prefs.deadlineDaysHard > 0 && effectiveDaysPending >= prefs.deadlineDaysHard
                 let schedule     = PatchSchedule(prefs: prefs)
                 let promptResult = controller.showDeferralPrompt(
                     items:                  dialogItems,
                     daysPending:            effectiveDaysPending,
-                    hardDeadlineReached:    hardDeadline,
+                    hardDeadlineReached:    hardDeadlineReached,
                     allowedDeferralMinutes: schedule.allowedDeferralMinutes(daysPending: effectiveDaysPending),
                     prefs:                  prefs
                 )
@@ -1792,11 +1798,28 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             } else if blockingAction != .ignore,
                       let runningBlocker = effectiveBlockers.first(where: { isProcessRunning($0) }) {
                 Logger.log("⏸️ \(label) — '\(runningBlocker)' is running (action: \(prefs.blockingProcessAction))")
+
+                // Locked screen: nobody is there to answer a prompt, and letting it time out
+                // would force-quit an app that may hold unsaved work. Skip it (counted as a
+                // blocking-process deferral) and keep installing everything else. At the hard
+                // deadline the prompt runs as normal and may force-quit.
+                if blockingAction == .prompt, !hardDeadlineReached, isConsoleScreenLocked {
+                    Logger.log("🔒 \(label) — screen is locked — skipping instead of prompting")
+                    recordBlockingProcessEvent(label: label,
+                                               type: LabelHistoryEvent.EventType.blockingProcessScreenLocked,
+                                               processName: runningBlocker, date: Date())
+                    dialog?.setSkipped(item: dialogItem, reason: "Screen locked")
+                    skippedCount += 1
+                    blockedSkipOccurred = true
+                    continue
+                }
+
                 let response = dialog?.handleBlockingProcess(
-                    processName:      runningBlocker,
-                    item:             dialogItem,
-                    action:           blockingAction,
-                    countdownSeconds: countdownSeconds
+                    processName:        runningBlocker,
+                    item:               dialogItem,
+                    action:             blockingAction,
+                    countdownSeconds:   countdownSeconds,
+                    deferIfScreenLocks: !hardDeadlineReached
                 ) ?? {
                     // No dialog: apply the action silently
                     switch blockingAction {

@@ -157,6 +157,14 @@ struct LabelHistoryEvent: Codable {
                           deferralMinutes: nil, blockingProcessName: processName)
     }
 
+    static func blockingProcessScreenLocked(date: Date, processName: String) -> LabelHistoryEvent {
+        LabelHistoryEvent(type: EventType.blockingProcessScreenLocked, date: date,
+                          installedVersion: nil, availableVersion: nil,
+                          downloadURL: nil, fileSizeBytes: nil,
+                          fromVersion: nil, toVersion: nil,
+                          deferralMinutes: nil, blockingProcessName: processName)
+    }
+
     static func selfServiceInstall(date: Date) -> LabelHistoryEvent {
         LabelHistoryEvent(type: EventType.selfServiceInstall, date: date,
                           installedVersion: nil, availableVersion: nil,
@@ -181,6 +189,8 @@ struct LabelHistoryEvent: Codable {
         static let blockingProcessSkipped  = "blockingProcessSkipped"
         static let blockingProcessTimedOut = "blockingProcessTimedOut"
         static let blockingProcessQuit     = "blockingProcessQuit"
+        // Running app skipped (not prompted, or prompt withdrawn) because the screen was locked
+        static let blockingProcessScreenLocked = "blockingProcessScreenLocked"
     }
 }
 
@@ -337,6 +347,8 @@ func recordBlockingProcessEvent(label: String, type: String, processName: String
         event = .blockingProcessSkipped(date: date, processName: processName)
     case LabelHistoryEvent.EventType.blockingProcessTimedOut:
         event = .blockingProcessTimedOut(date: date, processName: processName)
+    case LabelHistoryEvent.EventType.blockingProcessScreenLocked:
+        event = .blockingProcessScreenLocked(date: date, processName: processName)
     default:
         event = .blockingProcessQuit(date: date, processName: processName)
     }

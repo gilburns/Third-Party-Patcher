@@ -114,7 +114,8 @@ final class NotificationApplyPresenter: ApplyPresenter {
     }
 
     func handleBlockingProcess(processName: String, item: ApplyItem,
-                               action: BlockingProcessAction, countdownSeconds: Int) -> BlockingActionResponse {
+                               action: BlockingProcessAction, countdownSeconds: Int,
+                               deferIfScreenLocks: Bool) -> BlockingActionResponse {
         switch action {
         case .ignore:
             Logger.log("ℹ️ BlockingProcessAction=ignore — proceeding despite '\(processName)' running")
@@ -147,13 +148,15 @@ final class NotificationApplyPresenter: ApplyPresenter {
             return .skip
 
         case .prompt:
-            return prompt(processName: processName, item: item, countdownSeconds: countdownSeconds)
+            return prompt(processName: processName, item: item, countdownSeconds: countdownSeconds,
+                          deferIfScreenLocks: deferIfScreenLocks)
         }
     }
 
     // MARK: - Blocking-app prompt
 
-    private func prompt(processName: String, item: ApplyItem, countdownSeconds: Int) -> BlockingActionResponse {
+    private func prompt(processName: String, item: ApplyItem, countdownSeconds: Int,
+                        deferIfScreenLocks: Bool) -> BlockingActionResponse {
         Logger.log("ℹ️ BlockingProcessAction=prompt — posting Quit & Update notification for '\(processName)' (\(countdownSeconds)s)")
 
         let event = PatcherNotificationEvent(
@@ -203,6 +206,14 @@ final class NotificationApplyPresenter: ApplyPresenter {
                                            type: LabelHistoryEvent.EventType.blockingProcessQuit,
                                            processName: processName, date: Date())
                 return .proceed
+            }
+            if deferIfScreenLocks, isConsoleScreenLocked {
+                // The prompt is withdrawn by setSkipped when the apply loop handles the skip.
+                Logger.log("🔒 Screen locked while prompting for '\(processName)' — skipping \(item.label)")
+                recordBlockingProcessEvent(label: item.label,
+                                           type: LabelHistoryEvent.EventType.blockingProcessScreenLocked,
+                                           processName: processName, date: Date())
+                return .skip
             }
             Thread.sleep(forTimeInterval: 1.0)
         }

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import IOKit
 import SystemConfiguration
 
 // MARK: - Console user helper
@@ -30,6 +31,20 @@ public var consoleUserUID: uid_t? {
     var gid: gid_t = 0
     guard SCDynamicStoreCopyConsoleUser(nil, &uid, &gid) != nil else { return nil }
     return uid
+}
+
+/// True when the console user's screen is locked.
+/// Reads the `IOConsoleUsers` registry entry, which (unlike `CGSessionCopyCurrentDictionary`)
+/// is visible to root daemons. macOS adds `CGSSessionScreenIsLocked` to the on-console
+/// session only while it is locked. Returns false when no one is logged in.
+public var isConsoleScreenLocked: Bool {
+    let root = IORegistryGetRootEntry(kIOMainPortDefault)
+    defer { IOObjectRelease(root) }
+    guard let users = IORegistryEntryCreateCFProperty(root, "IOConsoleUsers" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? [[String: Any]],
+          let session = users.first(where: { ($0["kCGSSessionOnConsoleKey"] as? Bool) == true })
+    else { return false }
+    return (session["CGSSessionScreenIsLocked"] as? Bool) == true
 }
 
 /// Returns the hardware serial number by parsing `ioreg` output.
