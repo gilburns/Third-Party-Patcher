@@ -100,7 +100,13 @@ final class NotificationDelivery {
 
     private func request(for event: PatcherNotificationEvent) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
-        content.title            = event.title
+        if let brandTitle = event.brandTitle {
+            // Branded: "Acme Mac Updates:" leads, the event title drops to the subtitle line.
+            content.title        = "\(brandTitle):"
+            content.subtitle     = event.title
+        } else {
+            content.title        = event.title
+        }
         content.body             = event.body
         content.threadIdentifier = event.threadID
         content.sound            = event.playSound ? .default : nil

@@ -72,6 +72,11 @@ enum DeferralPromptResult {
 
 // MARK: - SwiftDialogController
 
+/// Replaces swiftDialog's Cmd+Q with Cmd+Shift+X (`--quitkey`: an uppercase character
+/// means Cmd+Shift) so users can't casually dismiss a prompt with the standard quit
+/// shortcut. Quitting by this key still exits 10, which callers treat as a skip/defer.
+private let swiftDialogQuitKey = "X"
+
 struct SwiftDialogController {
 
     private let commandFileURL: URL
@@ -129,6 +134,10 @@ struct SwiftDialogController {
             self.newVersion       = newVersion
             self.isBlocked        = isBlocked
         }
+
+        /// displayName made safe for `listitem:` commands. Used for the row title at launch
+        /// as well, since swiftDialog matches updates to rows by exact title.
+        var listItemTitle: String { listItemSafe(displayName) }
     }
 
     /// Launches swiftDialog showing progress for all items about to be applied.
@@ -165,7 +174,7 @@ struct SwiftDialogController {
         // title, icon, and status correctly from the start.
         let listItems: [[String: String]] = items.map { item in
             var listItem: [String: String] = [
-                "title":      item.displayName,
+                "title":      item.listItemTitle,
                 "icon":       item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns",
                 "status":     "pending",
                 "statustext": "Waiting",
@@ -182,7 +191,7 @@ struct SwiftDialogController {
         var jsonDict: [String: Any] = [
             "presentation":    true,
             "width":           770,
-            "height":          min(450, max(520, 220 + items.count * 60)),
+            "height":          min(520, max(450, 220 + items.count * 60)),
             "title":           prefs.appTitle,
             "titlefont":       "size=18",
             "icon":            dialogIcon,
@@ -199,10 +208,12 @@ struct SwiftDialogController {
             "button1text":     "Updating…",
             "button1disabled": true,
             "listitem":        listItems,
+            "position":        prefs.dialogScreenPosition,
             "blurscreen":      prefs.dialogBlurscreen,
             "hideotherapps":   prefs.dialogHideotherapps,
             "moveable":        prefs.dialogMoveable,
             "ontop":           prefs.dialogOnTop,
+            "quitkey":         swiftDialogQuitKey,
         ]
         if !windowButtons.isEmpty { jsonDict["windowbuttons"] = windowButtons }
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
@@ -243,6 +254,7 @@ struct SwiftDialogController {
             "moveable":        prefs.dialogMoveable,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenProgressPosition,
+            "quitkey":         swiftDialogQuitKey,
         ]
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
 
@@ -274,7 +286,7 @@ struct SwiftDialogController {
             return
         }
         sendCommand("progresstext: Update \(current) of \(total) - Installing: \(item.displayName)…")
-        sendCommand("listitem: title: \(item.displayName), status: wait, statustext: Installing…")
+        sendCommand("listitem: title: \(item.listItemTitle), status: wait, statustext: Installing…")
     }
 
     /// Formats a trailing " → 1.2.3" version suffix for the compact dialog's single-line
@@ -303,7 +315,7 @@ struct SwiftDialogController {
             Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
             return
         }
-        sendCommand("listitem: title: \(item.displayName), status: success, statustext: Updated")
+        sendCommand("listitem: title: \(item.listItemTitle), status: success, statustext: Updated")
     }
 
     /// Marks a list item as failed.
@@ -314,7 +326,7 @@ struct SwiftDialogController {
             Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
             return
         }
-        sendCommand("listitem: title: \(item.displayName), status: fail, statustext: Failed")
+        sendCommand("listitem: title: \(item.listItemTitle), status: fail, statustext: Failed")
     }
 
     /// Marks a list item as skipped.
@@ -325,7 +337,7 @@ struct SwiftDialogController {
             Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
             return
         }
-        sendCommand("listitem: title: \(item.displayName), status: error, statustext: \(reason)")
+        sendCommand("listitem: title: \(item.listItemTitle), status: error, statustext: \(listItemSafe(reason))")
     }
 
     /// Swaps in `item`'s icon as the compact dialog's main icon, compositing the
@@ -378,7 +390,7 @@ struct SwiftDialogController {
             } else {
                 sendCommand("overlayicon: none")
             }
-            sendCommand("message: **All possible updates have been applied**.\n\n\(summary)")
+            sendCommand("message: **All possible updates have been applied**.\\n\\n\(summary)")
             sendCommand("progress: complete")
             sendCommand("progresstext: Complete — \(summary)")
             Thread.sleep(forTimeInterval: 3.0)
@@ -439,6 +451,7 @@ struct SwiftDialogController {
             "mini":            true,
             "ontop":           prefs.dialogOnTop,
             "position":        prefs.dialogScreenProgressPosition,
+            "quitkey":         swiftDialogQuitKey,
         ]
         let overlayIcon = resolveOverlayIcon(prefs: prefs)
         if let overlayIcon { jsonDict["overlayicon"] = overlayIcon }
@@ -450,7 +463,9 @@ struct SwiftDialogController {
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments     = ["asuser", "\(uid)", AppConstants.swiftDialogBinaryURL.path,
                            "--jsonstring", jsonString]
-        p.standardError = Pipe()
+        p.standardInput  = FileHandle.nullDevice
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError  = FileHandle.nullDevice
         guard (try? p.run()) != nil else { return nil }
 
         Thread.sleep(forTimeInterval: 3.0)
@@ -494,7 +509,7 @@ struct SwiftDialogController {
 
     /// Shows a blocking pre-install prompt that lets the user Continue or Defer.
     /// Returns immediately with `.proceed` if the hard deadline is reached.
-    /// Uses `--outputfile` to capture the dropdown selection without stdout issues.
+    /// The dropdown selection is read from swiftDialog's JSON output (`json: true`).
     func showDeferralPrompt(
         items:                  [SwiftDialogController.ApplyItem],
         daysPending:            Int,
@@ -556,11 +571,13 @@ struct SwiftDialogController {
             "height":          min(685, max(426, 280 + itemCount * 72)),
             "width":           650,
             "timer":           countdown,
+            "quitkey":         swiftDialogQuitKey,
+            "commandfile":     freshPromptCommandFilePath(),
+            "json":            true,
         ]
         if let overlay = resolveOverlayIcon(prefs: prefs) { jsonDict["overlayicon"] = overlay }
 
         if !hardDeadlineReached {
-            jsonDict["button1"]     = true
             jsonDict["button1text"] = deferMenu.isEmpty
                 ? "Defer (\(formatDeferralDuration(defaultMins)))"
                 : "Defer"
@@ -571,6 +588,7 @@ struct SwiftDialogController {
                 jsonDict["selectitems"] = [
                     [
                         "title":   "Defer for",
+                        "name":    Self.deferralSelectName,
                         "values":  deferMenu.map { formatDeferralDuration($0) },
                         "default": formatDeferralDuration(defaultMins),
                     ] as [String: Any]
@@ -588,10 +606,15 @@ struct SwiftDialogController {
         // launchctl asuser passes file descriptors through to the child process, so
         // setting a Pipe on the launchctl Process captures swiftDialog's stdout.
         let stdoutPipe = Pipe()
-        let p = launchAsUser(["--jsonstring", jsonString], capturingStdoutWith: stdoutPipe)
+        guard let p = launchAsUser(["--jsonstring", jsonString], capturingStdoutWith: stdoutPipe) else {
+            Logger.log("❌ DeferralPrompt: swiftDialog failed to launch — proceeding")
+            return .proceed
+        }
+        // Read to EOF before waiting — waiting first can deadlock if the output fills the pipe.
+        let outputData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
 
-        let rawOutput = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let rawOutput = String(data: outputData, encoding: .utf8) ?? ""
         Logger.log("🔍 Deferral stdout: \(rawOutput.trimmingCharacters(in: .whitespacesAndNewlines))")
 
         if hardDeadlineReached {
@@ -604,7 +627,7 @@ struct SwiftDialogController {
             // Defer button clicked
             let minutes = deferMenu.isEmpty
                 ? defaultMins
-                : parseDeferralSelection(from: rawOutput, menu: deferMenu, fallback: defaultMins)
+                : parseDeferralSelection(from: outputData, menu: deferMenu, fallback: defaultMins)
             Logger.log("ℹ️ Deferral: user deferred \(formatDeferralDuration(minutes)) (exit \(p.terminationStatus))")
             return .deferred(minutes: minutes)
         case 4:
@@ -614,26 +637,39 @@ struct SwiftDialogController {
             }
             Logger.log("ℹ️ Deferral: timer expired — auto-deferring \(formatDeferralDuration(defaultMins))")
             return .timedOutDeferred(minutes: defaultMins)
-        default:
+        case 2:
+            // Button 2 — "Continue"
             Logger.log("ℹ️ Deferral: user chose Continue")
+            return .proceed
+        case 10, 15:
+            // Quit key (10) or window close button (15, only if `windowbuttons` is ever
+            // added here) — the user dismissed the prompt, which is a deferral, not consent.
+            // No selection is printed on these exits, so use the default duration.
+            Logger.log("ℹ️ Deferral: user dismissed the prompt (exit \(p.terminationStatus)) — deferring \(formatDeferralDuration(defaultMins))")
+            return .deferred(minutes: defaultMins)
+        default:
+            // The prompt failed or was closed by something other than the user
+            // (`quit:` from another process, missing image/file, launcher refusal).
+            // Proceed, the same as when swiftDialog is unavailable — running apps are
+            // still protected by the blocking-process prompt.
+            Logger.log("⚠️ Deferral: prompt exited \(p.terminationStatus) without a user choice — proceeding")
             return .proceed
         }
     }
 
-    /// Parses swiftDialog's stdout and maps the selected dropdown value back to minutes.
-    /// swiftDialog writes one `"key" : value` pair per line to stdout.
-    /// We look for the line whose key matches the dropdown title "Defer for".
-    private func parseDeferralSelection(from output: String, menu: [Int], fallback: Int) -> Int {
-        for line in output.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Match lines like:  "Defer for" : "1 hour"
-            guard trimmed.hasPrefix("\"Defer for\"") else { continue }
-            let parts = trimmed.components(separatedBy: " : ")
-            guard parts.count >= 2 else { continue }
-            let value = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "\" "))
-            for mins in menu where formatDeferralDuration(mins) == value { return mins }
+    /// JSON output key for the "Defer for" dropdown — stable even if the title is reworded.
+    private static let deferralSelectName = "deferFor"
+
+    /// Maps the dropdown selection in swiftDialog's JSON output back to minutes:
+    /// `{"deferFor": {"selectedValue": "1 hour", "selectedIndex": 2}, …}`
+    private func parseDeferralSelection(from output: Data, menu: [Int], fallback: Int) -> Int {
+        guard let json      = try? JSONSerialization.jsonObject(with: output) as? [String: Any],
+              let selection = json[Self.deferralSelectName] as? [String: Any],
+              let value     = selection["selectedValue"] as? String else {
+            Logger.log("⚠️ Deferral: no dropdown selection in swiftDialog output — using default")
+            return fallback
         }
-        return fallback
+        return menu.first { formatDeferralDuration($0) == value } ?? fallback
     }
 
 
@@ -689,18 +725,19 @@ struct SwiftDialogController {
             "--message",   "\(item.displayName) needs to be quit to apply an update. Please close it when convenient.",
             "--messagealignment", "left",
             "--messagefont", "size=16",
-            "--moveable",
+            "--quitkey",   swiftDialogQuitKey,
             "--height",    "200",
             "--width",    "600",
         ]
         if prefs.dialogOnTop { args.append("--ontop") }
+        if prefs.dialogMoveable { args.append("--moveable") }
+        args += ["--commandfile", freshPromptCommandFilePath()]
         // Use the blocking item's app icon as the overlay so the user sees which
         // app is blocking. Fall back to the pkg icon if no app icon is available.
         let overlayIcon = item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns"
         args += ["--overlayicon", overlayIcon]
 
-        let prompt = launchAsUser(args)
-        prompt.waitUntilExit()
+        launchAsUser(args)?.waitUntilExit()
         recordBlockingProcessEvent(label: item.label,
                                    type: LabelHistoryEvent.EventType.blockingProcessNotified,
                                    processName: processName, date: Date())
@@ -729,7 +766,7 @@ struct SwiftDialogController {
             "--button1text", "Skip Update",
             "--button2",
             "--button2text", "Quit \(processName)",
-            "--moveable",
+            "--quitkey",     swiftDialogQuitKey,
             "--height",      "320",
             "--width",       "480",
 //            "--checkbox",    "Relaunch after update…",
@@ -738,12 +775,20 @@ struct SwiftDialogController {
 
         ]
         if prefs.dialogOnTop { args.append("--ontop") }
+        if prefs.dialogMoveable { args.append("--moveable") }
+        args += ["--commandfile", freshPromptCommandFilePath()]
         // Use the blocking item's app icon as the overlay so the user sees which
         // app is blocking. Fall back to the pkg icon if no app icon is available.
         let overlayIcon = item.iconPath ?? "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns"
         args += ["--overlayicon", overlayIcon]
 
-        let prompt = launchAsUser(args)
+        guard let prompt = launchAsUser(args) else {
+            Logger.log("⚠️ Blocking-process prompt failed to launch — skipping '\(item.label)'")
+            recordBlockingProcessEvent(label: item.label,
+                                       type: LabelHistoryEvent.EventType.blockingProcessSkipped,
+                                       processName: processName, date: Date())
+            return .skip
+        }
         // Poll rather than waitUntilExit() so a screen lock mid-prompt can be caught.
         while prompt.isRunning {
             if deferIfScreenLocks, isConsoleScreenLocked {
@@ -760,11 +805,23 @@ struct SwiftDialogController {
 
         switch prompt.terminationStatus {
         case 0:
-            Logger.log("ℹ️ User skipped update for '\(item.label)' (exit \(prompt.terminationStatus))")
+            // Button 1 — "Skip Update"
+            Logger.log("ℹ️ User skipped update for '\(item.label)' (exit 0)")
             recordBlockingProcessEvent(label: item.label,
                                        type: LabelHistoryEvent.EventType.blockingProcessSkipped,
                                        processName: processName, date: Date())
             return .skip
+
+        case 2:
+            // Button 2 — "Quit <App>": force-quit and install.
+            // Return .proceedRelaunch so the apply loop can reopen the app after the update.
+            Logger.log("ℹ️ User chose to quit '\(processName)' — force-quitting")
+            recordBlockingProcessEvent(label: item.label,
+                                       type: LabelHistoryEvent.EventType.blockingProcessQuit,
+                                       processName: processName, date: Date())
+            killProcess(named: processName)
+            Thread.sleep(forTimeInterval: 2.0)
+            return .proceedRelaunch
 
         case 4:
             // Timer expired — treat as consent to kill
@@ -777,16 +834,14 @@ struct SwiftDialogController {
             return .proceed
 
         default:
-            // Exit 2 = User clicked "Quit <App>" — force-quit and install.
-            // Return .proceedRelaunch so the apply loop can reopen the app after the update.
-            Logger.log("ℹ️ User chose to quit '\(processName)' — force-quitting")
+            // Anything else is not consent to force-quit the app: the quit key (10),
+            // a `quit:` from another process (5), a missing image or file (201/202/203),
+            // or a launcher refusal (1). Skip the update rather than risk unsaved work.
+            Logger.log("⚠️ Blocking-process prompt for '\(processName)' exited \(prompt.terminationStatus) — skipping \(item.label)")
             recordBlockingProcessEvent(label: item.label,
-                                       type: LabelHistoryEvent.EventType.blockingProcessQuit,
+                                       type: LabelHistoryEvent.EventType.blockingProcessSkipped,
                                        processName: processName, date: Date())
-            killProcess(named: processName)
-            Thread.sleep(forTimeInterval: 2.0)
-            return .proceedRelaunch
-
+            return .skip
         }
     }
 
@@ -813,20 +868,32 @@ struct SwiftDialogController {
         }
     }
 
+    /// Path of the command file for a blocking prompt, with any previous prompt's file
+    /// removed so swiftDialog's launcher recreates it (root-owned, 0644) at launch.
+    private func freshPromptCommandFilePath() -> String {
+        let url = AppConstants.swiftDialogPromptCommandFileURL
+        try? FileManager.default.removeItem(at: url)
+        return url.path
+    }
+
     /// Launches swiftDialog as the console user via `launchctl asuser`.
+    /// Returns nil when the process could not be started — a Process that never ran
+    /// raises if its terminationStatus is read, so callers must not wait on it.
     @discardableResult
-    private func launchAsUser(_ args: [String], capturingStdoutWith pipe: Pipe? = nil) -> Process {
+    private func launchAsUser(_ args: [String], capturingStdoutWith pipe: Pipe? = nil) -> Process? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = ["asuser", "\(userUID)", AppConstants.swiftDialogBinaryURL.path] + args
-        if let pipe = pipe {
-            p.standardOutput = pipe
-        }
-        p.standardError = Pipe() // prevent stderr from leaking to the log
+        // Null devices rather than unread Pipes: a Pipe nobody drains can fill and block
+        // the child. Without a TTY on stdin the child can't inherit a daemon's input.
+        p.standardInput  = FileHandle.nullDevice
+        p.standardOutput = pipe ?? FileHandle.nullDevice
+        p.standardError  = FileHandle.nullDevice
         do {
             try p.run()
         } catch {
             Logger.log("❌ SwiftDialogController: failed to launch swiftDialog: \(error)")
+            return nil
         }
         return p
     }
@@ -922,6 +989,14 @@ struct UserProgressDialog {
 
 
 // MARK: - Dialog appearance helpers
+
+/// swiftDialog parses `listitem:` commands by splitting on "," and then ": ", and a
+/// newline ends the command, so none of these may appear in a title or status text.
+private func listItemSafe(_ text: String) -> String {
+    text.replacingOccurrences(of: "\n", with: " ")
+        .replacingOccurrences(of: ",", with: "")
+        .replacingOccurrences(of: ": ", with: " - ")
+}
 
 /// Returns the icon string for the swiftDialog window.
 /// Uses the DialogIcon preference when set; otherwise tries to compose a
@@ -1036,11 +1111,13 @@ private func jamfPlistValue(key: String) -> String? {
     p.arguments = ["read", "/Library/Preferences/com.jamfsoftware.jamf.plist", key]
     let pipe = Pipe()
     p.standardOutput = pipe
-    p.standardError  = Pipe()
-    try? p.run()
+    p.standardError  = FileHandle.nullDevice
+    guard (try? p.run()) != nil else { return nil }
+    // Read to EOF before waiting — waiting first can deadlock if the output fills the pipe.
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
     p.waitUntilExit()
     guard p.terminationStatus == 0 else { return nil }
-    let value = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+    let value = String(data: data, encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines)
     return value?.isEmpty == false ? value : nil
 }

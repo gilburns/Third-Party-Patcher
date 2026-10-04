@@ -156,6 +156,10 @@ struct AppConstants {
     static let swiftDialogBinaryURL              = URL(fileURLWithPath: "/usr/local/bin/dialog")
     static let swiftDialogCommandFileURL         = URL(fileURLWithPath: "/var/tmp/com.gilburns.patcher.dialog.command")
     static let swiftDialogProgressCommandFileURL = URL(fileURLWithPath: "/var/tmp/com.gilburns.patcher.progress.command")
+    /// Used by the blocking prompts (deferral, blocking-process notify/prompt) — they run one at a
+    /// time. Without it swiftDialog falls back to the shared /var/tmp/dialog.log, where another
+    /// tool's `quit:` would close our prompt.
+    static let swiftDialogPromptCommandFileURL   = URL(fileURLWithPath: "/var/tmp/com.gilburns.patcher.prompt.command")
 
     static let patcherTempFolderURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("patcher_\(currentPid)_\((randomGUID)[(randomGUID).startIndex..<(randomGUID).index((randomGUID).startIndex, offsetBy: 8)])")
