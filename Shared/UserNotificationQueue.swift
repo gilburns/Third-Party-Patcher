@@ -38,6 +38,9 @@ struct PatcherNotificationEvent: Codable {
     let created: Date
     let expires: Date
     let title: String
+    /// The admin's AppTitle, shown as the notification's title with `title` moved
+    /// to the subtitle line. nil when AppTitle is left at its default.
+    let brandTitle: String?
     let body: String
     /// Notification Center groups notifications sharing a thread ID.
     let threadID: String
@@ -61,6 +64,7 @@ struct PatcherNotificationEvent: Codable {
         self.created   = now
         self.expires   = now.addingTimeInterval(lifetime)
         self.title     = title
+        self.brandTitle = kind == .withdraw ? nil : Self.customAppTitle()
         self.body      = body
         self.threadID  = threadID
         self.playSound = playSound
@@ -74,6 +78,14 @@ struct PatcherNotificationEvent: Codable {
     static func withdraw(replaceID: String) -> PatcherNotificationEvent {
         PatcherNotificationEvent(kind: .withdraw, title: "", body: "", threadID: "",
                                  replaceID: replaceID, lifetime: 60 * 60)
+    }
+
+    /// The admin's AppTitle, or nil when it is empty or left at the default —
+    /// the default name adds nothing beside the PatcherNotifier header.
+    private static func customAppTitle() -> String? {
+        let appTitle = Preferences().appTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !appTitle.isEmpty, appTitle != Preferences.defaultAppTitle else { return nil }
+        return appTitle
     }
 
     /// The identifier used for the Notification Center request.

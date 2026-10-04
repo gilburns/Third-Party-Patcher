@@ -424,10 +424,12 @@ struct Preferences {
         prefs["SwiftDialogEnabled"] as? Bool ?? true
     }
 
+    static let defaultAppTitle = "Third Party Patcher"
+
     /// Title shown in the swiftDialog apply window.
     /// Defaults to "Third Party Patcher" when the key is absent.
     var appTitle: String {
-        pref("AppTitle", default: "Third Party Patcher")
+        pref("AppTitle", default: Self.defaultAppTitle)
     }
 
     /// When true, swiftDialog will stay on top of all other windows.
