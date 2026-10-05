@@ -182,20 +182,7 @@ func countPendingUpdates() -> Int {
     let throttleDays = prefs.versionMismatchThrottleDays
 
     // Load staged labels so we don't double-count items already downloaded
-    let stagedLabels: Set<String> = {
-        guard let dirs = try? fm.contentsOfDirectory(
-            at: AppConstants.patcherCacheFolderURL, includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return [] }
-        return Set(dirs.compactMap { url -> String? in
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { return nil }
-            let meta = url.appendingPathComponent("metadata.json")
-            guard let data = try? Data(contentsOf: meta),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  json["stagedTimestamp"] != nil else { return nil }
-            return url.lastPathComponent
-        })
-    }()
+    let stagedLabels = Set(StagedCache.entries().map(\.label))
 
     return plists.filter { $0.pathExtension == "plist" }.filter { url in
         let label = url.deletingPathExtension().lastPathComponent
@@ -259,9 +246,7 @@ func countStageableUpdates() -> Int {
         // A broad "has any stagedTimestamp" check is wrong — the cache may hold an older
         // staging whose version differs from the current appNewVersion, and the main loop
         // would re-download it while the broad check would exclude it from the count.
-        if let cachedMeta = loadCacheMetadata(label: label),
-           cachedMeta["appNewVersion"] == appNewVersion,
-           cachedMeta["downloadURL"]   == downloadURLStr { return false }
+        if StagedCache.isStaged(label: label, appNewVersion: appNewVersion, downloadURL: downloadURLStr) { return false }
 
         if status == UpdateStatus.unknown.rawValue {
             if ignoreUnknown { return false }
@@ -1152,7 +1137,7 @@ func removeStagedInstallFileIfPresent(label: String) {
     let labelDirURL = cacheBaseURL.appendingPathComponent(label)
     
     // A cache dir with only metadata.json (or empty) means nothing is staged
-    if let stagedFileURL = findStagedFile(in: labelDirURL) {
+    if let stagedFileURL = StagedCache.stagedFile(in: labelDirURL) {
         guard FileManager.default.fileExists(atPath: stagedFileURL.path) else { return }
         do {
             try FileManager.default.removeItem(at: stagedFileURL)
@@ -1391,51 +1376,12 @@ func getEnvironmentVars() -> [String: String] {
 /// Returns true if any label cache directory contains a staged install file
 /// (any file other than metadata.json and history.json).
 func hasStagedUpdates() -> Bool {
-    let cacheURL = AppConstants.patcherCacheFolderURL
-    guard let labelDirs = try? FileManager.default.contentsOfDirectory(
-        at: cacheURL, includingPropertiesForKeys: [.isDirectoryKey]
-    ) else { return false }
-
-    for labelDir in labelDirs {
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: labelDir.path, isDirectory: &isDir),
-              isDir.boolValue else { continue }
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: labelDir, includingPropertiesForKeys: nil
-        )) ?? []
-        if contents.contains(where: {
-            $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != "history.json"
-        }) { return true }
-    }
-    return false
+    StagedCache.labelDirectories().contains { StagedCache.stagedFile(in: $0) != nil }
 }
 
 func daysSinceOldestStagedUpdate() -> Int {
-    let cacheURL = AppConstants.patcherCacheFolderURL
-    let iso = ISO8601DateFormatter()
-    let now = Date()
-    var oldest: Date? = nil
-
-    guard let labelDirs = try? FileManager.default.contentsOfDirectory(
-        at: cacheURL, includingPropertiesForKeys: [.isDirectoryKey]
-    ) else { return 0 }
-
-    for labelDir in labelDirs {
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: labelDir.path, isDirectory: &isDir),
-              isDir.boolValue else { continue }
-
-        let metadataURL = labelDir.appendingPathComponent("metadata.json")
-        guard let data = try? Data(contentsOf: metadataURL),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tsString = json["stagedTimestamp"] as? String,
-              let ts = iso.date(from: tsString) else { continue }
-
-        if oldest == nil || ts < oldest! { oldest = ts }
-    }
-
-    guard let first = oldest else { return 0 }
-    return max(0, Calendar.current.dateComponents([.day], from: first, to: now).day ?? 0)
+    guard let first = StagedCache.entries().compactMap(\.stagedDate).min() else { return 0 }
+    return max(0, Calendar.current.dateComponents([.day], from: first, to: Date()).day ?? 0)
 }
 
 /// Returns the number of days since the monthly patch day this month.
@@ -1511,7 +1457,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         // swiftDialog needs the full list at launch time.
         var dialogItems: [SwiftDialogController.ApplyItem] = []
         for dirURL in labelDirs {
-            guard findStagedFile(in: dirURL) != nil else { continue }
+            guard StagedCache.stagedFile(in: dirURL) != nil else { continue }
             let lbl = dirURL.lastPathComponent
             let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(lbl).plist")
 
@@ -1654,7 +1600,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             }
 
             // A cache dir with only metadata.json (or empty) means nothing is staged
-            guard let stagedFileURL = findStagedFile(in: labelDirURL) else {
+            guard let stagedFileURL = StagedCache.stagedFile(in: labelDirURL) else {
                 Logger.verbose("📭 \(label) — nothing staged to install")
                 nothingToInstallCount += 1
                 continue
@@ -2108,14 +2054,6 @@ func isProcessRunning(_ processName: String) -> Bool {
     } catch {
         return false
     }
-}
-
-
-/// Returns the staged install file from a label's cache directory — the first file that is not metadata.json.
-/// Returns nil if only metadata.json is present or the directory is empty.
-private func findStagedFile(in labelCacheURL: URL) -> URL? {
-    guard let contents = try? FileManager.default.contentsOfDirectory(at: labelCacheURL, includingPropertiesForKeys: nil) else { return nil }
-    return contents.first(where: { $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != LabelHistory.fileName })
 }
 
 
@@ -2747,9 +2685,7 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
             }
 
             // Check if this exact version and URL is already staged in the cache
-            if let metadata = loadCacheMetadata(label: label),
-               metadata["appNewVersion"] == appNewVersion,
-               metadata["downloadURL"] == downloadURLString {
+            if StagedCache.isStaged(label: label, appNewVersion: appNewVersion, downloadURL: downloadURLString) {
                 Logger.log("--------------------------------------------------")
                 Logger.log("✅ Already staged: \(label) v\(appNewVersion) — skipping download")
                 alreadyStagedCount += 1
@@ -3799,23 +3735,14 @@ private func extractVersionFromFullyExpandedPkg(pkgPath: String, appName: String
 /// version (unusual but theoretically possible if the label script reports a different
 /// version than what was staged), the staged update is left intact.
 private func discardSupersededStagedUpdate(label: String, installedVersion: String) {
-    let labelCacheURL = AppConstants.patcherCacheFolderURL.appendingPathComponent(label)
-    let metaURL       = labelCacheURL.appendingPathComponent("metadata.json")
+    let labelCacheURL = StagedCache.labelDirectory(for: label)
+    let metaURL       = labelCacheURL.appendingPathComponent(StagedCache.metadataFileName)
     let fm            = FileManager.default
 
-    guard let contents = try? fm.contentsOfDirectory(at: labelCacheURL, includingPropertiesForKeys: nil),
-          contents.contains(where: {
-              $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != LabelHistory.fileName
-          })
-    else { return }
+    let stagedFiles = StagedCache.stagedFiles(in: labelCacheURL)
+    guard !stagedFiles.isEmpty else { return }
 
-    let stagedVersion: String = {
-        guard let data = try? Data(contentsOf: metaURL),
-              let meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let v = meta["appNewVersion"] as? String, !v.isEmpty
-        else { return "" }
-        return v
-    }()
+    let stagedVersion = StagedCache.metadata(in: labelCacheURL)?["appNewVersion"] as? String ?? ""
 
     if !stagedVersion.isEmpty,
        installedVersion.compare(stagedVersion, options: .numeric) == .orderedAscending {
@@ -3826,8 +3753,7 @@ private func discardSupersededStagedUpdate(label: String, installedVersion: Stri
     let desc = stagedVersion.isEmpty ? "version unknown" : "staged: \(stagedVersion)"
     Logger.log("🗑️ '\(label)': discarding superseded staged update (installed: \(installedVersion), \(desc)).")
 
-    for file in contents where file.lastPathComponent != "metadata.json"
-                             && file.lastPathComponent != LabelHistory.fileName {
+    for file in stagedFiles {
         do {
             try fm.removeItem(at: file)
         } catch {
@@ -3883,10 +3809,9 @@ private func relaunchApp(foundInstalls: [[String: Any]], uid: uid_t) {
 /// Removes all files in a label's cache directory except metadata.json and the newly staged file.
 /// Call this after a successful download before writing cache metadata.
 private func cleanLabelCache(_ labelCacheURL: URL, keeping newFileName: String) {
-    guard let contents = try? FileManager.default.contentsOfDirectory(at: labelCacheURL, includingPropertiesForKeys: nil) else { return }
-    for fileURL in contents {
+    for fileURL in StagedCache.stagedFiles(in: labelCacheURL) {
         let name = fileURL.lastPathComponent
-        guard name != "metadata.json", name != LabelHistory.fileName, name != newFileName else { continue }
+        guard name != newFileName else { continue }
         do {
             try FileManager.default.removeItem(at: fileURL)
             Logger.log("🗑️ Removed stale cache file: \(name)")

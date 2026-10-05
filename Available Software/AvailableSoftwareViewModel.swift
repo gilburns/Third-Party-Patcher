@@ -345,40 +345,16 @@ final class AvailableSoftwareViewModel: ObservableObject {
     }
     
     private func buildStagedPatches() -> [StagedPatch] {
-        let cacheURL = AppConstants.patcherCacheFolderURL
-        guard let subdirs = try? FileManager.default.contentsOfDirectory(
-            at: cacheURL, includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return [] }
-        
-        let iso = ISO8601DateFormatter()
-        var result: [StagedPatch] = []
-        
-        for dir in subdirs {
-            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
-            let label = dir.lastPathComponent
-            
-            // Staged update = directory has at least one file that isn't metadata/history
-            let contents = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-            guard contents.contains(where: {
-                $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != "history.json"
-            }) else { continue }
-            
-            let metaURL = dir.appendingPathComponent("metadata.json")
-            guard let data = try? Data(contentsOf: metaURL),
-                  let meta = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-                  let version = meta["appNewVersion"],
-                  let tsString = meta["stagedTimestamp"]
-            else { continue }
-            
-            result.append(StagedPatch(
-                id: label,
-                displayName: resolveDisplayName(for: label),
-                newVersion: version,
-                stagedDate: iso.date(from: tsString),
-                iconURL: resolveIconURL(for: label)
-            ))
+        let result = StagedCache.entries().map { entry in
+            StagedPatch(
+                id: entry.label,
+                displayName: resolveDisplayName(for: entry.label),
+                newVersion: entry.appNewVersion,
+                stagedDate: entry.stagedDate,
+                iconURL: resolveIconURL(for: entry.label)
+            )
         }
-        
+
         return result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
     

@@ -301,41 +301,13 @@ final class PatcherMenuViewModel: ObservableObject {
     }
 
     private func loadStagedPatches() -> [StagedPatch] {
-        let cacheURL = AppConstants.patcherCacheFolderURL
-        guard let subdirs = try? FileManager.default.contentsOfDirectory(
-            at: cacheURL, includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return [] }
-
-        let iso = ISO8601DateFormatter()
-        var patches: [StagedPatch] = []
-
-        for dir in subdirs {
-            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
-            let label = dir.lastPathComponent
-
-            // Staged update = at least one file that isn't metadata.json or history.json
-            let contents = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-            guard contents.contains(where: {
-                $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != "history.json"
-            }) else { continue }
-
-            // metadata.json must have stagedTimestamp (stripped after install)
-            let metaURL = dir.appendingPathComponent("metadata.json")
-            guard let data = try? Data(contentsOf: metaURL),
-                  let meta = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-                  let version = meta["appNewVersion"],
-                  let tsString = meta["stagedTimestamp"]
-            else { continue }
-
-            let stagedDate = iso.date(from: tsString)
-            let displayName = discoveredDisplayName(for: label) ?? label
-
-            patches.append(StagedPatch(
-                id: label,
-                displayName: displayName,
-                newVersion: version,
-                stagedDate: stagedDate
-            ))
+        let patches = StagedCache.entries().map { entry in
+            StagedPatch(
+                id: entry.label,
+                displayName: discoveredDisplayName(for: entry.label) ?? entry.label,
+                newVersion: entry.appNewVersion,
+                stagedDate: entry.stagedDate
+            )
         }
 
         return patches.sorted {
