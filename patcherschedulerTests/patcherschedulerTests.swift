@@ -624,6 +624,7 @@ struct SchedulerStateCodableTests {
         var state = SchedulerState()
         state.firstLaunchDate            = now.addingTimeInterval(-30 * 24 * 3600)
         state.initialScanDelaySeconds    = 3600
+        state.initialScanDelayEndedByUserDate = now.addingTimeInterval(-29 * 24 * 3600)
         state.lastScanDate               = now.addingTimeInterval(-2 * 24 * 3600)
         state.lastCheckDate              = now.addingTimeInterval(-12 * 3600)
         state.lastStageDate              = now.addingTimeInterval(-6 * 3600)
@@ -643,6 +644,7 @@ struct SchedulerStateCodableTests {
         // Dates survive ISO8601 round-trip within 1-second tolerance
         let pairs: [(Date?, Date?)] = [
             (decoded.firstLaunchDate,  state.firstLaunchDate),
+            (decoded.initialScanDelayEndedByUserDate, state.initialScanDelayEndedByUserDate),
             (decoded.lastScanDate,     state.lastScanDate),
             (decoded.lastCheckDate,    state.lastCheckDate),
             (decoded.lastStageDate,    state.lastStageDate),
@@ -664,5 +666,15 @@ struct SchedulerStateCodableTests {
         #expect(decoded.lastScanDate      == nil)
         #expect(decoded.firstPendingDate  == nil)
         #expect(decoded.deferralCount     == 0)
+    }
+
+    @Test func decodesStateWrittenBeforeEndedByUserField() throws {
+        // State files from earlier releases lack initialScanDelayEndedByUserDate.
+        let legacy = #"{"firstLaunchDate":"2026-09-01T12:00:00Z","initialScanDelaySeconds":3600,"deferralCount":0}"#
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(SchedulerState.self, from: Data(legacy.utf8))
+
+        #expect(decoded.initialScanDelaySeconds == 3600)
+        #expect(decoded.initialScanDelayEndedByUserDate == nil)
     }
 }

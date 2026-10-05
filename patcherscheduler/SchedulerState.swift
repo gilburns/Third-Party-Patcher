@@ -26,6 +26,9 @@ struct SchedulerState: Codable {
     // Deployment
     var firstLaunchDate: Date?
     var initialScanDelaySeconds: Int?
+    /// Set when a user-initiated scan ends the initial deployment delay early.
+    /// Optional so state files written before this field existed still decode.
+    var initialScanDelayEndedByUserDate: Date?
 
     // Per-subcommand last-run timestamps
     var lastScanDate: Date?

@@ -213,7 +213,10 @@ struct MenuStatusView: View {
                             vm.triggerPhase("check")
                             dismissWindow()
                         }
-                            .help("Check for any available updates for previously discovered apps")
+                            .disabled(!vm.hasDiscoveredApps)
+                            .help(vm.hasDiscoveredApps
+                                  ? "Check for any available updates for previously discovered apps"
+                                  : "No apps discovered yet — run Full Discovery Scan first")
                     }
                     if vm.preferences.showMenuScanAction {
                         Button("Full Discovery Scan") { vm.triggerPhase("scan") }
@@ -279,7 +282,19 @@ struct MenuStatusView: View {
                     .padding(.bottom, 2)
             }
 
-            if vm.stagedPatches.isEmpty {
+            if vm.stagedPatches.isEmpty, let startLabel = vm.initialDelayLabel {
+                // Initial deployment delay — nothing has been scanned yet, so
+                // "All apps up to date" would be misleading.
+                Label("Update checks start \(startLabel)", systemImage: "hourglass")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if let end = vm.initialDelayEndDate, end > Date() {
+                    Text("Initial setup delay ends around \(formatDate(end))")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 2)
+                }
+            } else if vm.stagedPatches.isEmpty {
                 Label("All apps up to date", systemImage: "checkmark.circle.fill")
                     .font(.subheadline)
                     .foregroundStyle(.green)

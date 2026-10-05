@@ -17,6 +17,7 @@ final class PatcherMenuViewModel: ObservableObject {
     @Published var deferralState: DeferralStateData?
     @Published var stagedPatches: [StagedPatch] = []
     @Published var detectedPatches: [DetectedPatch] = []
+    @Published var hasDiscoveredApps = false
     @Published var preferences = Preferences()
     @Published var lastRefreshed = Date()
     @Published var isLoading = false
@@ -26,6 +27,9 @@ final class PatcherMenuViewModel: ObservableObject {
     // MARK: - Data models (local read-only copies)
 
     struct SchedulerStateData: Codable {
+        var firstLaunchDate: Date?
+        var initialScanDelaySeconds: Int?
+        var initialScanDelayEndedByUserDate: Date?
         var lastScanDate: Date?
         var lastCheckDate: Date?
         var lastStageDate: Date?
@@ -136,6 +140,40 @@ final class PatcherMenuViewModel: ObservableObject {
         }
     }
 
+    /// When the one-time initial deployment delay ends. Nil when the delay is disabled,
+    /// not yet recorded by the scheduler, ended early by a user-initiated scan, or
+    /// finished and the first scan has run.
+    var initialDelayEndDate: Date? {
+        guard preferences.initialScanDelayEnabled,
+              schedulerState?.initialScanDelayEndedByUserDate == nil,
+              let firstLaunch = schedulerState?.firstLaunchDate,
+              let delay = schedulerState?.initialScanDelaySeconds
+        else { return nil }
+        let end = firstLaunch.addingTimeInterval(TimeInterval(delay))
+        // Keep showing "soon" after the delay ends until the scheduler's first scan lands.
+        if end <= Date() && schedulerState?.lastScanDate != nil { return nil }
+        return end
+    }
+
+    /// Approximate label for when scheduled patching starts after the initial delay.
+    /// Bucketed like `nextPromptLabel` — work begins on the first scheduler wake after
+    /// the delay ends, so an exact countdown would overstate precision.
+    var initialDelayLabel: String? {
+        guard let end = initialDelayEndDate else { return nil }
+        let remaining = end.timeIntervalSince(Date())
+        let schedulerCycle: TimeInterval = 600
+        switch remaining {
+        case let r where r > 3600:
+            let hours = Int(ceil(r / 3600))
+            return "in about \(hours == 1 ? "1 hr" : "\(hours) hr")"
+        case let r where r > schedulerCycle:
+            let minutes = Int(ceil(r / 300)) * 5   // round up to nearest 5 min
+            return "in about \(minutes) min"
+        default:
+            return "soon"
+        }
+    }
+
     private var schedule: PatchSchedule { PatchSchedule(prefs: preferences) }
 
     /// Reference date from which deadlines are measured.
@@ -200,6 +238,7 @@ final class PatcherMenuViewModel: ObservableObject {
         preferences = Preferences()
         stagedPatches = loadStagedPatches()
         detectedPatches = loadDetectedPatches(excluding: stagedPatches)
+        hasDiscoveredApps = discoveredAppsExist()
         lastRefreshed = Date()
         isLoading = false
     }
