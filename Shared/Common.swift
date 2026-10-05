@@ -40,6 +40,16 @@ func resolveDisplayName(for label: String) -> String {
     return label.prefix(1).uppercased() + label.dropFirst()
 }
 
+/// True when at least one full scan has recorded a discovered app. The check phase
+/// only revisits discovered plists, so it has nothing to do until this is true.
+/// (scheduler_state's lastScanDate isn't enough — it's recorded even when a scan fails.)
+func discoveredAppsExist() -> Bool {
+    let plists = (try? FileManager.default.contentsOfDirectory(
+        at: AppConstants.patcherDiscoveredFolderURL, includingPropertiesForKeys: nil
+    )) ?? []
+    return plists.contains { $0.pathExtension == "plist" }
+}
+
 func resolveIconURL(for label: String) -> URL? {
     let preferences = Preferences.init()
     // 1. Admin-managed icons (highest priority — intentional overrides).

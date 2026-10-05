@@ -254,9 +254,10 @@ struct Preferences {
     /// When true, the scheduler waits a one-time random delay after first deployment
     /// before running its first scan. Spreads fleet-wide first-scan load across the
     /// initialScanDelayMaxSeconds window instead of all machines scanning simultaneously
-    /// when a LaunchDaemon is pushed. Defaults to true.
+    /// when a LaunchDaemon is pushed. Defaults to false so single-device trials scan
+    /// right away; fleet deployments should enable it via MDM.
     var initialScanDelayEnabled: Bool {
-        prefs["InitialScanDelayEnabled"] as? Bool ?? true
+        prefs["InitialScanDelayEnabled"] as? Bool ?? false
     }
 
     /// Maximum seconds for the one-time initial deployment delay.

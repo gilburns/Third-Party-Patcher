@@ -318,6 +318,9 @@ final class AvailableSoftwareViewModel: ObservableObject {
     }
     
     @Published var schedulerSnapshot: SchedulerActivitySnapshot?
+
+    /// Whether any full scan has discovered apps yet — gates the Check for Updates action.
+    @Published var hasDiscoveredApps = false
     
     private func loadSchedulerSnapshot() -> SchedulerActivitySnapshot? {
         let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("scheduler_state.json")
@@ -334,6 +337,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
         preferences      = Preferences()
         stagedPatches    = buildStagedPatches()
         managedApps      = buildManagedApps()
+        hasDiscoveredApps = discoveredAppsExist()
         updateHistory    = buildUpdateHistory()
         schedulerSnapshot = loadSchedulerSnapshot()
         updateDockBadge()

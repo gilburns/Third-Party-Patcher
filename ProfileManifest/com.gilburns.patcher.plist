@@ -13,7 +13,7 @@
 	<key>pfm_format_version</key>
 	<integer>1</integer>
 	<key>pfm_last_modified</key>
-	<date>2026-09-26T21:00:00Z</date>
+	<date>2026-10-04T12:00:00Z</date>
 	<key>pfm_platforms</key>
 	<array>
 		<string>macOS</string>
@@ -887,9 +887,9 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_app_min</key>
 			<string>1.0.0</string>
 			<key>pfm_default</key>
-			<true/>
+			<false/>
 			<key>pfm_description</key>
-			<string>When 'true', a one-time random delay is applied before the first scan after initial deployment. Spreads fleet-wide first-scan load across the 'InitialScanDelayMaxSeconds' window.</string>
+			<string>When 'true', a one-time random delay is applied before the first scan after initial deployment. Spreads fleet-wide first-scan load across the 'InitialScanDelayMaxSeconds' window. Recommended for fleet deployments; leave 'false' for single-device testing so scanning starts right away.</string>
 			<key>pfm_documentation_url</key>
 			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#phase-schedule</string>
 			<key>pfm_name</key>

@@ -211,13 +211,20 @@ struct StatusReporter {
             if let fl = state.firstLaunchDate {
                 dd["firstLaunchDate"] = iso.string(from: fl)
                 if let d = state.initialScanDelaySeconds {
-                    let elapsed = now.timeIntervalSince(fl) >= TimeInterval(d)
                     dd["delaySeconds"] = d
-                    dd["status"] = elapsed ? "completed" : "waiting"
-                    if !elapsed {
-                        let remaining = TimeInterval(d) - now.timeIntervalSince(fl)
-                        dd["remainingSeconds"] = Int(remaining)
+                    if let ended = state.initialScanDelayEndedByUserDate {
+                        dd["status"] = "endedByUser"
+                        dd["endedByUserDate"] = iso.string(from: ended)
+                    } else {
+                        let elapsed = now.timeIntervalSince(fl) >= TimeInterval(d)
+                        dd["status"] = elapsed ? "completed" : "waiting"
+                        if !elapsed {
+                            let remaining = TimeInterval(d) - now.timeIntervalSince(fl)
+                            dd["remainingSeconds"] = Int(remaining)
+                        }
                     }
+                } else {
+                    dd["status"] = "not applied (disabled at first launch)"
                 }
             } else {
                 dd["status"] = "first launch not yet recorded"
@@ -266,6 +273,9 @@ struct StatusReporter {
     private func deploymentDelayLine() -> String? {
         guard prefs.initialScanDelayEnabled, let fl = state.firstLaunchDate,
               let d = state.initialScanDelaySeconds else { return nil }
+        if let ended = state.initialScanDelayEndedByUserDate {
+            return "Initial deployment delay: ended early by user scan (\(shortDateTime(ended)))"
+        }
         let elapsed = now.timeIntervalSince(fl) >= TimeInterval(d)
         if elapsed { return "Initial deployment delay: completed" }
         let remaining = TimeInterval(d) - now.timeIntervalSince(fl)

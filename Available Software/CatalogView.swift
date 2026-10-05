@@ -217,7 +217,10 @@ struct CatalogView: View {
                 Button("Check for Updates") {
                     vm.triggerCheck()
                 }
-                .help("Check for any available updates for previously discovered apps")
+                .disabled(!vm.hasDiscoveredApps)
+                .help(vm.hasDiscoveredApps
+                      ? "Check for any available updates for previously discovered apps"
+                      : "No apps discovered yet — run Full Discovery Scan first")
             }
             if vm.preferences.showMenuScanAction {
                 Button("Full Discovery Scan") {

@@ -15,15 +15,19 @@ struct PatcherScheduler {
 
     func runCycle() {
 
-        // 1. One-time initial deployment delay.
-        guard initialDeploymentDelayElapsed() else {
+        // 1. One-time initial deployment delay. Evaluated first so the delay is
+        //    recorded in scheduler state before the menu bar app reads it.
+        let delayElapsed = initialDeploymentDelayElapsed()
+
+        // 2. User LaunchAgent management (menu bar app, notifier). Runs even during
+        //    the initial delay — it's local-only, and lets PatcherMenu show the countdown.
+        manageMenuBarApp()
+        manageNotifierApp()
+
+        guard delayElapsed else {
             Logger.log("ℹ️ Initial deployment delay has not elapsed — skipping cycle.")
             return
         }
-
-        // 2. User LaunchAgent management (menu bar app, notifier).
-        manageMenuBarApp()
-        manageNotifierApp()
 
         var state   = SchedulerState.load()
         let now     = Date()
@@ -275,13 +279,17 @@ struct PatcherScheduler {
     // MARK: - Initial deployment delay
 
     private func initialDeploymentDelayElapsed() -> Bool {
-        guard prefs.initialScanDelayEnabled else { return true }
-
         var state = SchedulerState.load()
         let now   = Date()
 
+        // First launch is recorded even when the delay is disabled, so enabling
+        // InitialScanDelayEnabled later doesn't stall devices that are already running.
         if state.firstLaunchDate == nil {
             state.firstLaunchDate = now
+            guard prefs.initialScanDelayEnabled else {
+                state.save()
+                return true
+            }
             let maxDelay = max(0, prefs.initialScanDelayMaxSeconds)
             state.initialScanDelaySeconds = maxDelay > 0 ? Int.random(in: 0...maxDelay) : 0
             state.save()
@@ -290,7 +298,9 @@ struct PatcherScheduler {
             return false
         }
 
-        guard let firstLaunch  = state.firstLaunchDate,
+        guard prefs.initialScanDelayEnabled,
+              state.initialScanDelayEndedByUserDate == nil,
+              let firstLaunch  = state.firstLaunchDate,
               let delaySeconds = state.initialScanDelaySeconds else {
             return true
         }
@@ -934,6 +944,16 @@ struct PatcherScheduler {
             state.lastScanDate  = now
             state.lastCheckDate = now
             state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
+            // A user-initiated scan ends any pending initial deployment delay — the
+            // first-scan load it exists to spread out has already happened on this device.
+            if prefs.initialScanDelayEnabled,
+               state.initialScanDelayEndedByUserDate == nil,
+               let firstLaunch  = state.firstLaunchDate,
+               let delaySeconds = state.initialScanDelaySeconds,
+               now.timeIntervalSince(firstLaunch) < TimeInterval(delaySeconds) {
+                state.initialScanDelayEndedByUserDate = now
+                Logger.log("ℹ️ Initial deployment delay ended early by user-initiated scan.")
+            }
             dirty = true
 
         case "check":
