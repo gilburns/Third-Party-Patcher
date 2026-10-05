@@ -15,6 +15,11 @@ struct AppConstants {
     static let patcherFullName = "Third Party Patcher"
     static let patcherVersion = "1.3.1"
 
+    /// Exit code `patcher scan` returns when no label files are available (e.g. the
+    /// Installomator download failed). EX_TEMPFAIL from sysexits.h — the scheduler
+    /// treats it as "scan didn't happen" and retries on the next cycle.
+    static let labelsUnavailableExitCode: Int32 = 75
+
     // MARK: - Binary paths
 
     #if DEBUG

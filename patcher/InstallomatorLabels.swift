@@ -23,7 +23,12 @@ class InstallomatorLabels {
         Task {
             do {
                 // Fetch the latest version from the web
-                let (data, _) = try await URLSession.shared.data(from: installomatorCurrentVersionURL)
+                let (data, response) = try await URLSession.shared.data(from: installomatorCurrentVersionURL)
+                if let failure = gitHubFailureDescription(response: response, data: data) {
+                    Logger.log("Failed to fetch \(installomatorCurrentVersionURL.absoluteString): \(failure)", logType: "Updates")
+                    completion(false, "Failed to fetch Installomator version: \(failure)")
+                    return
+                }
                 Logger.log("Decoding Installomator web content for current version.", logType: "Updates")
                 guard let content = String(data: data, encoding: .utf8) else {
                     Logger.log("Failed to decode Installomator web content", logType: "Updates")
@@ -89,57 +94,59 @@ class InstallomatorLabels {
 
         let tempDir = AppConstants.patcherTempFolderURL
             .appendingPathComponent("\(UUID().uuidString)")
+        let extractDir = tempDir.appendingPathComponent("extract")
 
-        if !FileManager.default.fileExists(atPath: tempDir.path) {
-            do {
-                try FileManager.default.createDirectory(atPath: tempDir.path, withIntermediateDirectories: true, attributes: nil)
-            } catch {
-                Logger.log(error.localizedDescription);
-                return
-            }
+        // Branch archive from github.com (redirects to codeload). Avoids the
+        // api.github.com branch lookup, whose unauthenticated limit of 60 requests/hour
+        // is shared by every device behind the same public IP.
+        let archiveString = "https://github.com/\(account)/\(repo)/archive/refs/heads/\(branch).tar.gz"
+        guard let archiveURL = URL(string: archiveString) else {
+            completion(false, "Invalid Installomator archive URL: \(archiveString)")
+            return
         }
 
-        let installomatorBranchURL = URL(string: "https://api.github.com/repos/\(account)/\(repo)/branches/\(branch)")!
+        do {
+            try FileManager.default.createDirectory(at: extractDir, withIntermediateDirectories: true)
+        } catch {
+            Logger.log("Failed to create temp directory: \(error.localizedDescription)", logType: "Updates")
+            completion(false, "Error: \(error.localizedDescription)")
+            return
+        }
 
         Task {
+            defer { try? FileManager.default.removeItem(at: tempDir) }
             do {
-                // Fetch the branch SHA
-                let (data, _) = try await URLSession.shared.data(from: installomatorBranchURL)
-                guard let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                      let commit = json["commit"] as? [String: Any],
-                      let sha = commit["sha"] as? String else {
-                    Logger.log("Failed to fetch branch SHA", logType: "Updates")
-                    completion(false, "Failed to fetch branch SHA")
+                // Download the tar.gz
+                let (tarGzData, response) = try await URLSession.shared.data(from: archiveURL)
+                if let failure = gitHubFailureDescription(response: response, data: tarGzData) {
+                    Logger.log("Failed to download \(archiveString): \(failure)", logType: "Updates")
+                    completion(false, "Failed to download Installomator labels: \(failure)")
                     return
                 }
-
-                Logger.verbose("SHA Value: \(sha)")
-                // Download the tar.gz
-                let installomatorURL = URL(string: "https://codeload.github.com/\(account)/\(repo)/legacy.tar.gz/\(sha)")!
                 let installomatorTarGz = tempDir.appendingPathComponent("Installomator.tar.gz")
-                let (tarGzData, _) = try await URLSession.shared.data(from: installomatorURL)
                 try tarGzData.write(to: installomatorTarGz)
 
-                // Extract the tar.gz
+                // Extract the tar.gz. --strip-components=1 removes the top-level
+                // "{repo}-{branch}/" wrapper so fragments/ lands directly in extractDir.
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-                process.arguments = ["-xzf", installomatorTarGz.path, "-C", tempDir.path]
+                process.arguments = ["-xzf", installomatorTarGz.path, "-C", extractDir.path, "--strip-components=1"]
                 try process.run()
                 process.waitUntilExit()
-
-                // Determine extracted directory
-                guard let extractedDirName = try FileManager.default.contentsOfDirectory(atPath: tempDir.path).first(where: { $0.contains(sha.prefix(7)) }) else {
-                    completion(false, "Failed to locate extracted directory")
+                guard process.terminationStatus == 0 else {
+                    completion(false, "Failed to extract Installomator archive (tar exit \(process.terminationStatus))")
                     return
                 }
 
-                let extractedDirURL = tempDir.appendingPathComponent(extractedDirName)
-
                 // Copy the labels to destination
-                let sourceDirectory = extractedDirURL
+                let sourceDirectory = extractDir
                     .appendingPathComponent("fragments")
                     .appendingPathComponent("labels")
-                
+                guard FileManager.default.fileExists(atPath: sourceDirectory.path) else {
+                    completion(false, "Installomator archive has no fragments/labels folder")
+                    return
+                }
+
                 let destinationDirectory = AppConstants.installomatorLabelsFolderURL
                     .path
 
@@ -150,7 +157,7 @@ class InstallomatorLabels {
                 try FileManager.default.copyItem(atPath: sourceDirectory.path, toPath: destinationDirectory)
 
                 // Get the Installomator.sh version
-                let installomatorShPath = extractedDirURL.appendingPathComponent("Installomator.sh")
+                let installomatorShPath = extractDir.appendingPathComponent("Installomator.sh")
                 let versionContent: String
                 if FileManager.default.fileExists(atPath: installomatorShPath.path) {
                     let shContent = try String(contentsOf: installomatorShPath, encoding: .utf8)
@@ -170,13 +177,6 @@ class InstallomatorLabels {
                     .path
 
                 try versionContent.write(toFile: versionFilePath, atomically: true, encoding: .utf8)
-                
-                do {
-                    try FileManager.default.removeItem(atPath: tempDir.path)
-//                    Logger.log("Deleted directory: \(tempDir.path)", logType: "Updates")
-                } catch {
-                    Logger.log("Failed to delete directory: \(error)", logType: "Updates")
-                }
 
                 completion(true, "Labels successfully updated to version \(versionContent)")
             } catch {

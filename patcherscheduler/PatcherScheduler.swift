@@ -81,23 +81,8 @@ struct PatcherScheduler {
         if dialogDue && networkOK { ensureSwiftDialog() }
 
         // ── Metadata sync ─────────────────────────────────────────────────────
-        // Checks the metadata repo's HEAD SHA against the stored value.
-        // Downloads the full tarball only when a new commit is detected.
         if metadataDue && networkOK {
-            if let latestSHA = fetchMetadataSHA(prefs: prefs) {
-                if latestSHA != state.lastMetadataSHA {
-                    Logger.log("ℹ️ MetadataSync: new commit …\(String(latestSHA.suffix(8))) — syncing.")
-                    writeActivePhase("metadata")
-                    runSubcommand("metadata")
-                    clearActivePhase()
-                    state.lastMetadataSHA = latestSHA
-                } else {
-                    Logger.log("ℹ️ MetadataSync: already up to date (…\(String(latestSHA.suffix(8)))).")
-                }
-            } else {
-                Logger.log("⚠️ MetadataSync: could not fetch latest SHA — will retry at next interval.")
-            }
-            state.lastMetaSyncDate = now
+            syncMetadata(state: &state, now: now)
             dirty = true
         }
 
@@ -108,18 +93,22 @@ struct PatcherScheduler {
         // Silent and read-only — no Focus check.
         if scanDue && networkOK {
             writeActivePhase("scan")
-            runSubcommand("scan")
+            let scanStatus = runSubcommandStatus("scan")
             clearActivePhase()
-            state.lastScanDate   = now
-            state.lastCheckDate  = now   // scan includes the check — reset check timer too
-            state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
-            scanRan = true
-            dirty   = true
+            if scanStatus == AppConstants.labelsUnavailableExitCode {
+                Logger.log("⚠️ Scan: no labels available — not recording scan; will retry next cycle.")
+            } else {
+                state.lastScanDate   = now
+                state.lastCheckDate  = now   // scan includes the check — reset check timer too
+                state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
+                scanRan = true
+                dirty   = true
 
-            // Piggyback log cleanup on the scan cadence (~30 days).
-            // Runs after the scan so slow log I/O doesn't delay the scan itself.
-            if prefs.logRetentionDays > 0 {
-                runSubcommand("cleanLogs")
+                // Piggyback log cleanup on the scan cadence (~30 days).
+                // Runs after the scan so slow log I/O doesn't delay the scan itself.
+                if prefs.logRetentionDays > 0 {
+                    runSubcommand("cleanLogs")
+                }
             }
         }
 
@@ -435,6 +424,31 @@ struct PatcherScheduler {
         return false
     }
 
+    /// Checks the metadata repo's HEAD SHA against the stored value and downloads the
+    /// full tarball only when a new commit is detected — or when there is no local copy
+    /// at all, which doesn't depend on the SHA lookup (api.github.com) succeeding.
+    private func syncMetadata(state: inout SchedulerState, now: Date, triggeredBy: String = "scheduled") {
+        let cacheMissing = !FileManager.default.fileExists(atPath: AppConstants.installomatorMetadataFolderURL.path)
+        let latestSHA    = fetchMetadataSHA(prefs: prefs)
+
+        if cacheMissing || (latestSHA != nil && latestSHA != state.lastMetadataSHA) {
+            if cacheMissing {
+                Logger.log("ℹ️ MetadataSync: no local copy — syncing.")
+            } else if let latestSHA {
+                Logger.log("ℹ️ MetadataSync: new commit …\(String(latestSHA.suffix(8))) — syncing.")
+            }
+            writeActivePhase("metadata", triggeredBy: triggeredBy)
+            runSubcommand("metadata")
+            clearActivePhase()
+            if let latestSHA { state.lastMetadataSHA = latestSHA }
+        } else if let latestSHA {
+            Logger.log("ℹ️ MetadataSync: already up to date (…\(String(latestSHA.suffix(8)))).")
+        } else {
+            Logger.log("⚠️ MetadataSync: could not fetch latest SHA — will retry at next interval.")
+        }
+        state.lastMetaSyncDate = now
+    }
+
     /// Hits the GitHub git refs API to retrieve the current HEAD SHA for the
     /// configured metadata branch. Returns nil if the request fails.
     private func fetchMetadataSHA(prefs: Preferences) -> String? {
@@ -450,10 +464,17 @@ struct PatcherScheduler {
 
         var sha: String?
         let semaphore = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             defer { semaphore.signal() }
-            guard error == nil,
-                  let data,
+            if let error {
+                Logger.log("⚠️ MetadataSync: SHA lookup failed — \(error.localizedDescription)")
+                return
+            }
+            if let failure = gitHubFailureDescription(response: response, data: data) {
+                Logger.log("⚠️ MetadataSync: SHA lookup failed — \(failure)")
+                return
+            }
+            guard let data,
                   let json   = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let object = json["object"] as? [String: Any],
                   let s      = object["sha"] as? String
@@ -663,6 +684,11 @@ struct PatcherScheduler {
 
     @discardableResult
     private func runSubcommand(_ subcommand: String, args: [String] = []) -> Bool {
+        runSubcommandStatus(subcommand, args: args) == 0
+    }
+
+    /// Runs a patcher subcommand and returns its exit status (-1 if it couldn't be launched).
+    private func runSubcommandStatus(_ subcommand: String, args: [String] = []) -> Int32 {
         let fullArgs = ([subcommand] + args).joined(separator: " ")
         Logger.log("▶️ Running: patcher \(fullArgs)")
         let process = Process()
@@ -673,13 +699,13 @@ struct PatcherScheduler {
             activeChildProcess = process      // expose to SIGTERM handler
             process.waitUntilExit()
             activeChildProcess = nil
-            let ok = process.terminationStatus == 0
-            Logger.log(ok ? "✅ patcher \(fullArgs) completed" : "❌ patcher \(fullArgs) exited \(process.terminationStatus)")
-            return ok
+            let status = process.terminationStatus
+            Logger.log(status == 0 ? "✅ patcher \(fullArgs) completed" : "❌ patcher \(fullArgs) exited \(status)")
+            return status
         } catch {
             activeChildProcess = nil
             Logger.log("❌ Failed to launch patcher \(fullArgs): \(error)")
-            return false
+            return -1
         }
     }
 
@@ -938,14 +964,24 @@ struct PatcherScheduler {
 
         switch phase {
         case "scan":
+            // Sync metadata first when due (always, on a fresh install) so the scan
+            // has app icons — the scheduled cycle does the same before its scan.
+            if shouldRunMetadataSync(state: state, now: now) {
+                syncMetadata(state: &state, now: now, triggeredBy: "xpc")
+            }
             writeActivePhase("scan", triggeredBy: "xpc")
-            runSubcommand("scan", args: showProgress ? ["--user-initiated"] : [])
+            let scanStatus = runSubcommandStatus("scan", args: showProgress ? ["--user-initiated"] : [])
             clearActivePhase()
-            state.lastScanDate  = now
-            state.lastCheckDate = now
-            state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
+            if scanStatus == AppConstants.labelsUnavailableExitCode {
+                Logger.log("⚠️ Scan: no labels available — not recording scan; scheduler will retry.")
+            } else {
+                state.lastScanDate  = now
+                state.lastCheckDate = now
+                state.installomatorVersionAtLastScan = loadEffectiveLabelsVersion()
+            }
             // A user-initiated scan ends any pending initial deployment delay — the
-            // first-scan load it exists to spread out has already happened on this device.
+            // user has asked for this device to start working. Applies even when the
+            // scan had no labels, so the scheduler's own retry isn't held back.
             if prefs.initialScanDelayEnabled,
                state.initialScanDelayEndedByUserDate == nil,
                let firstLaunch  = state.firstLaunchDate,
