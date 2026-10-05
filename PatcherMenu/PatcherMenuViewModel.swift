@@ -80,6 +80,12 @@ final class PatcherMenuViewModel: ObservableObject {
 
     // MARK: - Computed properties
 
+    /// True when this process was started by the PatcherMenu LaunchAgent. launchd sets
+    /// XPC_SERVICE_NAME to the job label; LaunchServices launches (Finder, `open`) do not.
+    /// Quitting a LaunchAgent copy is pointless — KeepAlive relaunches it immediately.
+    let launchedByLaunchAgent =
+        ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == AppConstants.patcherMenuLaunchAgentLabel
+
     var hasPendingPatches: Bool { !stagedPatches.isEmpty }
 
     var hasDetectedUpdates: Bool { !detectedPatches.isEmpty }

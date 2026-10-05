@@ -480,7 +480,7 @@ struct MenuStatusView: View {
 
             Spacer()
 
-            if vm.preferences.showQuitButton && !vm.preferences.showMenuBarApp {
+            if !vm.launchedByLaunchAgent {
                 Spacer()
                 Button("Quit") {
                     NSApplication.shared.terminate(nil)
