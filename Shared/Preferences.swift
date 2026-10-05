@@ -650,12 +650,6 @@ struct Preferences {
         pref("MenuDeferralCountDisplay", default: "combined")
     }
 
-    /// When true, a Quit button is shown in the menu bar popover footer.
-    /// Defaults to false.
-    var showQuitButton: Bool {
-        prefs["ShowQuitButton"] as? Bool ?? false
-    }
-
     // MARK: - Available Software UI
 
     /// Absolute path to a PNG or ICNS file used as the Available Software app icon,
