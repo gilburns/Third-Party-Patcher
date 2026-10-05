@@ -884,24 +884,7 @@ struct PatcherScheduler {
     }
 
     private func hasStagedUpdates() -> Bool {
-        let cacheURL = AppConstants.patcherCacheFolderURL
-        guard let labelDirs = try? FileManager.default.contentsOfDirectory(
-            at: cacheURL, includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return false }
-
-        for labelDir in labelDirs {
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: labelDir.path, isDirectory: &isDir),
-                  isDir.boolValue else { continue }
-            let contents = (try? FileManager.default.contentsOfDirectory(
-                at: labelDir, includingPropertiesForKeys: nil
-            )) ?? []
-            let hasStagedFile = contents.contains {
-                $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != "history.json"
-            }
-            if hasStagedFile { return true }
-        }
-        return false
+        StagedCache.labelDirectories().contains { StagedCache.stagedFile(in: $0) != nil }
     }
 
     /// Returns true when a discovered item needs updating (updateStatus == "updateRequired")
@@ -910,22 +893,9 @@ struct PatcherScheduler {
     private func hasUnstagedPendingUpdates() -> Bool {
         let fm = FileManager.default
 
-        let stagedLabels: Set<String> = {
-            guard let labelDirs = try? fm.contentsOfDirectory(
-                at: AppConstants.patcherCacheFolderURL, includingPropertiesForKeys: [.isDirectoryKey]
-            ) else { return [] }
-            return Set(labelDirs.compactMap { labelDir -> String? in
-                var isDir: ObjCBool = false
-                guard fm.fileExists(atPath: labelDir.path, isDirectory: &isDir), isDir.boolValue else { return nil }
-                let contents = (try? fm.contentsOfDirectory(
-                    at: labelDir, includingPropertiesForKeys: nil
-                )) ?? []
-                let hasStagedFile = contents.contains {
-                    $0.lastPathComponent != "metadata.json" && $0.lastPathComponent != "history.json"
-                }
-                return hasStagedFile ? labelDir.lastPathComponent : nil
-            })
-        }()
+        let stagedLabels = Set(StagedCache.labelDirectories()
+            .filter { StagedCache.stagedFile(in: $0) != nil }
+            .map(\.lastPathComponent))
 
         guard let plists = try? fm.contentsOfDirectory(
             at: AppConstants.patcherDiscoveredFolderURL, includingPropertiesForKeys: nil
@@ -1080,11 +1050,11 @@ struct PatcherScheduler {
     }
 
     private func cleanupFailedSelfServiceStage(_ label: String) {
-        let labelCacheURL = AppConstants.patcherCacheFolderURL.appendingPathComponent(label)
+        let labelCacheURL = StagedCache.labelDirectory(for: label)
         let fm = FileManager.default
 
         // If metadata.json no longer has stagedTimestamp, apply succeeded — nothing to do.
-        let metaURL = labelCacheURL.appendingPathComponent("metadata.json")
+        let metaURL = labelCacheURL.appendingPathComponent(StagedCache.metadataFileName)
         guard let data = try? Data(contentsOf: metaURL),
               var meta = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               meta["stagedTimestamp"] != nil
@@ -1093,15 +1063,12 @@ struct PatcherScheduler {
         Logger.log("⚠️ Self-service install for '\(label)' failed — cleaning up staged files.")
 
         // Delete staged files (anything that isn't metadata.json or history.json).
-        if let contents = try? fm.contentsOfDirectory(at: labelCacheURL, includingPropertiesForKeys: nil) {
-            for file in contents where file.lastPathComponent != "metadata.json"
-                                   && file.lastPathComponent != "history.json" {
-                do {
-                    try fm.removeItem(at: file)
-                    Logger.log("🗑️ Removed staged file: \(file.lastPathComponent)")
-                } catch {
-                    Logger.log("❌ Failed to remove staged file \(file.lastPathComponent): \(error)")
-                }
+        for file in StagedCache.stagedFiles(in: labelCacheURL) {
+            do {
+                try fm.removeItem(at: file)
+                Logger.log("🗑️ Removed staged file: \(file.lastPathComponent)")
+            } catch {
+                Logger.log("❌ Failed to remove staged file \(file.lastPathComponent): \(error)")
             }
         }
 

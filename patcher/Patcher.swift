@@ -248,10 +248,16 @@ extension Patcher {
 
             if let dialog {
                 dialog.resetIcons()
-                let staged = countPendingUpdates()
-                let summary = staged == 0
-                    ? "No more items to download."
-                    : "\(staged) update\(staged == 1 ? "" : "s") ready to install."
+                let ready = StagedCache.entries().count
+                let remaining = countPendingUpdates()
+                var parts: [String] = []
+                if ready > 0 {
+                    parts.append("\(ready) update\(ready == 1 ? "" : "s") ready to install.")
+                }
+                if remaining > 0 {
+                    parts.append("\(remaining) update\(remaining == 1 ? "" : "s") still waiting to download.")
+                }
+                let summary = parts.isEmpty ? "No more items to download." : parts.joined(separator: " ")
                 dialog.update(message: summary)
                 dialog.updateProgress("Complete")
                 Thread.sleep(forTimeInterval: 5.0)
