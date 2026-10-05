@@ -267,7 +267,9 @@ func countStageableUpdates() -> Int {
 }
 
 // MARK: - Start Scanning
-func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
+/// Returns false when no label files were available, so nothing was scanned.
+@discardableResult
+func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) -> Bool {
     let scanStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔍 Scan started at \(iso.string(from: scanStart))")
@@ -308,7 +310,7 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     do {
         guard !shFiles.isEmpty else {
             Logger.log("❌ No label files found — nothing to scan. Add managed labels or enable Installomator labels.")
-            return
+            return false
         }
 
         let scriptPath = ZshScriptRunner.writeScriptToFile(AppConstants.processLabelZsh)!.path
@@ -413,6 +415,7 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) {
     } catch {
         Logger.log("Error accessing folder: \(error)")
     }
+    return true
 }
 
 // MARK: - Scan Single Label (used by EnsureTool)

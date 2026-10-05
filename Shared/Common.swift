@@ -50,6 +50,32 @@ func discoveredAppsExist() -> Bool {
     return plists.contains { $0.pathExtension == "plist" }
 }
 
+/// Describes a failed GitHub HTTP response for logging: status code, GitHub's JSON
+/// `message` when present, and API rate-limit state when the headers are present.
+/// Returns nil for 2xx responses.
+func gitHubFailureDescription(response: URLResponse?, data: Data?) -> String? {
+    guard let http = response as? HTTPURLResponse else { return "no HTTP response" }
+    guard !(200..<300).contains(http.statusCode) else { return nil }
+
+    var parts = ["HTTP \(http.statusCode)"]
+    if let data,
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let message = json["message"] as? String {
+        parts.append(message)
+    }
+    if let remaining = http.value(forHTTPHeaderField: "X-RateLimit-Remaining") {
+        var rateLimit = "rate limit remaining \(remaining)"
+        if let reset = http.value(forHTTPHeaderField: "X-RateLimit-Reset"),
+           let epoch = TimeInterval(reset) {
+            let resetTime = DateFormatter.localizedString(
+                from: Date(timeIntervalSince1970: epoch), dateStyle: .none, timeStyle: .short)
+            rateLimit += ", resets \(resetTime)"
+        }
+        parts.append(rateLimit)
+    }
+    return parts.joined(separator: " — ")
+}
+
 func resolveIconURL(for label: String) -> URL? {
     let preferences = Preferences.init()
     // 1. Admin-managed icons (highest priority — intentional overrides).

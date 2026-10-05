@@ -59,13 +59,17 @@ extension Patcher {
                 total:   total
             ) : nil
 
-            scanAppsForUpdates { current, total, labelName in
-                dialog?.setProgress(current, of: total, label: "Scanning \(labelName)…")
+            let labelsAvailable = scanAppsForUpdates { current, total, labelName in
+                dialog?.setProgress(current, of: total, label: "Scanning \(labelName)…",
+                                    icon: resolveLabelIcon(label: labelName))
             }
 
             if let dialog {
+                dialog.resetIcons()
                 let updateCount = countPendingUpdates()
-                let summary = updateCount == 0
+                let summary = !labelsAvailable
+                    ? "Unable to scan — application labels could not be downloaded. The scan will retry automatically."
+                    : updateCount == 0
                     ? "No updates available."
                     : "\(updateCount) update\(updateCount == 1 ? "" : "s") available to download."
                 dialog.update(message: summary)
@@ -74,6 +78,12 @@ extension Patcher {
             }
             dialog?.close()
             cleanupAfterRun()
+
+            // Tell the scheduler this scan didn't happen, so it retries next cycle
+            // instead of waiting out ScanIntervalDays.
+            if !labelsAvailable {
+                throw ExitCode(AppConstants.labelsUnavailableExitCode)
+            }
         }
     }
 }
@@ -136,8 +146,10 @@ extension Patcher {
                             }
                         }
                     }
-                    let metaIcon = resolveIconURL(for: (labelId))
-                    return metaIcon?.path
+                    // May be a remote raw.githubusercontent.com URL before the first
+                    // metadata sync — swiftDialog accepts URLs, so pass it whole.
+                    guard let metaIcon = resolveIconURL(for: labelId) else { return nil }
+                    return metaIcon.isFileURL ? metaIcon.path : metaIcon.absoluteString
                 }()
                 dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)** for updates…", icon: iconPath)
             }
