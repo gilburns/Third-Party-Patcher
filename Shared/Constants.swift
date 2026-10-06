@@ -13,7 +13,7 @@ struct AppConstants {
     static let randomGUID = UUID().uuidString
 
     static let patcherFullName = "Third Party Patcher"
-    static let patcherVersion = "1.3.1"
+    static let patcherVersion = "1.5.0"
 
     /// Exit code `patcher scan` returns when no label files are available (e.g. the
     /// Installomator download failed). EX_TEMPFAIL from sysexits.h — the scheduler
