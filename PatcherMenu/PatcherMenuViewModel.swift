@@ -5,7 +5,7 @@
 //  Created by Gil Burns on 4/22/26.
 //
 
-import Foundation
+import AppKit
 import Combine
 
 @MainActor
@@ -70,12 +70,14 @@ final class PatcherMenuViewModel: ObservableObject {
         let displayName: String
         let newVersion: String
         let stagedDate: Date?
+        let installPaths: [String]
     }
 
     struct DetectedPatch: Identifiable {
         let id: String          // Installomator label key
         let displayName: String
         let availableVersion: String?
+        let installPaths: [String]
     }
 
     // MARK: - Computed properties
@@ -351,7 +353,8 @@ final class PatcherMenuViewModel: ObservableObject {
                 id: entry.label,
                 displayName: discoveredDisplayName(for: entry.label) ?? entry.label,
                 newVersion: entry.appNewVersion,
-                stagedDate: entry.stagedDate
+                stagedDate: entry.stagedDate,
+                installPaths: discoveredInstallPaths(for: entry.label)
             )
         }
 
@@ -408,7 +411,8 @@ final class PatcherMenuViewModel: ObservableObject {
 
             let version = dict["appNewVersion"] as? String
             let name = dict["name"] as? String ?? label
-            patches.append(DetectedPatch(id: label, displayName: name, availableVersion: version))
+            patches.append(DetectedPatch(id: label, displayName: name, availableVersion: version,
+                                         installPaths: installPaths(from: dict)))
         }
         return patches.sorted {
             $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
@@ -459,6 +463,49 @@ final class PatcherMenuViewModel: ObservableObject {
               let name = dict["name"] as? String, !name.isEmpty
         else { return nil }
         return name
+    }
+
+    private func discoveredInstallPaths(for label: String) -> [String] {
+        let url = AppConstants.patcherDiscoveredFolderURL
+            .appendingPathComponent("\(label).plist")
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return [] }
+        return installPaths(from: dict)
+    }
+
+    /// The recorded install paths the apply phase would actually patch. Mirrors
+    /// resolveInstallTargets: /Users/ copies are skipped when IgnoreAppsInHomeFolder is on.
+    /// (With ConvertAppsInHomeFolder the /Users/ copy is what gets replaced, so it stays.)
+    private func installPaths(from dict: [String: Any]) -> [String] {
+        let foundInstalls = dict["foundInstalls"] as? [[String: Any]] ?? []
+        let ignoreAppsInHomeFolder = preferences.ignoreAppsInHomeFolder
+        return foundInstalls
+            .compactMap { $0["path"] as? String }
+            .filter { !$0.isEmpty && !(ignoreAppsInHomeFolder && $0.hasPrefix("/Users/")) }
+    }
+
+    // MARK: - Finder reveal
+
+    /// Selects the item's installed copies in Finder, skipping any that no longer exist.
+    /// Returns false when there was nothing to reveal.
+    @discardableResult
+    func revealInFinder(_ paths: [String]) -> Bool {
+        let urls = paths
+            .filter { FileManager.default.fileExists(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
+        guard !urls.isEmpty else { return false }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+        return true
+    }
+
+    /// Opens the label's cache folder in Finder (staged installer, metadata.json, history.json).
+    /// Returns false when the folder doesn't exist.
+    @discardableResult
+    func openCacheFolder(for label: String) -> Bool {
+        let labelDir = StagedCache.labelDirectory(for: label)
+        guard FileManager.default.fileExists(atPath: labelDir.path) else { return false }
+        return NSWorkspace.shared.open(labelDir)
     }
 
 }
