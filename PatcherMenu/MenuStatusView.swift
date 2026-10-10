@@ -320,6 +320,10 @@ struct MenuStatusView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+                    .revealOnModifierClick(
+                        app: { revealInFinder(patch.installPaths) },
+                        cache: { openCacheFolder(patch.id) }
+                    )
                 }
             }
         }
@@ -353,7 +357,25 @@ struct MenuStatusView: View {
                             .lineLimit(1)
                     }
                 }
+                .revealOnModifierClick(
+                    app: { revealInFinder(patch.installPaths) },
+                    cache: { openCacheFolder(patch.id) }
+                )
             }
+        }
+    }
+
+    /// Hidden admin diagnostics on pending items: Command-Option-click reveals the installed
+    /// copies apply would patch; Command-Option-Shift-click opens the label's cache folder.
+    private func revealInFinder(_ paths: [String]) {
+        if vm.revealInFinder(paths) {
+            dismissWindow()
+        }
+    }
+
+    private func openCacheFolder(_ label: String) {
+        if vm.openCacheFolder(for: label) {
+            dismissWindow()
         }
     }
 
@@ -584,5 +606,21 @@ private struct MenuSectionHeader: View {
             .foregroundStyle(.tertiary)
             .textCase(.uppercase)
             .padding(.bottom, 2)
+    }
+}
+
+private extension View {
+    /// Command-Option-click runs `app`, Command-Option-Shift-click runs `cache`. The modifier set
+    /// must match exactly; plain clicks and other combinations do nothing.
+    func revealOnModifierClick(app: @escaping () -> Void, cache: @escaping () -> Void) -> some View {
+        contentShape(Rectangle())
+            .onTapGesture {
+                let flags = NSEvent.modifierFlags.intersection([.command, .option, .shift, .control])
+                switch flags {
+                case [.command, .option]:         app()
+                case [.command, .option, .shift]: cache()
+                default:                          break
+                }
+            }
     }
 }
