@@ -32,6 +32,10 @@ struct LabelDetailReporter {
         lines.append(" History: \(label)")
         lines.append(" First discovered: \(shortDate(h.firstDiscoveredDate))  v\(h.firstDiscoveredVersion)")
         lines.append(" Total events: \(h.events.count)")
+        if let delay = delayState(h) {
+            let eligible = delay.eligibleDate.map { "eligible \(shortDateTime($0)) (\(delay.daysRemaining)d)" } ?? "eligible date unknown"
+            lines.append(" Delayed: \(delay.installedVersion) → \(delay.availableVersion), \(eligible)")
+        }
         lines.append(String(repeating: "═", count: w))
         lines.append(" \(col("Date", 16))  \(col("Event", 23))  Details")
         lines.append(String(repeating: "─", count: w))
@@ -57,14 +61,32 @@ struct LabelDetailReporter {
             if let v = event.blockingProcessName { d["blockingProcessName"] = v }
             return d
         }
-        let out: [String: Any] = [
+        var out: [String: Any] = [
             "label":                  label,
             "firstDiscoveredDate":    iso.string(from: h.firstDiscoveredDate),
             "firstDiscoveredVersion": h.firstDiscoveredVersion,
             "events":                 events
         ]
+        if let delay = delayState(h) {
+            var d: [String: Any] = ["availableVersion": delay.availableVersion]
+            if let date = delay.versionFirstSeen { d["versionFirstSeen"] = iso.string(from: date) }
+            if let date = delay.eligibleDate {
+                d["eligibleDate"]  = iso.string(from: date)
+                d["daysRemaining"] = delay.daysRemaining
+            }
+            out["delayed"] = d
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]) else { return "{}" }
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    /// The label's current update-delay hold, read from its discovered plist.
+    private func delayState(_ h: LabelHistory) -> DelayedItem? {
+        let url = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+        guard let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        else { return nil }
+        return delayedItem(label: label, plist: plist, history: h, now: Date())
     }
 
     private func buildCSV(_ h: LabelHistory) -> String {

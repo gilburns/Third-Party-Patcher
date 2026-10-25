@@ -46,6 +46,7 @@ struct SummaryReporter {
         lines.append(stat("Discovered labels:",        ctx.discoveredPlists.count))
         lines.append(stat("  Up to date:",             sc["upToDate"]      ?? 0))
         lines.append(stat("  Update required:",        sc["updateRequired"] ?? 0))
+        lines.append(stat("  Delayed:",                sc["delayed"]        ?? 0))
         lines.append(stat("  Unknown status:",         sc["unknown"]        ?? 0))
         lines.append(stat("  Would downgrade:",        sc["wouldDowngrade"] ?? 0))
         lines.append(String(repeating: "─", count: w))
@@ -107,6 +108,7 @@ struct SummaryReporter {
             "totalDiscovered":    ctx.discoveredPlists.count,
             "upToDate":           sc["upToDate"]      ?? 0,
             "updateRequired":     sc["updateRequired"] ?? 0,
+            "delayed":            sc["delayed"]        ?? 0,
             "unknownStatus":      sc["unknown"]        ?? 0,
             "wouldDowngrade":     sc["wouldDowngrade"] ?? 0,
             "labelsEverApplied":  everApplied,
@@ -142,6 +144,7 @@ struct SummaryReporter {
             ["totalDiscovered",    "\(ctx.discoveredPlists.count)"],
             ["upToDate",           "\(sc["upToDate"]      ?? 0)"],
             ["updateRequired",     "\(sc["updateRequired"] ?? 0)"],
+            ["delayed",            "\(sc["delayed"]        ?? 0)"],
             ["unknownStatus",      "\(sc["unknown"]        ?? 0)"],
             ["wouldDowngrade",     "\(sc["wouldDowngrade"] ?? 0)"],
             ["labelsEverApplied",  "\(everApplied)"],

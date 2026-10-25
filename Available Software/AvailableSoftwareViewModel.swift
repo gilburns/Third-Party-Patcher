@@ -409,6 +409,9 @@ final class AvailableSoftwareViewModel: ObservableObject {
             if allUserSpace && ignoreUserSpace {
                 // IgnoreAppsInHomeFolder = true — patcher will never update this app.
                 status = "userSpace"
+            } else if dict["updateStatus"] as? String == "delayed" {
+                // Held back by UpdateDelayDays — not surfaced to the user until the delay ends.
+                status = "upToDate"
             } else {
                 status = dict["updateStatus"] as? String ?? "unknown"
             }

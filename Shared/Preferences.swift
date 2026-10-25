@@ -356,6 +356,35 @@ struct Preferences {
         prefs["DeadlineDaysHard"] as? Int ?? 10
     }
 
+    /// Number of days a newly released version must remain the newest available version
+    /// before it is staged and applied. A newer release during the wait restarts the clock.
+    /// 0 means no delay. Defaults to 0. Per-label values can be set with `UpdateDelayOverrides`.
+    var updateDelayDays: Int {
+        max(0, prefs["UpdateDelayDays"] as? Int ?? 0)
+    }
+
+    /// Space-separated list of `label:days` pairs that replace `UpdateDelayDays` for matching labels
+    /// (e.g. `"googlechrome:0 firefox:0 zoom*:7"`). Supports `*` and `?` wildcards in the label part.
+    /// An exact label match wins over a wildcard match; otherwise the first matching pattern wins.
+    /// Malformed entries are ignored.
+    var updateDelayOverrides: [(pattern: String, days: Int)] {
+        guard let value = prefs["UpdateDelayOverrides"] as? String else { return [] }
+        return value.split(whereSeparator: \.isWhitespace).compactMap { token in
+            let parts = token.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 2, !parts[0].isEmpty,
+                  let days = Int(parts[1]), days >= 0 else { return nil }
+            return (pattern: String(parts[0]), days: days)
+        }
+    }
+
+    /// Maximum number of days an update can be held by the update delay, counted from when the
+    /// installed version first became out of date. Once reached, the newest version is staged and
+    /// applied even if it was only just released, so frequently-released apps still get patched.
+    /// 0 means no maximum. Defaults to 0.
+    var updateDelayMaxDays: Int {
+        max(0, prefs["UpdateDelayMaxDays"] as? Int ?? 0)
+    }
+
     /// When false, Focus / DND and display assertions are never checked. Defaults to true.
     var focusCheckEnabled: Bool {
         prefs["FocusCheckEnabled"] as? Bool ?? true

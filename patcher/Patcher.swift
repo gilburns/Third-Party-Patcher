@@ -641,7 +641,8 @@ extension Patcher {
             Logger.log("🔧 Ensuring '\(label)' is current…")
 
             writeEnsureStatus("Scanning…")
-            guard scanSingleLabel(label) else {
+            // Self-service request — install the current version now, ignoring UpdateDelayDays.
+            guard scanSingleLabel(label, bypassUpdateDelay: true) else {
                 Logger.log("❌ ensure: scan failed for '\(label)' — aborting.")
                 cleanupAfterRun()
                 return

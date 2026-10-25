@@ -9,6 +9,7 @@
 //    patcherreport recent [--days N]         Labels with activity in last N days (default 30)
 //    patcherreport label <name>              Full chronological history for one label
 //    patcherreport pending                   Labels staged but not yet applied
+//    patcherreport delayed                   Updates held back by the update delay
 //    patcherreport never-updated             Labels discovered but never applied
 //    patcherreport broken                    Broken scan and stage labels
 //    patcherreport deferrals [--days N]      Dialog interaction history (deferrals, blocking-process)
@@ -55,6 +56,9 @@ case "label":
 case "pending":
     PendingReporter(format: outputFormat).run(to: outputPath)
 
+case "delayed":
+    DelayedReporter(format: outputFormat).run(to: outputPath)
+
 case "never-updated":
     NeverUpdatedReporter(format: outputFormat).run(to: outputPath)
 
@@ -93,18 +97,20 @@ func printUsage() {
       recent [--days N]         Labels with activity in the last N days (default: 30)
       label <name>              Full chronological history for one label
       pending                   Labels staged but not yet applied
+      delayed                   Updates held back by the update delay (UpdateDelayDays)
       never-updated             Labels discovered but never applied
       broken                    Broken scan and stage labels
       deferrals [--days N]      Dialog interaction history: deferrals, blocking-process outcomes
       get <key> [--from src]    Print one scalar value from a report's JSON payload
 
     'get' options:
-      --from <src>              summary (default), pending, deferrals, broken, deadline
+      --from <src>              summary (default), pending, delayed, deferrals, broken, deadline
       --days N                  History window when --from is 'deferrals'
 
       Examples:
         patcherreport get updateRequired
         patcherreport get labelsPending
+        patcherreport get labelsDelayed
         patcherreport get deadline.daysUntilHardDeadline
         patcherreport get lastApply.lastRun
         patcherreport get totals.deferrals --from deferrals --days 30
