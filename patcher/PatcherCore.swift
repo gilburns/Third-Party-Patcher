@@ -2529,6 +2529,7 @@ private func appendCacheInstallTimestamp(label: String, timestamp: String, label
 
 func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
                              bypassIgnoreHomeFolder: Bool = false,
+                             bypassUpdateDelay: Bool = false,
                              labelFilter: String? = nil,
                              onDownloadStart: ((Int, Int, String, String) -> Void)? = nil,
                              onDownloadComplete: ((Int, Int) -> Void)? = nil) {
@@ -2614,7 +2615,7 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
             }
 
             guard let plistData = try? Data(contentsOf: plistURL),
-                  let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] else {
+                  var plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] else {
                 Logger.log("⚠️ Could not read plist for \(label)")
                 continue
             }
@@ -2655,7 +2656,7 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
                 }
             }
 
-            let appNewVersion = plist["appNewVersion"] as? String ?? ""
+            var appNewVersion = plist["appNewVersion"] as? String ?? ""
 
             // Skip labels whose last-attempted install version was abandoned after repeated failures.
             // If a newer version is now available, clear the broken state and allow staging to proceed.
@@ -2683,8 +2684,8 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
                 }
             }
 
-            guard let downloadURLString = plist["downloadURL"] as? String, !downloadURLString.isEmpty,
-                  let downloadURL = URL(string: downloadURLString) else {
+            guard var downloadURLString = plist["downloadURL"] as? String, !downloadURLString.isEmpty,
+                  var downloadURL = URL(string: downloadURLString) else {
                 Logger.log("--------------------------------------------------")
                 Logger.log("⚠️ Invalid or missing downloadURL for \(label)")
                 failedCount += 1
@@ -2736,21 +2737,67 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
                 continue
             }
 
-            let fileName = resolveDownloadFilename(from: downloadURL, label: label, type: type)
+            var fileName = resolveDownloadFilename(from: downloadURL, label: label, type: type)
             Logger.log("   File: \(fileName)")
-            let destinationURL = labelCacheURL.appendingPathComponent(fileName)
+            var destinationURL = labelCacheURL.appendingPathComponent(fileName)
 
-            let curlOptions = plist["curlOptions"] as? String
+            var curlOptions = plist["curlOptions"] as? String
             if let curlOptions, !curlOptions.isEmpty {
                 Logger.log("   curlOptions: \(curlOptions)")
             }
 
             // Download
             Logger.log("⬇️ Downloading \(fileName)...")
-            let downloadOK = downloadFile(from: downloadURL, to: destinationURL, bandwidthLimit: bandwidthLimit, curlOptions: curlOptions)
+            var downloadResult = downloadFile(from: downloadURL, to: destinationURL, bandwidthLimit: bandwidthLimit, curlOptions: curlOptions)
+
+            // A 401/403/410 usually means a signed/expiring downloadURL lapsed between the check and
+            // this stage (display assertion held off staging, or check/stage intervals far apart).
+            // Re-run the label once for a fresh URL and retry before counting a failure.
+            if case .httpError(let status) = downloadResult, [401, 403, 410].contains(status) {
+                Logger.log("🔄 HTTP \(status) for \(label) — re-running label to refresh downloadURL")
+                let wasInstalled = !(plist["installedVersion"] as? String ?? "").isEmpty
+                if let refreshed = refreshDiscoveredPlist(label: label, forceInstall: !wasInstalled,
+                                                          bypassUpdateDelay: bypassUpdateDelay) {
+                    let refreshedStatus = refreshed["updateStatus"] as? String ?? ""
+                    let refreshedURLString = refreshed["downloadURL"] as? String ?? ""
+                    if refreshedStatus != UpdateStatus.updateRequired.rawValue && refreshedStatus != UpdateStatus.unknown.rawValue {
+                        Logger.log("ℹ️ \(label) is now '\(refreshedStatus)' after refresh — not retrying")
+                        onDownloadComplete?(stagingCount, stageTotal)
+                        skippedCount += 1
+                        continue
+                    } else if refreshed["type"] as? String != type || refreshed["expectedTeamID"] as? String != expectedTeamID {
+                        Logger.log("ℹ️ \(label) type or Team ID changed after refresh — will stage on next run")
+                        onDownloadComplete?(stagingCount, stageTotal)
+                        skippedCount += 1
+                        continue
+                    } else if refreshedURLString == downloadURLString {
+                        Logger.log("⚠️ Refresh returned the same downloadURL for \(label) — not retrying")
+                    } else if let refreshedURL = URL(string: refreshedURLString) {
+                        plist = refreshed
+                        appNewVersion = refreshed["appNewVersion"] as? String ?? ""
+                        downloadURLString = refreshedURLString
+                        downloadURL = refreshedURL
+                        curlOptions = refreshed["curlOptions"] as? String
+                        fileName = resolveDownloadFilename(from: downloadURL, label: label, type: type)
+                        destinationURL = labelCacheURL.appendingPathComponent(fileName)
+                        Logger.log("   Refreshed URL: \(downloadURLString)")
+                        Logger.log("⬇️ Retrying download of \(fileName)...")
+                        downloadResult = downloadFile(from: downloadURL, to: destinationURL, bandwidthLimit: bandwidthLimit, curlOptions: curlOptions)
+                    }
+                } else {
+                    Logger.log("⚠️ Label refresh failed for \(label) — not retrying")
+                }
+            }
+
             onDownloadComplete?(stagingCount, stageTotal)   // advance progress bar regardless of outcome
-            guard downloadOK else {
-                Logger.log("❌ Download failed for \(label)")
+            guard case .success = downloadResult else {
+                let reason: String
+                if case .httpError(let status) = downloadResult {
+                    reason = "Download failed (HTTP \(status))"
+                } else {
+                    reason = "Download failed"
+                }
+                Logger.log("❌ \(reason) for \(label)")
                 failedCount += 1
                 let attempts = (stageFailedAttempts[label] ?? 0) + 1
                 stageFailedAttempts[label] = attempts
@@ -2758,7 +2805,7 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
                 if attempts >= prefs.webhookStageFailureThreshold {
                     let displayName = plist["name"] as? String ?? label
                     appendWebhookStageFailure(label: label, displayName: displayName,
-                                              reason: "Download failed", consecutiveFailures: attempts)
+                                              reason: reason, consecutiveFailures: attempts)
                 }
                 if attempts >= failThreshold {
                     Logger.log("🚫 \(label) reached failure threshold — marking as stage-broken")
@@ -2897,7 +2944,14 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
     }
 }
 
-private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: String? = nil, curlOptions: String? = nil) -> Bool {
+private enum DownloadResult {
+    case success
+    /// Server answered with a non-2xx status (after redirects); no file is left behind.
+    case httpError(Int)
+    case failed
+}
+
+private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: String? = nil, curlOptions: String? = nil) -> DownloadResult {
     // Remove any stale file at the destination before downloading
     try? FileManager.default.removeItem(at: destination)
 
@@ -2907,29 +2961,38 @@ private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: St
     }
 
     let semaphore = DispatchSemaphore(value: 0)
-    var success = false
+    var result = DownloadResult.failed
 
-    URLSession.shared.downloadTask(with: url) { tempURL, _, error in
+    URLSession.shared.downloadTask(with: url) { tempURL, response, error in
         defer { semaphore.signal() }
         if let error {
             Logger.log("❌ Download error: \(error.localizedDescription)")
             return
         }
+        // URLSession treats an error page as a successful download — check the status explicitly.
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            Logger.log("❌ Download error: HTTP \(http.statusCode)")
+            result = .httpError(http.statusCode)
+            return
+        }
         guard let tempURL else { return }
         do {
             try FileManager.default.moveItem(at: tempURL, to: destination)
-            success = true
+            result = .success
         } catch {
             Logger.log("❌ Failed to move downloaded file: \(error)")
         }
     }.resume()
 
     semaphore.wait()
-    return success
+    return result
 }
 
-private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate: String?, curlOptions: String?) -> Bool {
-    var args: [String] = ["-L", "-o", destination.path, "--silent", "--show-error"]
+private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate: String?, curlOptions: String?) -> DownloadResult {
+    // --fail makes HTTP >= 400 a non-zero exit instead of saving the error page;
+    // --write-out reports the final status (after redirects) on stdout.
+    var args: [String] = ["-L", "-o", destination.path, "--silent", "--show-error",
+                          "--fail", "--write-out", "%{http_code}"]
 
     if let limitRate {
         args += ["--limit-rate", limitRate]
@@ -2944,7 +3007,8 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
     process.arguments = args
-    process.standardOutput = Pipe()
+    let outPipe = Pipe()
+    process.standardOutput = outPipe
     let errPipe = Pipe()
     process.standardError = errPipe
     do {
@@ -2953,15 +3017,39 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
     } catch {
         Logger.log("❌ curl launch error: \(error)")
         try? FileManager.default.removeItem(at: destination)
-        return false
+        return .failed
     }
+    let httpStatus = Int(String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
     guard process.terminationStatus == 0 else {
         let msg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         Logger.log("❌ curl failed (exit \(process.terminationStatus)): \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
         try? FileManager.default.removeItem(at: destination)
-        return false
+        return httpStatus >= 400 ? .httpError(httpStatus) : .failed
     }
-    return FileManager.default.fileExists(atPath: destination.path)
+    return FileManager.default.fileExists(atPath: destination.path) ? .success : .failed
+}
+
+/// Re-runs a label's script during staging to get a fresh downloadURL, updating the
+/// discovered plist through processScriptData exactly as a check would.
+/// Returns the refreshed plist, or nil if the label could not be re-run.
+private func refreshDiscoveredPlist(label: String, forceInstall: Bool, bypassUpdateDelay: Bool) -> [String: Any]? {
+    guard let labelFileURL = resolveLabel(name: label),
+          let scriptPath = ZshScriptRunner.writeScriptToFile(AppConstants.processLabelZsh)?.path,
+          let output = ZshScriptRunner.runScript(at: scriptPath, arguments: [labelFileURL.path]),
+          let jsonDict = parseScriptOutput(output),
+          validateLabelRequiredKeys(jsonDict, label: label) else {
+        return nil
+    }
+
+    processScriptData(jsonDict, forceInstall: forceInstall, bypassUpdateDelay: bypassUpdateDelay)
+
+    let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")
+    guard let data = try? Data(contentsOf: plistURL),
+          let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
+        return nil
+    }
+    return plist
 }
 
 /// Parses a curl options string into Process arguments.
