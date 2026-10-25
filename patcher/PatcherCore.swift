@@ -489,7 +489,7 @@ private func lightScanDetectInstall(plist: [String: Any], label: String) -> Stri
 /// Does NOT update scan-phase config.json stats or touch the broken-label list.
 /// Returns true if the label was found, run, and processed without error.
 @discardableResult
-func scanSingleLabel(_ labelName: String) -> Bool {
+func scanSingleLabel(_ labelName: String, bypassUpdateDelay: Bool = false) -> Bool {
     guard let labelFileURL = resolveLabel(name: labelName) else {
         Logger.log("❌ scanSingleLabel: no label file found for '\(labelName)'")
         return false
@@ -513,7 +513,7 @@ func scanSingleLabel(_ labelName: String) -> Bool {
         return false
     }
 
-    processScriptData(jsonDict, forceInstall: true)
+    processScriptData(jsonDict, forceInstall: true, bypassUpdateDelay: bypassUpdateDelay)
     return true
 }
 
@@ -834,6 +834,8 @@ func parseScriptOutput(_ output: String) -> [String: Any]? {
 
 enum UpdateStatus: String {
     case updateRequired
+    /// Newer version available but held back by UpdateDelayDays — not staged or applied yet.
+    case delayed
     case upToDate
     case wouldDowngrade
     case unknown
@@ -859,7 +861,7 @@ func validateLabelRequiredKeys(_ jsonDict: [String: Any], label: String) -> Bool
 }
 
 
-func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
+func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false, bypassUpdateDelay: Bool = false) {
     // Process the JSON data immediately after each script runs
     if let label = jsonDict["label"] as? String,
        let name = jsonDict["name"] as? String,
@@ -976,7 +978,7 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
             return
         }
 
-        let updateStatus: UpdateStatus
+        var updateStatus: UpdateStatus
         if appNewVersion.isEmpty {
             updateStatus = .unknown
         } else {
@@ -995,10 +997,23 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
             }
         }
 
+        var delayEligibleDate: Date? = nil
         switch updateStatus {
         case .updateRequired:
             Logger.log("⬆️ Update required: \(installedVersion) → \(appNewVersion)")
             recordUpdateFoundIfNeeded(label: label, installedVersion: installedVersion, availableVersion: appNewVersion, date: Date())
+            if !bypassUpdateDelay,
+               let hold = UpdateDelay.hold(label: label, installedVersion: installedVersion,
+                                           availableVersion: appNewVersion,
+                                           history: LabelHistory.load(label: label),
+                                           prefs: Preferences()) {
+                Logger.log("⏳ Update delayed: \(appNewVersion) first seen \(ISO8601DateFormatter().string(from: hold.versionFirstSeen)) — eligible \(ISO8601DateFormatter().string(from: hold.eligibleDate)) (\(hold.delayDays)-day delay)")
+                updateStatus = .delayed
+                delayEligibleDate = hold.eligibleDate
+                removeStagedInstallFileIfPresent(label: label)
+            }
+        case .delayed:
+            break   // only assigned above
         case .upToDate:
             Logger.log("👍 Up to date: \(installedVersion)")
             discardSupersededStagedUpdate(label: label, installedVersion: installedVersion)
@@ -1011,6 +1026,9 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false) {
 
         var cleanDict = jsonDict
         cleanDict["appNewVersion"] = appNewVersion
+        if let delayEligibleDate {
+            cleanDict["delayEligibleDate"] = delayEligibleDate
+        }
         writeDiscoveredPlist(label: label, jsonDict: cleanDict, installedVersion: installedVersion, updateStatus: updateStatus, foundInstalls: foundInstalls)
     } else {
         Logger.log("⚠️ Missing expected keys in JSON output")

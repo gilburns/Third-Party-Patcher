@@ -118,6 +118,7 @@ struct UpdateStatusTests {
 
     @Test func rawValuesRoundTrip() {
         #expect(UpdateStatus(rawValue: "updateRequired") == .updateRequired)
+        #expect(UpdateStatus(rawValue: "delayed")        == .delayed)
         #expect(UpdateStatus(rawValue: "upToDate")       == .upToDate)
         #expect(UpdateStatus(rawValue: "wouldDowngrade") == .wouldDowngrade)
         #expect(UpdateStatus(rawValue: "unknown")        == .unknown)
@@ -125,6 +126,105 @@ struct UpdateStatusTests {
 
     @Test func invalidRawValueReturnsNil() {
         #expect(UpdateStatus(rawValue: "bogus") == nil)
+    }
+}
+
+
+// MARK: - UpdateDelay
+
+struct UpdateDelayTests {
+
+    private let day: TimeInterval = 86_400
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func history(_ found: [(installed: String, available: String, daysAgo: Double)]) -> LabelHistory {
+        let events = found.map {
+            LabelHistoryEvent.updateFound(date: now.addingTimeInterval(-$0.daysAgo * day),
+                                          installedVersion: $0.installed,
+                                          availableVersion: $0.available)
+        }
+        return LabelHistory(firstDiscoveredDate: now.addingTimeInterval(-100 * day),
+                            firstDiscoveredVersion: "1.0", events: events)
+    }
+
+    private func hold(_ prefs: [String: Any], label: String = "zoom", installed: String = "1.0",
+                      available: String, history h: LabelHistory?) -> UpdateDelay.Hold? {
+        UpdateDelay.hold(label: label, installedVersion: installed, availableVersion: available,
+                         history: h, prefs: Preferences(testPrefs: prefs), now: now)
+    }
+
+    @Test func noDelayByDefault() {
+        #expect(hold([:], available: "2.0", history: history([("1.0", "2.0", 0)])) == nil)
+    }
+
+    @Test func holdsNewVersionUntilDelayElapses() {
+        let h = hold(["UpdateDelayDays": 3], available: "2.0", history: history([("1.0", "2.0", 1)]))
+        #expect(h != nil)
+        #expect(h?.delayDays == 3)
+        #expect(h?.eligibleDate == now.addingTimeInterval(2 * day))
+    }
+
+    @Test func releasesOnceDelayElapsed() {
+        #expect(hold(["UpdateDelayDays": 3], available: "2.0", history: history([("1.0", "2.0", 3)])) == nil)
+    }
+
+    @Test func graceReleasesSlightlyEarlyCheck() {
+        // Seen 23h ago with a 1-day delay — within the grace window, so released.
+        #expect(hold(["UpdateDelayDays": 1], available: "2.0", history: history([("1.0", "2.0", 23.0 / 24)])) == nil)
+    }
+
+    @Test func supersedingReleaseRestartsClock() {
+        let h = hold(["UpdateDelayDays": 3], available: "2.1",
+                     history: history([("1.0", "2.0", 5), ("1.0", "2.1", 1)]))
+        #expect(h?.versionFirstSeen == now.addingTimeInterval(-1 * day))
+    }
+
+    @Test func revertedReleaseKeepsOriginalClock() {
+        // 2.0 seen 5 days ago, 2.1 appeared then was pulled — 2.0 keeps its original sighting.
+        let h = history([("1.0", "2.0", 5), ("1.0", "2.1", 2), ("1.0", "2.0", 1)])
+        #expect(hold(["UpdateDelayDays": 3], available: "2.0", history: h) == nil)
+    }
+
+    @Test func ignoresSightingsFromAnOlderInstalledVersion() {
+        // 2.0 was seen long ago while 0.9 was installed; the clock restarts for 1.0.
+        let h = history([("0.9", "2.0", 30), ("1.0", "2.0", 1)])
+        #expect(hold(["UpdateDelayDays": 3], available: "2.0", history: h) != nil)
+    }
+
+    @Test func maxWaitReleasesFrequentReleases() {
+        let h = history([("1.0", "2.0", 8), ("1.0", "2.1", 6), ("1.0", "2.2", 3), ("1.0", "2.3", 0)])
+        #expect(hold(["UpdateDelayDays": 3, "UpdateDelayMaxDays": 7], available: "2.3", history: h) == nil)
+        #expect(hold(["UpdateDelayDays": 3], available: "2.3", history: h) != nil)
+    }
+
+    @Test func maxWaitCapsEligibleDate() {
+        let h = history([("1.0", "2.0", 5), ("1.0", "2.1", 0)])
+        let held = hold(["UpdateDelayDays": 3, "UpdateDelayMaxDays": 6], available: "2.1", history: h)
+        #expect(held?.eligibleDate == now.addingTimeInterval(1 * day))
+    }
+
+    @Test func missingHistoryDoesNotHold() {
+        #expect(hold(["UpdateDelayDays": 3], available: "2.0", history: nil) == nil)
+    }
+
+    @Test func overrideExactBeatsWildcard() {
+        let prefs = Preferences(testPrefs: ["UpdateDelayDays": 2,
+                                            "UpdateDelayOverrides": "zoom*:7 zoom:0 google*:5"])
+        #expect(UpdateDelay.delayDays(for: "zoom", prefs: prefs) == 0)
+        #expect(UpdateDelay.delayDays(for: "zoomclient", prefs: prefs) == 7)
+        #expect(UpdateDelay.delayDays(for: "GoogleChrome", prefs: prefs) == 5)
+        #expect(UpdateDelay.delayDays(for: "firefox", prefs: prefs) == 2)
+    }
+
+    @Test func overrideCanDelayWhenGlobalIsOff() {
+        let prefs: [String: Any] = ["UpdateDelayOverrides": "zoom:3"]
+        #expect(hold(prefs, available: "2.0", history: history([("1.0", "2.0", 0)])) != nil)
+        #expect(hold(prefs, label: "firefox", available: "2.0", history: history([("1.0", "2.0", 0)])) == nil)
+    }
+
+    @Test func malformedOverridesIgnored() {
+        let prefs = Preferences(testPrefs: ["UpdateDelayOverrides": "zoom firefox:x :3 chrome:-1 slack:4 a:1:2"])
+        #expect(prefs.updateDelayOverrides.map(\.pattern) == ["slack"])
     }
 }
 
