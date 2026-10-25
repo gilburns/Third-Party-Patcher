@@ -15,6 +15,7 @@ present on a stock macOS install.
 | `tpp-last-apply.sh` | TPP - Last Apply | Date | Last apply/install pass (UTC) |
 | `tpp-apps-requiring-update.sh` | TPP - Apps Requiring Update | Integer | Managed apps found out of date |
 | `tpp-pending-updates.sh` | TPP - Pending Updates | Integer | Updates staged and awaiting apply |
+| `tpp-delayed-updates.sh` | TPP - Delayed Updates | Integer | Updates held back by the update delay |
 | `tpp-oldest-pending-days.sh` | TPP - Oldest Pending Update (Days) | Integer | Age of the oldest staged update |
 | `tpp-days-until-hard-deadline.sh` | TPP - Days Until Hard Deadline | Integer | Days left before deferrals are cut off |
 | `tpp-broken-labels.sh` | TPP - Broken Labels | Integer | Scan-broken + stage-broken labels |
@@ -22,6 +23,7 @@ present on a stock macOS install.
 | `tpp-deadlines-forced.sh` | TPP - Deadlines Forced (Lifetime) | Integer | Times a hard deadline forced an install |
 | `tpp-patching-mode.sh` | TPP - Patching Mode | String | `monthly` or `deadline` |
 | `tpp-pending-update-labels.sh` | TPP - Pending Update Labels | String | Comma-separated list of staged labels |
+| `tpp-delayed-update-labels.sh` | TPP - Delayed Update Labels | String | Comma-separated list of delayed labels |
 | `tpp-patch-compliance-status.sh` | TPP - Patch Compliance Status | String | Rollup verdict (see below) |
 
 ### Compliance status values
@@ -60,7 +62,7 @@ present on a stock macOS install.
 
 ## Building your own
 
-`patcherreport get <dotted.key> [--from summary|pending|deferrals|broken|deadline]`
+`patcherreport get <dotted.key> [--from summary|pending|delayed|deferrals|broken|deadline]`
 prints any single scalar from the JSON payloads with no quoting or wrapping:
 
 ```bash

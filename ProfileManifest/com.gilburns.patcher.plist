@@ -13,7 +13,7 @@
 	<key>pfm_format_version</key>
 	<integer>1</integer>
 	<key>pfm_last_modified</key>
-	<date>2026-10-04T12:00:00Z</date>
+	<date>2026-10-25T12:00:00Z</date>
 	<key>pfm_platforms</key>
 	<array>
 		<string>macOS</string>
@@ -161,6 +161,9 @@ During a profile replacement, the system updates payloads with the same 'Payload
 					<string>PatchingEndTime</string>
 					<string>DeadlineDaysFocus</string>
 					<string>DeadlineDaysHard</string>
+					<string>UpdateDelayDays</string>
+					<string>UpdateDelayOverrides</string>
+					<string>UpdateDelayMaxDays</string>
 					<string>FocusCheckEnabled</string>
 					<string>AggressivePatchDayDeferral</string>
 				</array>
@@ -2019,6 +2022,58 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<string>integer</string>
 			<key>pfm_value_placeholder</key>
 			<string>10</string>
+		</dict>
+		<dict>
+			<key>pfm_app_min</key>
+			<string>1.5.0</string>
+			<key>pfm_default</key>
+			<integer>0</integer>
+			<key>pfm_description</key>
+			<string>Days a newly released version must remain the newest available version before it is staged and applied. If a newer version is released during the wait, the wait restarts for that version. Deadline days count from when the update is released from the delay. Self-service installs from Available Software are not delayed. '0' disables the delay.</string>
+			<key>pfm_documentation_url</key>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#update-delay</string>
+			<key>pfm_name</key>
+			<string>UpdateDelayDays</string>
+			<key>pfm_title</key>
+			<string>Update Delay Days</string>
+			<key>pfm_type</key>
+			<string>integer</string>
+			<key>pfm_value_placeholder</key>
+			<string>2</string>
+		</dict>
+		<dict>
+			<key>pfm_app_min</key>
+			<string>1.5.0</string>
+			<key>pfm_description</key>
+			<string>A space-separated list of label:days pairs that replace Update Delay Days for matching labels. Supports wildcards, for example "zoom*:7". An exact label match wins over a wildcard match; otherwise the first matching entry wins. Use 0 to exempt a label, for example browsers that ship security fixes. Overrides also apply when Update Delay Days is 0.</string>
+			<key>pfm_documentation_url</key>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#update-delay</string>
+			<key>pfm_name</key>
+			<string>UpdateDelayOverrides</string>
+			<key>pfm_title</key>
+			<string>Update Delay Overrides</string>
+			<key>pfm_type</key>
+			<string>string</string>
+			<key>pfm_value_placeholder</key>
+			<string>googlechrome:0 firefox:0 zoom*:7</string>
+		</dict>
+		<dict>
+			<key>pfm_app_min</key>
+			<string>1.5.0</string>
+			<key>pfm_default</key>
+			<integer>0</integer>
+			<key>pfm_description</key>
+			<string>Maximum days an update can be held by the delay, counted from when the installed version first became out of date. Once reached, the newest version is staged and applied even if it was only just released, so apps that release more often than the delay still get patched. '0' means no maximum.</string>
+			<key>pfm_documentation_url</key>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#update-delay</string>
+			<key>pfm_name</key>
+			<string>UpdateDelayMaxDays</string>
+			<key>pfm_title</key>
+			<string>Update Delay Max Days</string>
+			<key>pfm_type</key>
+			<string>integer</string>
+			<key>pfm_value_placeholder</key>
+			<string>7</string>
 		</dict>
 		<dict>
 			<key>pfm_app_min</key>

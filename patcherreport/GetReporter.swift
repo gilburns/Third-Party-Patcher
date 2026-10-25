@@ -2,7 +2,7 @@
 //  GetReporter.swift
 //  patcherreport
 //
-//  patcherreport get <key> [--from summary|pending|deferrals|broken|deadline] [--days N]
+//  patcherreport get <key> [--from summary|pending|delayed|deferrals|broken|deadline] [--days N]
 //
 //  Prints a single scalar value from one of the JSON report payloads, with no
 //  quoting or wrapping. Intended for Jamf Extension Attributes and other scripts
@@ -27,7 +27,7 @@ struct GetReporter {
     let source: String
     let days:   Int?
 
-    static let validSources = ["summary", "pending", "deferrals", "broken", "deadline"]
+    static let validSources = ["summary", "pending", "delayed", "deferrals", "broken", "deadline"]
 
     func run(to path: String?) {
         let ctx = ReportContext()
@@ -38,6 +38,8 @@ struct GetReporter {
             object = SummaryReporter(format: .json).jsonObject(ctx)
         case "pending":
             object = PendingReporter(format: .json).jsonObject(ctx)
+        case "delayed":
+            object = DelayedReporter(format: .json).jsonObject(ctx)
         case "deferrals":
             object = DeferralsReporter(days: days, format: .json).jsonObject(ctx)
         case "broken":
