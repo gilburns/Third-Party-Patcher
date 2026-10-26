@@ -153,8 +153,8 @@ See the **[Command-Line Reference wiki page](../../wiki/Command-Line-Reference)*
 
 ## Requirements
 
-- macOS 14 Sonoma or later
-- [swiftDialog](https://github.com/swiftDialog/swiftDialog) 2.x or later (for user prompts; install via `patcher ensure swiftdialog`)
+- macOS 15 Sequoia or later
+- [swiftDialog](https://github.com/swiftDialog/swiftDialog) 3.x or later (for user prompts; install via `patcher ensure swiftdialog`)
 - Network access to GitHub (for Installomator label updates and app downloads)
 
 ---
