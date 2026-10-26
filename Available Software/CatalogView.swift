@@ -165,7 +165,7 @@ struct CatalogView: View {
     private var notInstalledCount:     Int { catalog.items.filter { $0.installedVersion == nil }.count }
     private var pendingDownloadsCount: Int {
         let stagedIDs = Set(vm.stagedPatches.map { $0.id })
-        return vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isThrottled }.count
+        return vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isStageSkipped }.count
     }
 
     private var sortedCategories: [(name: String, count: Int)] {
@@ -186,7 +186,7 @@ struct CatalogView: View {
 
     private var hasDetectedUpdates: Bool {
         let stagedIDs = Set(vm.stagedPatches.map { $0.id })
-        return vm.managedApps.contains { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isThrottled }
+        return vm.managedApps.contains { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isStageSkipped }
     }
 
     private var runNowMenu: some View {
@@ -431,7 +431,7 @@ struct CatalogView: View {
                         .environmentObject(vm)
                 } else {
                     let stagedIDs = Set(vm.stagedPatches.map { $0.id })
-                    let pending = vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isThrottled }
+                    let pending = vm.managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isStageSkipped }
                     PendingDownloadsGrid(apps: pending, onSelect: { selectedManagedApp = $0 })
                         .environmentObject(vm)
                 }

@@ -42,7 +42,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
         let appDescription: String?
         let keywords: [String]
         let category: String?
-        let isThrottled: Bool       // true if within the version-mismatch throttle window (stage will skip it)
+        let isStageSkipped: Bool    // true if stage will skip it (version-mismatch throttle, stageBrokenLabels, applyBrokenVersions)
         
         var primaryAppPath: String? {
             // Prefer a non-user-space .app; fall back to any .app
@@ -69,11 +69,19 @@ final class AvailableSoftwareViewModel: ObservableObject {
     private var configDirFD: Int32 = -1
     private var wasActive = false       // tracks phase transition for My Software refresh
     private var appliedIconPath: String? // icon path last applied to the Dock/Finder
+    private var launchObserver: NSObjectProtocol?
     
     init() {
         appliedIconPath = Preferences().customAppIconPath
         startConfigDirWatch()
         loadMySoftwareData()
+        // The view model is created during launch; AppKit resets the Dock tile when
+        // launching finishes, wiping a badge set here. Re-apply it once launch completes.
+        launchObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updateDockBadge() }
+        }
     }
     
     deinit {
@@ -344,7 +352,10 @@ final class AvailableSoftwareViewModel: ObservableObject {
     }
     
     private func updateDockBadge() {
-        let count = managedApps.filter { $0.updateStatus == "updateRequired" && !$0.isThrottled }.count
+        // Pending updates (staged) + pending downloads, matching the two sidebar counts.
+        let stagedIDs = Set(stagedPatches.map { $0.id })
+        let pendingDownloads = managedApps.filter { $0.updateStatus == "updateRequired" && !stagedIDs.contains($0.id) && !$0.isStageSkipped }.count
+        let count = stagedPatches.count + pendingDownloads
         NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : ""
     }
     
@@ -388,7 +399,12 @@ final class AvailableSoftwareViewModel: ObservableObject {
         ) else { return [] }
         
         let ignoreUserSpace = preferences.ignoreAppsInHomeFolder
-        
+
+        let config = (try? Data(contentsOf: AppConstants.patcherConfigFileURL))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let stageBrokenLabels = Set(config?["stageBrokenLabels"] as? [String] ?? [])
+        let applyBrokenVersions = config?["applyBrokenVersions"] as? [String: String] ?? [:]
+
         var result: [ManagedApp] = []
         for plist in plists where plist.pathExtension == "plist" {
             let label = plist.deletingPathExtension().lastPathComponent
@@ -416,12 +432,21 @@ final class AvailableSoftwareViewModel: ObservableObject {
                 status = dict["updateStatus"] as? String ?? "unknown"
             }
             
-            let isThrottled: Bool
+            // Mirror stage phase (and PatcherMenu's pending downloads): skip throttled,
+            // stage-broken, and apply-broken-at-this-version labels.
+            let isStageSkipped: Bool
             if status == "updateRequired" {
                 let availableVersion = dict["appNewVersion"] as? String ?? ""
-                isThrottled = isVersionMismatchThrottled(label: label, currentAppNewVersion: availableVersion)
+                if stageBrokenLabels.contains(label) {
+                    isStageSkipped = true
+                } else if let brokenVersion = applyBrokenVersions[label],
+                          availableVersion == brokenVersion || availableVersion.isEmpty {
+                    isStageSkipped = true
+                } else {
+                    isStageSkipped = isVersionMismatchThrottled(label: label, currentAppNewVersion: availableVersion)
+                }
             } else {
-                isThrottled = false
+                isStageSkipped = false
             }
             
             let meta = loadManagedAppMetadata(for: label)
@@ -435,7 +460,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
                 appDescription: meta.description,
                 keywords:       meta.keywords,
                 category:       meta.category,
-                isThrottled:    isThrottled
+                isStageSkipped: isStageSkipped
             ))
         }
         
