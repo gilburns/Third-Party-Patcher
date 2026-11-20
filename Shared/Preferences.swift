@@ -599,14 +599,19 @@ struct Preferences {
 
     /// The number of minutes to defer until the next update workflow attempt if a user chooses not to install updates
     ///  Using this option overrides the default deferral time which is set to 120 minutes (2 hours)
+    ///  Values below `AppConstants.minimumDeferralMinutes` are raised to that minimum.
     var deferralTimerDefault: Int {
-        prefs["DeferralTimerDefault"] as? Int ?? 120
+        max(AppConstants.minimumDeferralMinutes, prefs["DeferralTimerDefault"] as? Int ?? 120)
     }
+
+    /// Built-in `DeferralTimerMenu` list, also used when every configured value is below the minimum.
+    static let defaultDeferralTimerMenu = "30,60,120,240,480,1440"
 
     /// Display a deferral time pop-up menu in the install update dialog that allows the user to override the 'DeferralTimerDefault' timer.
     /// If you override this with your own values, make sure the value set for `deferralTimerDefault` is included in this list
+    /// Values below `AppConstants.minimumDeferralMinutes` are discarded by `PatchSchedule.allowedDeferralMinutes`.
     var deferralTimerMenu: String {
-        pref("DeferralTimerMenu", default: "5,30,60,120,240,480,1440")
+        pref("DeferralTimerMenu", default: Self.defaultDeferralTimerMenu)
     }
 
     /// The number of minutes to defer automatically if the user has enabled Focus/Do Not Disturb

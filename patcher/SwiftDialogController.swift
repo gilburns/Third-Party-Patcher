@@ -520,7 +520,7 @@ struct SwiftDialogController {
 
         let itemCount    = items.count
         let deferMenu    = allowedDeferralMinutes
-        let defaultMins  = prefs.deferralTimerDefault
+        let defaultMins  = Self.effectiveDefaultDeferral(prefs.deferralTimerDefault, menu: deferMenu)
         let countdown    = prefs.deferralCountdownSeconds
         let autoAction   = prefs.deferralAutomaticAction.lowercased()
 
@@ -655,6 +655,15 @@ struct SwiftDialogController {
             Logger.log("⚠️ Deferral: prompt exited \(p.terminationStatus) without a user choice — proceeding")
             return .proceed
         }
+    }
+
+    /// The dropdown default must be one of the menu values, or swiftDialog has nothing to
+    /// pre-select and a timed-out prompt would defer longer than the menu allows (e.g. on a
+    /// capped patch day). Falls back to the longest option not exceeding the configured
+    /// default, else the shortest option.
+    static func effectiveDefaultDeferral(_ configured: Int, menu: [Int]) -> Int {
+        guard !menu.isEmpty, !menu.contains(configured) else { return configured }
+        return menu.last { $0 <= configured } ?? menu[0]
     }
 
     /// JSON output key for the "Defer for" dropdown — stable even if the title is reworded.
@@ -870,8 +879,20 @@ struct SwiftDialogController {
 
     /// Path of the command file for a blocking prompt, with any previous prompt's file
     /// removed so swiftDialog's launcher recreates it (root-owned, 0644) at launch.
+    ///
+    /// A prompt outlives a patcher that dies while waiting on it (e.g. the scheduler is
+    /// restarted by an upgrade) — the launcher is reparented and the window stays up,
+    /// so the next prompt would open on top of it and clicks on the old one go nowhere.
+    /// Prompts are sequential, so any dialog still reading this file is such an orphan:
+    /// tell it to quit before the file is replaced. Dialog reads through an open handle,
+    /// so the command still reaches it after the file is unlinked.
     private func freshPromptCommandFilePath() -> String {
         let url = AppConstants.swiftDialogPromptCommandFileURL
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(Data("quit:\n".utf8))
+            try? handle.close()
+        }
         try? FileManager.default.removeItem(at: url)
         return url.path
     }

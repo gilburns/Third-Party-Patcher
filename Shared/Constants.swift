@@ -48,6 +48,11 @@ struct AppConstants {
     /// about "next cycle" without duplicating the literal used to schedule the timer.
     static let schedulerCycleIntervalSeconds: TimeInterval = 600
 
+    /// Shortest deferral an admin can configure through `DeferralTimerMenu` or
+    /// `DeferralTimerDefault`. Shorter values re-prompt the user almost immediately,
+    /// so they are discarded.
+    static let minimumDeferralMinutes = 30
+
     static let applicationSupportURL: URL = {
         FileManager.default.urls(for: .libraryDirectory, in: .localDomainMask)
             .first?

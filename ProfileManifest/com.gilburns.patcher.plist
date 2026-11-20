@@ -328,7 +328,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<integer>240</integer>
 			<key>pfm_description</key>
-			<string>Default deferral duration in minutes applied when the user accepts without choosing a custom time (4 hours).</string>
+			<string>Default deferral duration in minutes applied when the user accepts without choosing a custom time, or when the prompt times out. Values below 30 minutes are raised to 30.</string>
 			<key>pfm_documentation_url</key>
 			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#deferral</string>
 			<key>pfm_name</key>
@@ -344,9 +344,9 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_app_min</key>
 			<string>1.0.0</string>
 			<key>pfm_default</key>
-			<string>5,30,60,120,240,480,1440</string>
+			<string>30,60,120,240,480,1440</string>
 			<key>pfm_description</key>
-			<string>Comma-separated list of deferral durations in minutes shown in the pop-up menu.
+			<string>Comma-separated list of deferral durations in minutes shown in the pop-up menu. Values below 30 minutes are ignored.
 </string>
 			<key>pfm_documentation_url</key>
 			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#deferral</string>
@@ -357,7 +357,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_type</key>
 			<string>string</string>
 			<key>pfm_value_placeholder</key>
-			<string>5,30,60,120,240,480,1440</string>
+			<string>30,60,120,240,480,1440</string>
 		</dict>
 		<dict>
 			<key>pfm_app_min</key>
