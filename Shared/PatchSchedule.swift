@@ -125,12 +125,22 @@ struct PatchSchedule {
     ///
     /// `daysPending` is the value already computed by the caller (monthly: days
     /// since patch day; deadline: age of oldest staged update).
+    ///
+    /// Configured values below `AppConstants.minimumDeferralMinutes` are discarded;
+    /// if none remain, the built-in menu is used. The patch-day caps above are
+    /// deliberate end-of-window pressure and may still go below the minimum.
     func allowedDeferralMinutes(now: Date = Date(), daysPending: Int) -> [Int] {
-        let parsed = prefs.deferralTimerMenu
-            .split(separator: ",")
-            .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-            .filter { $0 > 0 }
-            .sorted()
+        let floor      = AppConstants.minimumDeferralMinutes
+        let configured = Self.parseDeferralMenu(prefs.deferralTimerMenu)
+        var parsed     = configured.filter { $0 >= floor }
+        if parsed.count < configured.count {
+            let dropped = configured.filter { $0 < floor }.map(String.init).joined(separator: ",")
+            Logger.log("⚠️ DeferralTimerMenu: ignoring value(s) below the \(floor)-minute minimum: \(dropped)")
+            if parsed.isEmpty {
+                parsed = Self.parseDeferralMenu(Preferences.defaultDeferralTimerMenu)
+                Logger.log("⚠️ DeferralTimerMenu: no usable values — using the default menu (\(Preferences.defaultDeferralTimerMenu))")
+            }
+        }
 
         guard prefs.aggressivePatchDayDeferral else { return parsed }
         guard isDeadlineDay(now: now, daysPending: daysPending) else { return parsed }
@@ -142,6 +152,13 @@ struct PatchSchedule {
 
         let filtered = parsed.filter { $0 <= cap }
         return filtered.isEmpty ? [min(5, cap)] : filtered
+    }
+
+    private static func parseDeferralMenu(_ menu: String) -> [Int] {
+        menu.split(separator: ",")
+            .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            .filter { $0 > 0 }
+            .sorted()
     }
 
     /// True when today is a day on which deferral pressure should be applied.

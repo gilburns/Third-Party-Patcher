@@ -678,3 +678,37 @@ struct SchedulerStateCodableTests {
         #expect(decoded.initialScanDelayEndedByUserDate == nil)
     }
 }
+
+
+// MARK: - Deferral minimum
+
+struct DeferralFloorTests {
+
+    // Aggressive patch-day capping is off so results don't depend on today's date.
+    private func menu(_ value: String?) -> [Int] {
+        var prefs: [String: Any] = ["AggressivePatchDayDeferral": false]
+        if let value { prefs["DeferralTimerMenu"] = value }
+        return PatchSchedule(prefs: Preferences(testPrefs: prefs)).allowedDeferralMinutes(daysPending: 0)
+    }
+
+    @Test func defaultMenuHasNothingBelowMinimum() {
+        #expect(menu(nil) == [30, 60, 120, 240, 480, 1440])
+    }
+
+    @Test func discardsConfiguredValuesBelowMinimum() {
+        #expect(menu("5,15,30,90,480") == [30, 90, 480])
+    }
+
+    @Test func fallsBackToDefaultMenuWhenAllValuesTooShort() {
+        #expect(menu("1,5,15") == [30, 60, 120, 240, 480, 1440])
+    }
+
+    @Test func emptyMenuUsesDefault() {
+        #expect(menu("") == [30, 60, 120, 240, 480, 1440])
+    }
+
+    @Test func defaultTimerRaisedToMinimum() {
+        #expect(Preferences(testPrefs: ["DeferralTimerDefault": 5]).deferralTimerDefault == 30)
+        #expect(Preferences(testPrefs: ["DeferralTimerDefault": 240]).deferralTimerDefault == 240)
+    }
+}
