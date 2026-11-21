@@ -57,7 +57,10 @@ final class DialogWindowManager {
             } else {
                 let id = session.id
                 let kind = session.kind
-                let window = DialogWindow(session: session) { [weak self] action, value in
+                let window = DialogWindow(session: session, onToggle: { checked in
+                    SchedulerRelay.send(sessionID: id, response: .toggled,
+                                        value: DialogSession.Checkbox.value(checked))
+                }) { [weak self] action, value in
                     self?.handle(action, value: value, id: id, kind: kind)
                 }
                 windows[id] = window
@@ -81,7 +84,7 @@ final class DialogWindowManager {
         if kind.expectsResponse {
             switch action {
             case .primary:   SchedulerRelay.send(sessionID: id, response: .primary, value: value)
-            case .secondary: SchedulerRelay.send(sessionID: id, response: .secondary)
+            case .secondary: SchedulerRelay.send(sessionID: id, response: .secondary, value: value)
             case .dismissed: SchedulerRelay.send(sessionID: id, response: .dismissed)
             }
         }

@@ -25,10 +25,15 @@ final class DialogModel: ObservableObject {
     var onAction: (DialogAction) -> Void = { _ in }
     /// The menu choice, sent back with the primary button.
     var selection: String?
+    /// The checkbox state, reported on each change and sent with the secondary button.
+    var checked: Bool
+    /// Set by DialogWindow.
+    var onToggle: (Bool) -> Void = { _ in }
 
     init(session: DialogSession) {
         self.session = session
         self.selection = session.menu?.selected
+        self.checked = session.checkbox?.checked ?? false
     }
 }
 
@@ -58,7 +63,7 @@ struct DialogRootView: View {
         case .applyCompact, .progress:
             CompactProgressView(session: model.session)
         case .blockingNotice, .blockingPrompt:
-            BlockingAppView(session: model.session, onAction: model.onAction)
+            BlockingAppView(model: model)
         case .deferral:
             DeferralView(model: model)
         }
@@ -376,8 +381,17 @@ struct CompactProgressView: View {
 // MARK: - Blocking-app notice and prompt
 
 struct BlockingAppView: View {
-    let session: DialogSession
-    let onAction: (DialogAction) -> Void
+    @ObservedObject var model: DialogModel
+    @State private var checked: Bool
+
+    init(model: DialogModel) {
+        self.model = model
+        // Starts from the session's state without counting as a toggle.
+        _checked = State(initialValue: model.checked)
+    }
+
+    private var session: DialogSession { model.session }
+    private func onAction(_ action: DialogAction) { model.onAction(action) }
 
     private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
     private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
@@ -406,6 +420,17 @@ struct BlockingAppView: View {
 
             if let countdown = session.countdown {
                 CountdownView(countdown: countdown)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+            }
+
+            if let checkbox = session.checkbox {
+                Toggle(checkbox.label, isOn: $checked)
+                    .toggleStyle(.checkbox)
+                    .onChange(of: checked) { _, value in
+                        model.checked = value
+                        model.onToggle(value)
+                    }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 12)
             }

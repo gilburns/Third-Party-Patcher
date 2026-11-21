@@ -100,6 +100,17 @@ struct DialogSession: Codable, Equatable {
         var selected: String
     }
 
+    /// A checkbox. PatcherNotifier reports each change (`DialogResponse.toggled`), and
+    /// sends its state with the secondary button.
+    struct Checkbox: Codable, Equatable {
+        var label: String
+        var checked: Bool
+
+        /// How a checkbox state travels as a response value.
+        static func value(_ checked: Bool) -> String { checked ? "1" : "0" }
+        static let values: Set<String> = ["0", "1"]
+    }
+
     struct WindowOptions: Codable, Equatable {
         /// topleft | left | bottomleft | top | center | bottom | topright | right | bottomright
         var position: String
@@ -163,6 +174,7 @@ struct DialogSession: Codable, Equatable {
     var secondaryButton: Button?
     var countdown: Countdown?
     var menu: Menu?
+    var checkbox: Checkbox? = nil
     var help: Help?
     /// When set, the agent closes the window at this time if the user hasn't.
     var autoCloseAt: Date?
@@ -323,4 +335,6 @@ enum DialogResponse: String, Codable, CaseIterable {
     case secondary
     /// Closed without a button (the quit key).
     case dismissed
+    /// The checkbox changed; the value is its new state. The window stays open.
+    case toggled
 }

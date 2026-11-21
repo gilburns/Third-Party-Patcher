@@ -72,7 +72,7 @@ extension Patcher {
                             countdownSeconds: countdown, deferIfScreenLocks: true)
                 switch response {
                 case .skip:            print("Result: skip the update.")
-                case .proceed:         print("Result: quit TextEdit and install (countdown ended). Nothing was quit.")
+                case .proceed:         print("Result: quit TextEdit and install; don't reopen it. Nothing was quit.")
                 case .proceedRelaunch: print("Result: quit TextEdit, install, then reopen it. Nothing was quit.")
                 }
             default:         runApply(uid: uid, size: .large)

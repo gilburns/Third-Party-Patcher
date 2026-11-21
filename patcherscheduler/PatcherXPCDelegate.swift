@@ -183,9 +183,20 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
             reply(false, "Dialog belongs to another user.")
             return
         }
-        // A menu choice must be one the window offered.
-        if let value, !(session.menu?.options.contains { $0.value == value } ?? false) {
-            reply(false, "Value '\(value)' is not a choice in dialog \(session.id).")
+        // A value must be one the window offered: a menu choice with the primary button,
+        // or a checkbox state with the secondary button or a toggle.
+        let allowed: Set<String>
+        switch parsed {
+        case .primary:             allowed = Set(session.menu?.options.map(\.value) ?? [])
+        case .secondary, .toggled: allowed = session.checkbox == nil ? [] : DialogSession.Checkbox.values
+        case .displayed, .dismissed: allowed = []
+        }
+        if let value, !allowed.contains(value) {
+            reply(false, "Value '\(value)' is not valid for '\(parsed.rawValue)' in dialog \(session.id).")
+            return
+        }
+        if parsed == .toggled, value == nil {
+            reply(false, "A toggle needs the checkbox state.")
             return
         }
         let recorded = DialogSessionStore.writeResponse(id: session.id, parsed, value: value)

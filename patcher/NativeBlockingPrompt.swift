@@ -86,9 +86,10 @@ final class NativeBlockingPrompt {
 
     // MARK: Prompt
 
-    /// BlockingProcessAction = prompt. Skip Update skips; Quit <App> force-quits and
-    /// relaunches after the install; the countdown ending force-quits. If the user quits
-    /// the app themselves, the install goes ahead.
+    /// BlockingProcessAction = prompt. Skip Update skips; Quit <App> force-quits; the
+    /// countdown ending force-quits. If the user quits the app themselves, the install goes
+    /// ahead. In each case the app is reopened after the install while "Reopen <App> after
+    /// the update" is checked (it starts checked).
     func prompt(processName: String, item: ApplyItem, countdownSeconds: Int,
                 deferIfScreenLocks: Bool) -> BlockingActionResponse {
         Logger.log("ℹ️ BlockingProcessAction=prompt — showing prompt for '\(processName)' (\(countdownSeconds)s)")
@@ -104,6 +105,8 @@ final class NativeBlockingPrompt {
         session.overlayIcon     = item.iconPath ?? packageIconPath
         session.button          = DialogSession.Button(title: "Skip Update", enabled: true)
         session.secondaryButton = DialogSession.Button(title: "Quit \(processName)", enabled: true)
+        session.checkbox        = DialogSession.Checkbox(label: "Reopen \(item.displayName) after the update",
+                                                         checked: true)
         let writer = DialogSessionWriter(session: session)
         let id     = session.id
         DialogSessionStore.removeResponses(id: id)
@@ -127,16 +130,27 @@ final class NativeBlockingPrompt {
         let ends    = Date().addingTimeInterval(TimeInterval(seconds))
         writer.update { $0.countdown = DialogSession.Countdown(ends: ends, seconds: seconds) }
 
+        // The checkbox as the user last left it.
+        var reopen = true
+        func proceed() -> BlockingActionResponse { reopen ? .proceedRelaunch : .proceed }
+        func readToggle() {
+            if let value = DialogSessionStore.takeResponseValue(id: id, .toggled) { reopen = value == "1" }
+        }
+
         while Date() < ends {
+            readToggle()
             if shutdownRequested {
                 Logger.log("⚠️ Shutdown requested while waiting on '\(processName)' — skipping \(item.label)")
                 return .skip
             }
-            if DialogSessionStore.takeResponse(id: id, .secondary) {
-                Logger.log("ℹ️ User chose to quit '\(processName)'\(dryRun ? " (demo — not quitting)" : " — force-quitting")")
+            if let value = DialogSessionStore.takeResponseValue(id: id, .secondary) {
+                // The click carries the checkbox state, in case its toggle hasn't arrived yet.
+                if DialogSession.Checkbox.values.contains(value) { reopen = value == "1" }
+                Logger.log("ℹ️ User chose to quit '\(processName)'\(dryRun ? " (demo — not quitting)" : " — force-quitting")"
+                           + (reopen ? "; it will be reopened after the update" : ""))
                 record(LabelHistoryEvent.EventType.blockingProcessQuit)
                 if !dryRun { forceQuit(processName) }
-                return .proceedRelaunch
+                return proceed()
             }
             if DialogSessionStore.takeResponse(id: id, .primary) {
                 Logger.log("ℹ️ User skipped update for '\(item.label)'")
@@ -150,9 +164,10 @@ final class NativeBlockingPrompt {
                 return .skip
             }
             if !dryRun, !isProcessRunning(processName) {
-                Logger.log("ℹ️ '\(processName)' was quit by the user — proceeding")
+                Logger.log("ℹ️ '\(processName)' was quit by the user — proceeding"
+                           + (reopen ? "; it will be reopened after the update" : ""))
                 record(LabelHistoryEvent.EventType.blockingProcessQuit)
-                return .proceed
+                return proceed()
             }
             if deferIfScreenLocks, isConsoleScreenLocked {
                 Logger.log("🔒 Screen locked while prompting for '\(processName)' — skipping \(item.label)")
@@ -163,10 +178,12 @@ final class NativeBlockingPrompt {
         }
 
         // The user saw the prompt and let the countdown run out.
-        Logger.log("ℹ️ Countdown expired for '\(processName)'\(dryRun ? " (demo — not quitting)" : " — force-quitting")")
+        readToggle()
+        Logger.log("ℹ️ Countdown expired for '\(processName)'\(dryRun ? " (demo — not quitting)" : " — force-quitting")"
+                   + (reopen ? "; it will be reopened after the update" : ""))
         record(LabelHistoryEvent.EventType.blockingProcessTimedOut)
         if !dryRun { forceQuit(processName) }
-        return .proceed
+        return proceed()
     }
 
     // MARK: Helpers
