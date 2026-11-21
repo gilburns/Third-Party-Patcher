@@ -1475,7 +1475,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         }
 
         // ── Pre-scan: build the dialog item list before starting installs ──────────
-        // swiftDialog needs the full list at launch time.
+        // The apply window needs the full list at launch time.
         var dialogItems: [ApplyItem] = []
         for dirURL in labelDirs {
             guard StagedCache.stagedFile(in: dirURL) != nil else { continue }
@@ -1513,7 +1513,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 isBlocked = effectiveBlockers.contains(where: { isProcessRunning($0) })
 
                 // Use the first existing .app bundle path as the icon source.
-                // swiftDialog's JSON listitem format accepts .app bundle paths directly.
+                // PatcherNotifier accepts .app bundle paths directly.
                 if let installs = plist["foundInstalls"] as? [[String: Any]] {
                     for install in installs {
                         if let appPath = install["path"] as? String,
@@ -1694,7 +1694,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             // IgnoreAppsInHomeFolder, or the only remaining target sitting on an unmounted
             // volume) never starts the spinner in the first place. Previously such items
             // could sit "Installing…" indefinitely, or (for the unmounted-volume case) show
-            // a skipped reason while swiftDialog's spinner kept animating because the row had
+            // a skipped reason while the spinner kept animating because the row had
             // already entered the "wait" status.
             let cliInstaller = plist["CLIInstaller"] as? String
             let useCLI = !(cliInstaller?.isEmpty ?? true)
@@ -1979,7 +1979,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
         dialog?.complete(applied: appliedCount, skipped: skippedCount, failed: failedCount)
         // Wait for the user to click Done (or for the auto-dismiss timer to fire).
-        // waitForDialog() returns as soon as swiftDialog exits, so clicking Done
+        // waitForDialog() returns as soon as the window closes, so clicking Done
         // is immediate — no fixed sleep delay.
         let timeout: TimeInterval? = prefs.unattendedExit ? TimeInterval(prefs.unattendedExitSeconds) : nil
         dialog?.waitForDialog(timeout: timeout)

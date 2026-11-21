@@ -25,7 +25,7 @@ public var consoleUserInfo: (username: String, userID: String) {
 }
 
 /// Returns the UID of the user currently at the console, or nil when no one is logged in.
-/// Used to launch swiftDialog in the correct user session via `launchctl asuser`.
+/// Used to target the console user's session.
 public var consoleUserUID: uid_t? {
     var uid: uid_t = 0
     var gid: gid_t = 0
@@ -48,7 +48,7 @@ public var isConsoleScreenLocked: Bool {
 }
 
 /// Returns the hardware serial number by parsing `ioreg` output.
-/// Used in the swiftDialog help panel so support staff can identify the machine.
+/// Used in the window help panel so support staff can identify the machine.
 /// Returns "Unknown" if the IOPlatformSerialNumber key is not found.
 public var macSerialNumber: String {
     let p = Process()
@@ -88,21 +88,6 @@ public var macOSVersion: String {
 /// Returns "Unknown" when the file is absent (Installomator not yet installed).
 public var installomatorVersion: String {
     (try? String(contentsOf: AppConstants.installomatorVersionFileURL, encoding: .utf8))?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown"
-}
-
-/// Returns the installed swiftDialog version by running `dialog --version`.
-/// Returns "Unknown" when swiftDialog is not installed or the binary cannot be executed.
-public var swiftDialogVersion: String {
-    let p = Process()
-    p.executableURL = AppConstants.swiftDialogBinaryURL
-    p.arguments = ["--version"]
-    let pipe = Pipe()
-    p.standardOutput = pipe
-    p.standardError  = Pipe()
-    try? p.run()
-    p.waitUntilExit()
-    return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown"
 }
 

@@ -13,7 +13,7 @@
 	<key>pfm_format_version</key>
 	<integer>1</integer>
 	<key>pfm_last_modified</key>
-	<date>2026-10-25T12:00:00Z</date>
+	<date>2026-11-21T12:00:00Z</date>
 	<key>pfm_platforms</key>
 	<array>
 		<string>macOS</string>
@@ -497,9 +497,9 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<true/>
 			<key>pfm_description</key>
-			<string>When 'true', the swiftDialog window floats above all other windows.</string>
+			<string>When 'true', the apply window floats above all other windows.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogOnTop</string>
 			<key>pfm_title</key>
@@ -515,7 +515,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>When 'true', the apply completion dialog closes automatically after 'UnattendedExitSeconds' if the user does not interact.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>UnattendedExit</string>
 			<key>pfm_title</key>
@@ -529,7 +529,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Seconds before the apply completion dialog auto-closes when 'UnattendedExit' is 'true'.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>UnattendedExitSeconds</string>
 			<key>pfm_title</key>
@@ -547,7 +547,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Action when a blocking process is running during apply: 'ignore' (skip the check entirely), 'kill' (force-quit silently), 'notify' (brief notification; skip label if still running), 'prompt' (timed dialog; user can quit or skip), 'defer' (skip silently; retry next cycle).</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>BlockingProcessAction</string>
 			<key>pfm_range_list</key>
@@ -573,7 +573,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Seconds of countdown in the blocking process prompt before the automatic action fires.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>BlockingProcessCountdownSeconds</string>
 			<key>pfm_title</key>
@@ -589,7 +589,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Path to a custom icon for the apply dialog. Empty = use the system computer icon. Supports absolute paths, 'SF=&lt;symbol&gt;' notation, or an SF Symbol name directly.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogIcon</string>
 			<key>pfm_title</key>
@@ -605,9 +605,9 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<true/>
 			<key>pfm_description</key>
-			<string>When 'true', a small overlay icon is composited onto the dialog icon. Automatically disabled when swiftDialog is not installed.</string>
+			<string>When 'true', a small overlay icon is composited onto the dialog icon.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>UseOverlayIcon</string>
 			<key>pfm_title</key>
@@ -621,7 +621,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Path to the overlay icon image. Empty = auto-detect from known MDM agents (Jamf, Intune, etc.).</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>OverlayIcon</string>
 			<key>pfm_title</key>
@@ -639,7 +639,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>When 'true', all screen content behind the apply dialog is blurred.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogBlurscreen</string>
 			<key>pfm_title</key>
@@ -655,7 +655,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>When 'true', all other running apps are hidden when the apply dialog launches.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogHideotherapps</string>
 			<key>pfm_title</key>
@@ -669,9 +669,9 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<true/>
 			<key>pfm_description</key>
-			<string>When 'true', the user can drag the swiftDialog windows (apply, progress, and prompt dialogs) around the screen. Set to 'false' to pin them in place.</string>
+			<string>When 'true', the user can drag the windows (apply, progress, and prompt dialogs) around the screen. Set to 'false' to pin them in place.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogMoveable</string>
 			<key>pfm_title</key>
@@ -687,7 +687,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Position of the main apply dialog: 'topleft', 'left', 'bottomleft', 'top', 'center', 'bottom', 'topright', 'right', or 'bottomright'.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogScreenPosition</string>
 			<key>pfm_range_list</key>
@@ -717,7 +717,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Position of the progress/status window during apply. Same position values as 'DialogScreenPosition'.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogScreenProgressPosition</string>
 			<key>pfm_range_list</key>
@@ -747,7 +747,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Comma-separated title-bar buttons to show on the full-size apply dialog: any combination of close, min, max (e.g. 'close,min'). Leave empty for no buttons.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>DialogShowWindowButtons</string>
 			<key>pfm_title</key>
@@ -765,7 +765,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Size/style of the apply-phase progress dialog: 'large' (the full listitem-based progress window), 'compact' (a smaller "mini" progress window, similar in size to the scan/check/download progress window), or 'notifications' (no window: apps that aren't running are updated without interruption and reported in macOS notifications, and each running app gets an actionable Quit &amp; Update notification that waits Blocking Process Countdown Seconds; there is no up-front deferral prompt). 'notifications' requires PatcherNotifier and falls back to 'large' if it isn't loaded; deploy a Notifications payload for com.gilburns.PatcherNotifier.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>ApplyDialogSize</string>
 			<key>pfm_range_list</key>
@@ -1145,13 +1145,13 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<true/>
 			<key>pfm_description</key>
-			<string>Show swiftDialog prompts during the apply phase. If 'false' (or swiftDialog is not installed), blocking process handling falls back to the configured 'BlockingProcessAction'.</string>
+			<string>Show windows during the apply phase: the deferral prompt, apply progress and blocking-app prompts, drawn by PatcherNotifier. If 'false' (or PatcherNotifier isn't available), updates apply without windows and blocking process handling falls back to the configured 'BlockingProcessAction'. The key keeps its original name so existing profiles still apply.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>SwiftDialogEnabled</string>
 			<key>pfm_title</key>
-			<string>Swift Dialog Enabled</string>
+			<string>Show Windows</string>
 			<key>pfm_type</key>
 			<string>boolean</string>
 		</dict>
@@ -1163,7 +1163,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>Allows you to customize the name of Third Party Patcher to something else</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>AppTitle</string>
 			<key>pfm_title</key>
@@ -1179,7 +1179,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<string>white</string>
 			<key>pfm_description</key>
-			<string>Font color used in dialogs and apps. These values set the accent colors used in swiftDialog prompts. Each accepts a standard Apple color name ('black', 'blue', 'gray', 'green', 'orange', 'pink', 'purple', 'red', 'white', 'yellow') or a hex value (e.g. '#00A4C7').</string>
+			<string>Font color used in dialogs and apps. These values set the banner colors used in the prompts. Each accepts a standard Apple color name ('black', 'blue', 'gray', 'green', 'orange', 'pink', 'purple', 'red', 'white', 'yellow') or a hex value (e.g. '#00A4C7').</string>
 			<key>pfm_documentation_url</key>
 			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#branding-color-palette</string>
 			<key>pfm_name</key>
@@ -1197,7 +1197,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<string>blue</string>
 			<key>pfm_description</key>
-			<string>Background color used in dialogs and apps. These values set the accent colors used in swiftDialog prompts. Each accepts a standard Apple color name ('black', 'blue', 'gray', 'green', 'orange', 'pink', 'purple', 'red', 'white', 'yellow') or a hex value (e.g. '#00A4C7').</string>
+			<string>Background color used in dialogs and apps. These values set the banner colors used in the prompts. Each accepts a standard Apple color name ('black', 'blue', 'gray', 'green', 'orange', 'pink', 'purple', 'red', 'white', 'yellow') or a hex value (e.g. '#00A4C7').</string>
 			<key>pfm_documentation_url</key>
 			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#branding-color-palette</string>
 			<key>pfm_name</key>
@@ -1681,7 +1681,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_default</key>
 			<true/>
 			<key>pfm_description</key>
-			<string>When 'true', scan and check operations triggered from PatcherMenu display a swiftDialog progress window.</string>
+			<string>When 'true', scan and check operations triggered from PatcherMenu display a progress window.</string>
 			<key>pfm_documentation_url</key>
 			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#patchermenu</string>
 			<key>pfm_name</key>
@@ -1963,7 +1963,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>When 'true', the scheduler runs a silent apply pass before the interactive apply phase. Apps whose blocking process is not running are installed without prompting. Items skipped in the silent pass are shown in the interactive dialog as usual.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>QuietApplyEnabled</string>
 			<key>pfm_title</key>
@@ -1979,7 +1979,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_description</key>
 			<string>When 'true' (and Quiet Apply Enabled is 'true'), a macOS notification is posted for each app installed by the quiet apply pass, so users know it was updated in the background. Three or more updates in one pass are combined into a single notification. Notifications are delivered by PatcherNotifier; deploy a Notifications payload for com.gilburns.PatcherNotifier to pre-approve them.</string>
 			<key>pfm_documentation_url</key>
-			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#swiftdialog--user-prompts</string>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#windows--user-prompts</string>
 			<key>pfm_name</key>
 			<string>QuietApplyNotifications</string>
 			<key>pfm_title</key>

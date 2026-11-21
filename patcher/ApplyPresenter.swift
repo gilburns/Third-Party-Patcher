@@ -3,9 +3,9 @@
 //  patcher
 //
 //  The user-facing side of patcher. Callers drive these protocols without knowing
-//  how the UI is drawn: a window (NativeApplyWindow, or SwiftDialogController) or macOS notifications
-//  (NotificationApplyPresenter). `Presenters` is the one place that picks the
-//  window implementation.
+//  how the UI is drawn: a window drawn by PatcherNotifier (NativeApplyWindow) or macOS
+//  notifications (NotificationApplyPresenter). `Presenters` is the one place that
+//  creates the windows.
 //
 
 import Foundation
@@ -62,28 +62,24 @@ protocol ProgressWindowPresenter {
     func close()
 }
 
-extension SwiftDialogController: ApplyPresenter, DeferralPresenter {}
-
 enum Presenters {
 
     /// The window presenter for the apply phase, or nil when no window can be shown
     /// (UI disabled, no console user, or the UI is unavailable). nil means apply silently.
     ///
-    /// Native windows are used when PatcherNotifier is loaded for the console user.
-    /// swiftDialog is the fallback when it isn't, until swiftDialog is removed.
+    /// The windows are drawn by PatcherNotifier, so it must be loaded for the console user.
     static func makeApplyWindow() -> (any ApplyWindowPresenter)? {
-        guard Preferences().swiftDialogEnabled else { return nil }
-        if let uid = PatcherNotifierAgent.windowTargetUID() {
-            return NativeApplyWindow(uid: uid)
+        guard Preferences().dialogsEnabled else { return nil }
+        guard let uid = PatcherNotifierAgent.windowTargetUID() else {
+            Logger.log("⚠️ Windows are enabled but PatcherNotifier isn't available — applying without windows.")
+            return nil
         }
-        return SwiftDialogController.makeIfAvailable()
+        return NativeApplyWindow(uid: uid)
     }
 
     /// Opens a progress window for a user-initiated run, or returns nil when none can be shown.
     static func makeProgressWindow(title: String, message: String, total: Int = 0) -> (any ProgressWindowPresenter)? {
-        if let uid = PatcherNotifierAgent.windowTargetUID() {
-            return NativeProgressWindow(uid: uid, title: title, message: message, total: total)
-        }
-        return SwiftDialogController.launchProgressWindow(title: title, message: message, total: total)
+        guard let uid = PatcherNotifierAgent.windowTargetUID() else { return nil }
+        return NativeProgressWindow(uid: uid, title: title, message: message, total: total)
     }
 }

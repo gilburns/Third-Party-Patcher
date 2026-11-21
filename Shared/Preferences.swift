@@ -431,7 +431,7 @@ struct Preferences {
         pref("BrandColorBackground", default: "blue")
     }
 
-    // MARK: - swiftDialog UI
+    // MARK: - Windows
 
     /// When true, the scheduler runs a silent apply pass before the interactive apply phase.
     /// Items whose blocking process is not running are installed without prompting the user.
@@ -448,77 +448,77 @@ struct Preferences {
         prefs["QuietApplyNotifications"] as? Bool ?? false
     }
 
-    /// When true, swiftDialog is used to show apply progress and handle blocking processes.
-    /// Automatically disabled if swiftDialog is not installed. Defaults to true.
-    var swiftDialogEnabled: Bool {
+    /// When true, patcher shows its windows (drawn by PatcherNotifier) for apply progress,
+    /// deferral and blocking-process prompts. The key keeps its original name,
+    /// SwiftDialogEnabled, so deployed profiles still apply. Defaults to true.
+    var dialogsEnabled: Bool {
         prefs["SwiftDialogEnabled"] as? Bool ?? true
     }
 
     static let defaultAppTitle = "Third Party Patcher"
 
-    /// Title shown in the swiftDialog apply window.
+    /// Title shown in the apply window and the prompts' banner.
     /// Defaults to "Third Party Patcher" when the key is absent.
     var appTitle: String {
         pref("AppTitle", default: Self.defaultAppTitle)
     }
 
-    /// When true, swiftDialog will stay on top of all other windows.
+    /// When true, the windows stay on top of all other windows.
     /// Defaults to true.
     var dialogOnTop: Bool {
         prefs["DialogOnTop"] as? Bool ?? true
     }
 
-    /// Swift Dialog icon..
+    /// Window icon.
     var dialogIcon: String {
         pref("DialogIcon", default: "")
     }
 
-    /// When true, swiftDialog will apply an Overlay Icon to the dialog.
-    /// Automatically disabled if swiftDialog is not installed.
+    /// When true, an overlay icon is composited onto the window icon.
     /// Defaults to true.
     var useOverlayIcon: Bool {
         prefs["UseOverlayIcon"] as? Bool ?? true
     }
 
-    /// Swift Dialog Overlay icon.
+    /// Window overlay icon.
     /// Defaults to "".
     var overlayIcon: String {
         pref("OverlayIcon", default: "")
     }
 
-    /// Swift Dialog window blur all screen content behind the dialog window
+    /// Blur all screen content behind the apply window.
     /// Defaults to false
     var dialogBlurscreen: Bool {
         prefs["DialogBlurscreen"] as? Bool ?? false
     }
 
-    /// Swift Dialog window hide all other apps on launch
+    /// Hide all other apps when the apply window opens.
     /// Defaults to false
     var dialogHideotherapps: Bool {
         prefs["DialogHideotherapps"] as? Bool ?? false
     }
 
-    /// Swift Dialog window allow the window to be dragged
+    /// Allow the windows to be dragged.
     /// Defaults to true
     var dialogMoveable: Bool {
         prefs["DialogMoveable"] as? Bool ?? true
     }
 
-    /// Swift Dialog screen postion
+    /// Window screen position.
     /// Defaults to center
     /// topleft | left | bottomleft | top | center/centre | bottom | topright | right | bottomright
     var dialogScreenPosition: String {
         pref("DialogScreenPosition", default: "center")
     }
 
-    /// Swift Dialog progress window screen postion
+    /// Progress window screen position.
     /// Defaults to bottomright
     /// topleft | left | bottomleft | top | center/centre | bottom | topright | right | bottomright
     var dialogScreenProgressPosition: String {
         pref("DialogScreenProgressPosition", default: "bottomright")
     }
 
-    /// Swift Dialog patch window enable window close/minimise/maximise buttons
+    /// Apply window close/minimise/maximise buttons.
     /// Defaults to "",  You can enable specific buttons: close, min, max, or comma separated combos of
     var dialogShowWindowButtons: String {
         pref("DialogShowWindowButtons", default: "")
@@ -538,47 +538,47 @@ struct Preferences {
     }
 
     /// True when ApplyDialogSize is "notifications": the apply phase uses PatcherNotifier
-    /// notifications instead of swiftDialog windows.
+    /// notifications instead of windows.
     var applyNotificationsEnabled: Bool {
         applyDialogSize.lowercased() == "notifications"
     }
 
-    /// Deterines if swift dialog should automatically close after completion
+    /// Determines if the apply window closes automatically after completion
     /// if there is no response from the end-user.
     /// Defaults to true.
     var unattendedExit: Bool {
         prefs["UnattendedExit"] as? Bool ?? true
     }
 
-    /// The number of seconds the swift dialog will automatically close
+    /// The number of seconds before the apply window closes automatically
     /// if UnattendedExit is set to TRUE
     /// Defaults to 60.
     var unattendedExitSeconds: Int {
         prefs["UnattendedExitSeconds"] as? Int ?? 60
     }
     
-    // MARK: - swiftDialog blocking process UI
+    // MARK: - Blocking process UI
 
     /// Action taken when a blocking process is running during apply.
     /// Options: ignore | kill | notify | prompt | defer
     ///   ignore — skip blocking process check entirely
     ///   kill   — force-quit the blocking process silently
-    ///   notify — show a brief swiftDialog notification; skip label if still running
-    ///   prompt — show a timed swiftDialog prompt; user can quit app or skip label
+    ///   notify — show a brief notice; skip label if still running
+    ///   prompt — show a timed prompt; user can quit app or skip label
     ///   defer  — skip this label silently; retry on next apply cycle
     /// Defaults to "prompt".
     var blockingProcessAction: String {
         pref("BlockingProcessAction", default: "prompt")
     }
 
-    /// Seconds shown on the swiftDialog countdown timer for the blocking-process prompt.
+    /// Seconds shown on the countdown timer for the blocking-process prompt.
     /// When the timer expires, the blocking process is force-quit and patching proceeds.
     /// Defaults to 120 (2 minutes).
     var blockingProcessCountdownSeconds: Int {
         prefs["BlockingProcessCountdownSeconds"] as? Int ?? 120
     }
 
-    // MARK: - swiftDialog deferral process UI
+    // MARK: - Deferral prompt UI
     
     /// The number of seconds to show defer until automatic action is taken
     /// Using this option overrides the default deferral countdown seconds.
@@ -733,7 +733,7 @@ struct Preferences {
     }
 
     /// When true, patcherscheduler passes --user-initiated to patcher for XPC-triggered scan/check,
-    /// causing a swiftDialog progress window to appear. Defaults to true.
+    /// causing a progress window to appear. Defaults to true.
     var showScanCheckProgressDialog: Bool {
         prefs["ShowScanCheckProgressDialog"] as? Bool ?? true
     }

@@ -2,9 +2,9 @@
 //  DialogAppearance.swift
 //  patcher
 //
-//  Icon choices shared by every window presenter. Icon specs use swiftDialog's syntax
-//  (file path, URL, or "SF=symbol,…"), which PatcherNotifier's windows also accept, so
-//  DialogIcon / OverlayIcon values in deployed profiles keep working.
+//  Icon choices shared by every window presenter. Icon specs are a file path, URL, or
+//  "SF=symbol,…" (the syntax swiftDialog used), so DialogIcon / OverlayIcon values in
+//  deployed profiles keep working.
 //
 
 import AppKit

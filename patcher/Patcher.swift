@@ -147,7 +147,7 @@ extension Patcher {
                         }
                     }
                     // May be a remote raw.githubusercontent.com URL before the first
-                    // metadata sync — swiftDialog accepts URLs, so pass it whole.
+                    // metadata sync — PatcherNotifier downloads URLs, so pass it whole.
                     guard let metaIcon = resolveIconURL(for: labelId) else { return nil }
                     return metaIcon.isFileURL ? metaIcon.path : metaIcon.absoluteString
                 }()

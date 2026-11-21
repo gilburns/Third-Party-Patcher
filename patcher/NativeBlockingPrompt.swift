@@ -26,7 +26,7 @@ final class NativeBlockingPrompt {
     /// How long to wait for the agent to put a window on screen. Covers a cold launch
     /// of PatcherNotifier by its LaunchAgent.
     static let displayTimeout: TimeInterval = 20
-    /// How long the notice stays up (swiftDialog's notify used a 30-second timer).
+    /// How long the notice stays up.
     static let noticeSeconds = 30
 
     private let uid: uid_t
