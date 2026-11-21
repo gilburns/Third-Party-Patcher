@@ -53,7 +53,7 @@ extension Patcher {
             logEnvironmentVariables()
 
             let total = userInitiated ? countScanLabels() : 0
-            let dialog = userInitiated ? SwiftDialogController.launchProgressWindow(
+            let dialog = userInitiated ? Presenters.makeProgressWindow(
                 title:   prefs.appTitle,
                 message: "Scanning \(total) application\(total == 1 ? "" : "s") for available updates…",
                 total:   total
@@ -123,7 +123,7 @@ extension Patcher {
             logEnvironmentVariables()
 
             let total = userInitiated ? countCheckLabels() : 0
-            let dialog = userInitiated ? SwiftDialogController.launchProgressWindow(
+            let dialog = userInitiated ? Presenters.makeProgressWindow(
                 title:   prefs.appTitle,
                 message: "Checking \(total) application\(total == 1 ? "" : "s") for available updates…",
                 total:   total
@@ -222,7 +222,7 @@ extension Patcher {
             let bypass = label != nil || userInitiated
 
             let total = userInitiated ? countStageableUpdates() : 0
-            let dialog = (userInitiated && total > 0) ? SwiftDialogController.launchProgressWindow(
+            let dialog = (userInitiated && total > 0) ? Presenters.makeProgressWindow(
                 title:   prefs.appTitle,
                 message: "Downloading \(total) update\(total == 1 ? "" : "s")…",
                 total:   total

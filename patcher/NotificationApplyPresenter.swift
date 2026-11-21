@@ -246,7 +246,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
 
 // MARK: - "Updated" notifications
 
-private func installedEvent(item: SwiftDialogController.ApplyItem, version: String,
+private func installedEvent(item: ApplyItem, version: String,
                             kind: PatcherNotificationEvent.Kind, background: Bool,
                             replaceID: String? = nil, threadID: String = "apply") -> PatcherNotificationEvent {
     let suffix = background ? " in the background." : "."
@@ -266,7 +266,7 @@ private func installedEvent(item: SwiftDialogController.ApplyItem, version: Stri
 /// Posts "X was updated" notifications. Up to two items get their own notification
 /// (with the app's icon); three or more are combined into a single summary so a large
 /// pass doesn't flood Notification Center.
-func queueInstalledNotifications(_ installed: [(item: SwiftDialogController.ApplyItem, version: String)],
+func queueInstalledNotifications(_ installed: [(item: ApplyItem, version: String)],
                                  kind: PatcherNotificationEvent.Kind, threadID: String, background: Bool) {
     guard !installed.isEmpty else { return }
     if installed.count <= 2 {

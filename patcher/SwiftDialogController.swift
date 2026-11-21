@@ -23,53 +23,6 @@ import AppKit
 import Foundation
 import SystemConfiguration
 
-// MARK: - Types
-
-enum BlockingProcessAction {
-    case ignore, kill, notify, prompt, defer_
-
-    init(rawValue: String) {
-        switch rawValue.lowercased() {
-        case "ignore": self = .ignore
-        case "kill":   self = .kill
-        case "notify": self = .notify
-        case "defer":  self = .defer_
-        default:       self = .prompt
-        }
-    }
-}
-
-enum BlockingActionResponse {
-    case proceed         // blocker was quit; install can continue (no relaunch)
-    case proceedRelaunch // user explicitly clicked "Quit <App>"; relaunch after install
-    case skip            // user or policy chose to skip this label
-}
-
-/// Size/style of the apply-phase progress dialog. A string-backed preference
-/// (ApplyDialogSize) selects this so additional sizes can be added later
-/// without introducing a new preference key.
-enum ApplyDialogSize: Equatable {
-    case large, compact
-    /// No swiftDialog window — see NotificationApplyPresenter.
-    case notifications
-
-    init(rawValue: String) {
-        switch rawValue.lowercased() {
-        case "compact":       self = .compact
-        case "notifications": self = .notifications
-        default:              self = .large
-        }
-    }
-}
-
-enum DeferralPromptResult {
-    case proceed                         // user clicked Continue
-    case deferred(minutes: Int)          // user explicitly clicked Defer
-    case timedOutDeferred(minutes: Int)  // countdown timer expired; auto-deferred
-    case deadlineForced                  // hard deadline reached; proceeded without user choice
-}
-
-
 // MARK: - SwiftDialogController
 
 /// Replaces swiftDialog's Cmd+Q with Cmd+Shift+X (`--quitkey`: an uppercase character
@@ -117,28 +70,6 @@ struct SwiftDialogController {
 
 
     // MARK: Patcher Progress main dialog
-
-    struct ApplyItem {
-        let label:            String
-        let displayName:      String
-        let iconPath:         String?
-        let installedVersion: String?
-        let newVersion:       String?
-        let isBlocked:        Bool
-
-        init(label: String, displayName: String, iconPath: String? = nil, installedVersion: String? = nil, newVersion: String? = nil, isBlocked: Bool = false) {
-            self.label            = label
-            self.displayName      = displayName
-            self.iconPath         = iconPath
-            self.installedVersion = installedVersion
-            self.newVersion       = newVersion
-            self.isBlocked        = isBlocked
-        }
-
-        /// displayName made safe for `listitem:` commands. Used for the row title at launch
-        /// as well, since swiftDialog matches updates to rows by exact title.
-        var listItemTitle: String { listItemSafe(displayName) }
-    }
 
     /// Launches swiftDialog showing progress for all items about to be applied.
     /// This is fire-and-continue — the patcher does not wait for the dialog to exit.
@@ -511,7 +442,7 @@ struct SwiftDialogController {
     /// Returns immediately with `.proceed` if the hard deadline is reached.
     /// The dropdown selection is read from swiftDialog's JSON output (`json: true`).
     func showDeferralPrompt(
-        items:                  [SwiftDialogController.ApplyItem],
+        items:                  [ApplyItem],
         daysPending:            Int,
         hardDeadlineReached:    Bool,
         allowedDeferralMinutes: [Int],
@@ -520,7 +451,7 @@ struct SwiftDialogController {
 
         let itemCount    = items.count
         let deferMenu    = allowedDeferralMinutes
-        let defaultMins  = Self.effectiveDefaultDeferral(prefs.deferralTimerDefault, menu: deferMenu)
+        let defaultMins  = DeferralMenu.effectiveDefault(prefs.deferralTimerDefault, menu: deferMenu)
         let countdown    = prefs.deferralCountdownSeconds
         let autoAction   = prefs.deferralAutomaticAction.lowercased()
 
@@ -655,15 +586,6 @@ struct SwiftDialogController {
             Logger.log("⚠️ Deferral: prompt exited \(p.terminationStatus) without a user choice — proceeding")
             return .proceed
         }
-    }
-
-    /// The dropdown default must be one of the menu values, or swiftDialog has nothing to
-    /// pre-select and a timed-out prompt would defer longer than the menu allows (e.g. on a
-    /// capped patch day). Falls back to the longest option not exceeding the configured
-    /// default, else the shortest option.
-    static func effectiveDefaultDeferral(_ configured: Int, menu: [Int]) -> Int {
-        guard !menu.isEmpty, !menu.contains(configured) else { return configured }
-        return menu.last { $0 <= configured } ?? menu[0]
     }
 
     /// JSON output key for the "Defer for" dropdown — stable even if the title is reworded.
@@ -923,7 +845,7 @@ struct SwiftDialogController {
 
 // MARK: - User progress dialog handle for scan or check
 
-struct UserProgressDialog {
+struct UserProgressDialog: ProgressWindowPresenter {
     private let process: Process
     private let commandFileURL: URL
     private let overlayIconPath: String?    // initial dialogIcon — used as overlay during per-label progress
@@ -1010,6 +932,13 @@ struct UserProgressDialog {
 
 
 // MARK: - Dialog appearance helpers
+
+extension ApplyItem {
+    /// displayName made safe for `listitem:` commands. Used for the row title at launch
+    /// as well, since swiftDialog matches updates to rows by exact title.
+    fileprivate var listItemTitle: String { listItemSafe(displayName) }
+}
+
 
 /// swiftDialog parses `listitem:` commands by splitting on "," and then ": ", and a
 /// newline ends the command, so none of these may appear in a title or status text.
