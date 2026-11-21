@@ -62,6 +62,9 @@ struct DialogSession: Codable, Equatable {
         var icon: String?
         var status: Status
         var statusText: String
+        /// 0…1 while a working item reports how far along it is (download or install).
+        /// nil shows a spinner.
+        var progress: Double? = nil
     }
 
     struct Progress: Codable, Equatable {
@@ -69,6 +72,9 @@ struct DialogSession: Codable, Equatable {
         var total: Int
         var indeterminate: Bool
         var text: String
+        /// 0…1 of the item now under way, added to `current` so the bar moves within an
+        /// item. nil when the item doesn't report progress.
+        var fraction: Double? = nil
     }
 
     struct Button: Codable, Equatable {

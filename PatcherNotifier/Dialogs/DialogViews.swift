@@ -138,9 +138,10 @@ struct SessionProgressBar: View {
         if progress.indeterminate || progress.total <= 0 {
             ProgressView().progressViewStyle(.linear)
         } else {
-            ProgressView(value: Double(min(progress.current, progress.total)), total: Double(progress.total))
+            ProgressView(value: min(Double(progress.current) + (progress.fraction ?? 0), Double(progress.total)),
+                         total: Double(progress.total))
                 .progressViewStyle(.linear)
-                .animation(.easeOut(duration: 0.25), value: progress.current)
+                .animation(.easeOut(duration: 0.25), value: Double(progress.current) + (progress.fraction ?? 0))
         }
     }
 }
@@ -242,7 +243,8 @@ private struct ItemRow: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            StatusSymbol(status: item.status)
+                .monospacedDigit()
+            StatusSymbol(status: item.status, progress: item.progress)
                 .frame(width: 20, height: 20)
         }
         .padding(.vertical, 10)
@@ -252,13 +254,21 @@ private struct ItemRow: View {
 
 private struct StatusSymbol: View {
     let status: DialogSession.Item.Status
+    var progress: Double? = nil
 
     var body: some View {
         switch status {
         case .pending:
             Image(systemName: "circle.dashed").foregroundStyle(.tertiary)
         case .working:
-            ProgressView().controlSize(.small)
+            if let progress {
+                ProgressView(value: min(max(progress, 0), 1))
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .animation(.easeOut(duration: 0.25), value: progress)
+            } else {
+                ProgressView().controlSize(.small)
+            }
         case .success:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed:
