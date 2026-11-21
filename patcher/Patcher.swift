@@ -230,6 +230,12 @@ extension Patcher {
 
             if dialog != nil { Thread.sleep(forTimeInterval: 2.0) }
 
+            // Download progress shows in the window, within each item.
+            if let dialog {
+                LiveProgress.push { fraction, detail in dialog.setItemProgress(fraction, detail: detail) }
+            }
+            defer { if dialog != nil { LiveProgress.pop(restoring: nil) } }
+
             downloadAndStageUpdates(bypassBandwidthLimit: bypass, labelFilter: label,
                 onDownloadStart: { current, total, displayName, labelId in
                     let iconPath: String? = {
@@ -647,6 +653,10 @@ extension Patcher {
                 cleanupAfterRun()
                 return
             }
+
+            // Download and install progress shows in Available Software's status line.
+            LiveProgress.push { fraction, detail in writeEnsureStatus(detail, fraction: fraction) }
+            defer { LiveProgress.pop(restoring: nil) }
 
             writeEnsureStatus("Downloading…")
             downloadAndStageUpdates(bypassBandwidthLimit: true, bypassIgnoreHomeFolder: true, bypassUpdateDelay: true, labelFilter: label)

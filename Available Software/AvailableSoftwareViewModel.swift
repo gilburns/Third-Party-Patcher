@@ -16,6 +16,8 @@ final class AvailableSoftwareViewModel: ObservableObject {
     @Published var activePhase: String?
     @Published var activeLabel: String?
     @Published var activeStatus: String?
+    /// 0…1 while the running download or install reports progress.
+    @Published var activeFraction: Double?
     @Published var queuedLabel: String?
     
     // MARK: - My Software data
@@ -124,6 +126,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
             activePhase = nil
             activeLabel = nil
             activeStatus = nil
+            activeFraction = nil
             queuedLabel = nil
             // Refresh My Software data when a patcher phase finishes
             if wasActive {
@@ -139,6 +142,7 @@ final class AvailableSoftwareViewModel: ObservableObject {
         activePhase = phase
         activeLabel = dict["label"] as? String
         activeStatus = dict["status"] as? String
+        activeFraction = (dict["fraction"] as? NSNumber)?.doubleValue
         // Transition: label moved from queued → actively running
         if let activeLabel, activeLabel == queuedLabel {
             queuedLabel = nil

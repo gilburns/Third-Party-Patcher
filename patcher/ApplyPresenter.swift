@@ -16,6 +16,9 @@ protocol ApplyPresenter {
     mutating func launchProgressDialog(items: [ApplyItem])
     func setProgressText(_ text: String)
     func setInProgress(item: ApplyItem, current: Int, total: Int)
+    /// Progress of the item now installing: `fraction` 0…1 (nil when it can't be measured)
+    /// and a short status such as "Installing 45%". Called often, already throttled.
+    func setItemProgress(item: ApplyItem, fraction: Double?, detail: String)
     func setSuccess(item: ApplyItem, toVersion: String)
     func setFailed(item: ApplyItem)
     func setSkipped(item: ApplyItem, reason: String)
@@ -55,6 +58,9 @@ protocol ProgressWindowPresenter {
     /// Starts a long item (e.g. a download): shows its label and icon, and switches the
     /// bar to indeterminate.
     func beginItem(current: Int, of total: Int, label: String, icon: String?)
+    /// Progress within the long item started by `beginItem`: `fraction` 0…1, or nil to
+    /// spin, and a short status such as "Downloading 45% · 12 MB of 98 MB".
+    func setItemProgress(_ fraction: Double?, detail: String)
     /// Ends a long item: restores the determinate bar advanced to `current`.
     func completeItem(current: Int, of total: Int)
     /// Restores the icons shown when the window first opened.

@@ -53,6 +53,9 @@ final class NotificationApplyPresenter: ApplyPresenter {
     func waitForDialog(timeout: TimeInterval?) {}
     func dismiss() {}
 
+    /// Notifications don't show progress within an install.
+    func setItemProgress(item: ApplyItem, fraction: Double?, detail: String) {}
+
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
         // Only the prompted app's user is waiting on this; everything else installs quietly.
         guard promptedLabels.contains(item.label) else { return }

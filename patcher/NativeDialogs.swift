@@ -139,6 +139,8 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     private var size: ApplyDialogSize = .large
     /// Items whose result is final, for the large window's progress bar.
     private var finishedCount = 0
+    /// The compact window's "Update 2 of 5", kept so progress can be appended to it.
+    private var compactStepText = ""
     /// The compact window's own icon and overlay, restored once the run completes.
     private var baseIcon: String?
     private var baseOverlay: String?
@@ -202,10 +204,13 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
         if size == .compact {
+            compactStepText = "Update \(current) of \(total)"
             writer?.update { s in
                 showItemIcon(item, in: &s)
-                s.progress.current = current
-                s.progress.text    = "Update \(current) of \(total)"
+                // The bar counts finished updates; this one's progress is added as it arrives.
+                s.progress.current  = current - 1
+                s.progress.fraction = nil
+                s.progress.text     = compactStepText
                 s.message          = "Installing: \(item.displayName)\(versionSuffix(item.newVersion))…"
             }
             return
@@ -213,6 +218,23 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         writer?.update { s in
             s.progress.text = "Update \(current) of \(total) - Installing: \(item.displayName)…"
             setRow(item, status: .working, text: "Installing…", in: &s)
+        }
+    }
+
+    func setItemProgress(item: ApplyItem, fraction: Double?, detail: String) {
+        if size == .compact {
+            writer?.update { s in
+                s.progress.fraction = fraction
+                s.progress.text     = "\(compactStepText) · \(detail)"
+            }
+            return
+        }
+        writer?.update { s in
+            guard let index = s.items.firstIndex(where: { $0.id == item.label }),
+                  s.items[index].status == .working else { return }
+            s.items[index].statusText = detail
+            s.items[index].progress   = fraction
+            s.progress.fraction       = fraction
         }
     }
 
@@ -320,20 +342,30 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
             writer?.update { s in
                 showItemIcon(item, in: &s)
                 s.message = compactMessage
+                if isFinalResult(status: status, rowText: rowText) {
+                    s.progress.current  = min(s.progress.current + 1, s.progress.total)
+                    s.progress.fraction = nil
+                    s.progress.text     = compactStepText
+                }
             }
             Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
             return
         }
-        // "Waiting for user…" is a pause, not a result.
-        let isFinal = !(status == .skipped && rowText == "Waiting for user…")
+        let isFinal = isFinalResult(status: status, rowText: rowText)
         writer?.update { s in
             let wasFinal = s.items.first(where: { $0.id == item.label }).map(Self.isFinal) ?? false
             setRow(item, status: status, text: rowText, in: &s)
+            s.progress.fraction = nil
             if isFinal && !wasFinal {
                 finishedCount += 1
                 s.progress.current = min(finishedCount, s.progress.total)
             }
         }
+    }
+
+    /// "Waiting for user…" is a pause, not a result.
+    private func isFinalResult(status: DialogSession.Item.Status, rowText: String) -> Bool {
+        !(status == .skipped && rowText == "Waiting for user…")
     }
 
     private static func isFinal(_ row: DialogSession.Item) -> Bool {
@@ -348,6 +380,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         if let index = s.items.firstIndex(where: { $0.id == item.label }) {
             s.items[index].status     = status
             s.items[index].statusText = text
+            s.items[index].progress   = nil
         } else {
             var row = Self.row(item)
             row.status     = status
@@ -418,6 +451,8 @@ final class NativeProgressWindow: ProgressWindowPresenter {
     private let writer: DialogSessionWriter
     private let baseIcon: String?
     private let baseOverlay: String?
+    /// "2 of 5" for the item started by `beginItem`, kept so progress can be appended to it.
+    private var itemStepText = ""
 
     init(uid: uid_t, title: String, message: String, total: Int) {
         let prefs = Preferences()
@@ -462,15 +497,27 @@ final class NativeProgressWindow: ProgressWindowPresenter {
             s.message = label
             s.progress.total   = total
             s.progress.indeterminate = true
+            s.progress.fraction = nil
             s.progress.text    = "\(current) of \(total)"
+        }
+        itemStepText = "\(current) of \(total)"
+    }
+
+    func setItemProgress(_ fraction: Double?, detail: String) {
+        writer.update { s in
+            s.progress.indeterminate = fraction == nil
+            s.progress.fraction      = fraction
+            s.progress.text          = itemStepText.isEmpty ? detail : "\(itemStepText) · \(detail)"
         }
     }
 
     func completeItem(current: Int, of total: Int) {
+        itemStepText = ""
         writer.update { s in
             s.progress.current = current
             s.progress.total   = total
             s.progress.indeterminate = false
+            s.progress.fraction = nil
             s.progress.text    = "\(current) of \(total)"
         }
     }

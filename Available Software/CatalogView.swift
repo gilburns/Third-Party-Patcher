@@ -962,8 +962,15 @@ private struct ItemDetailView: View {
     private var installControl: some View {
         if isInstalling {
             HStack(spacing: 6) {
-                ProgressView().scaleEffect(0.8)
+                if let fraction = vm.activeFraction {
+                    ProgressView(value: min(max(fraction, 0), 1))
+                        .progressViewStyle(.circular)
+                        .scaleEffect(0.8)
+                } else {
+                    ProgressView().scaleEffect(0.8)
+                }
                 Text(vm.activeStatus ?? "Installing…").font(.callout).foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
         } else if isQueued {
             Label("Queued…", systemImage: "clock")

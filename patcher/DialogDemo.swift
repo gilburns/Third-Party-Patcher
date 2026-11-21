@@ -97,7 +97,15 @@ extension Patcher {
 
             for (index, item) in items.enumerated() {
                 window.setInProgress(item: item, current: index + 1, total: items.count)
-                Thread.sleep(forTimeInterval: step)
+                // Simulated install progress: a package for the first, a copy for the second.
+                switch index {
+                case 0:  Self.simulate(step) { window.setItemProgress(item: item, fraction: $0, detail: "Installing \(LiveProgress.percent($0))") }
+                case 1:
+                    window.setItemProgress(item: item, fraction: nil, detail: "Opening disk image…")
+                    Thread.sleep(forTimeInterval: step / 2)
+                    Self.simulate(step) { window.setItemProgress(item: item, fraction: $0, detail: "Copying \(LiveProgress.percent($0))") }
+                default: Thread.sleep(forTimeInterval: step)
+                }
                 switch index {
                 case 2:  window.setFailed(item: item)
                 case 3:  window.setSkipped(item: item, reason: "App running")
@@ -108,6 +116,15 @@ extension Patcher {
             window.complete(applied: 2, skipped: 1, failed: 1)
             window.waitForDialog(timeout: 60)
             print("Done. The large window stays until you click Done, or 60 seconds pass.")
+        }
+
+        /// Calls `report` with fractions from 0 to 1 over `seconds`, as a download or install would.
+        private static func simulate(_ seconds: Double, report: (Double) -> Void) {
+            let steps = 20
+            for i in 0...steps {
+                report(Double(i) / Double(steps))
+                Thread.sleep(forTimeInterval: seconds / Double(steps))
+            }
         }
 
         private func runProgress(uid: uid_t) {
@@ -123,7 +140,11 @@ extension Patcher {
             }
             window.beginItem(current: items.count, of: items.count, label: "Downloading: **Safari**…",
                              icon: items[0].iconPath)
-            Thread.sleep(forTimeInterval: step * 2)
+            let size: Int64 = 98_400_000
+            Self.simulate(step * 2) { fraction in
+                window.setItemProgress(fraction, detail: "Downloading \(LiveProgress.percent(fraction)) · "
+                    + "\(LiveProgress.bytes(Int64(Double(size) * fraction))) of \(LiveProgress.bytes(size))")
+            }
             window.completeItem(current: items.count, of: items.count)
             window.resetIcons()
             window.update(message: "2 updates available to download.")

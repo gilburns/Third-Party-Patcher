@@ -1814,6 +1814,13 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             }
 
             dialog?.setInProgress(item: dialogItem, current: currentItemIndex, total: dialogItems.count)
+            // Install progress reports go to this item's row until the install ends. nil when
+            // there's no window; otherwise the handler pushed over (itself nil when none was).
+            let previousProgress = dialog.map { dialog in
+                LiveProgress.push { fraction, detail in
+                    dialog.setItemProgress(item: dialogItem, fraction: fraction, detail: detail)
+                }
+            }
             Logger.log("📦 Installing: \(label) v\(appNewVersion) (\(type))")
             Logger.log("   File: \(stagedFileURL.lastPathComponent)")
 
@@ -1895,6 +1902,8 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     label: label
                 )
             }
+
+            if let previousProgress { LiveProgress.pop(restoring: previousProgress) }
 
             if success {
                 // When appNewVersion was unknown at staging time (e.g. pkgInDmg version inspection
@@ -2337,24 +2346,34 @@ private func copyApp(from sourceApp: String, to targetPath: String, label: Strin
         }
     }
 
+    // ditto has no percentage, but -V prints "copying file ./path ..." as each file
+    // starts. Weighting each by its size gives the share of the app copied so far.
+    let copyProgress = DittoCopyProgress(source: sourceApp)
+    let errors = LockedLines()
+
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-    process.arguments = [sourceApp, targetPath]
-    process.standardOutput = Pipe()
-    let errPipe = Pipe()
-    process.standardError = errPipe
+    process.arguments = ["-V", sourceApp, targetPath]
     do {
-        try process.run()
-        process.waitUntilExit()
+        LiveProgress.report(0, "Copying 0%")
+        _ = try runStreaming(process, onStderr: { line in
+            if let path = dittoCopiedPath(line) {
+                let fraction = copyProgress.starting(path)
+                LiveProgress.report(fraction, "Copying \(LiveProgress.percent(fraction))")
+            } else if !line.hasPrefix(">>> ") && !line.hasPrefix("hardlinked ") && !line.hasPrefix("linked ") {
+                errors.append(line)
+            }
+        })
     } catch {
         Logger.log("❌ ditto launch error for \(label): \(error)")
         return false
     }
     guard process.terminationStatus == 0 else {
-        let msg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let msg = errors.joined
         Logger.log("❌ ditto failed for \(label): \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
         return false
     }
+    LiveProgress.report(1, "Copying 100%")
     return fileManager.fileExists(atPath: targetPath)
 }
 
@@ -2407,24 +2426,30 @@ private func runInstaller(pkgPath: String, label: String) -> Bool {
     Logger.log("📦 Running installer for \(label)...")
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/sbin/installer")
-    process.arguments = ["-pkg", pkgPath, "-target", "/"]
-    let outPipe = Pipe()
-    let errPipe = Pipe()
-    process.standardOutput = outPipe
-    process.standardError = errPipe
+    // -verboseR: machine-readable progress ("installer:%42.5", "installer:PHASE:…"),
+    // read live for the window. Other lines are logged as before.
+    process.arguments = ["-pkg", pkgPath, "-target", "/", "-verboseR"]
+    let messages = LockedLines()
+    let output: StreamedOutput
     do {
-        try process.run()
-        process.waitUntilExit()
+        LiveProgress.report(0, "Installing 0%")
+        output = try runStreaming(process, onStdout: { line in
+            switch parseInstallerLine(line) {
+            case .percent(let fraction): LiveProgress.report(fraction, "Installing \(LiveProgress.percent(fraction))")
+            case .phase:                 break      // the percentage says more than the phase name
+            case .message(let text):     messages.append(text)
+            }
+        })
     } catch {
         Logger.log("❌ installer launch error for \(label): \(error)")
         return false
     }
-    let output = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    if !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        Logger.log("   installer: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+    let logged = messages.joined.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !logged.isEmpty {
+        Logger.log("   installer: \(logged)")
     }
     guard process.terminationStatus == 0 else {
-        let errMsg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let errMsg = output.stderr
         Logger.log("❌ installer failed (exit \(process.terminationStatus)): \(errMsg.trimmingCharacters(in: .whitespacesAndNewlines))")
         return false
     }
@@ -2963,7 +2988,7 @@ private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: St
     let semaphore = DispatchSemaphore(value: 0)
     var result = DownloadResult.failed
 
-    URLSession.shared.downloadTask(with: url) { tempURL, response, error in
+    let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
         defer { semaphore.signal() }
         if let error {
             Logger.log("❌ Download error: \(error.localizedDescription)")
@@ -2982,16 +3007,33 @@ private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: St
         } catch {
             Logger.log("❌ Failed to move downloaded file: \(error)")
         }
-    }.resume()
+    }
+    task.resume()
 
-    semaphore.wait()
+    // Report progress while waiting. Servers that don't send a length leave the bar spinning.
+    while semaphore.wait(timeout: .now() + 0.25) == .timedOut {
+        reportDownload(received: task.countOfBytesReceived, expected: task.countOfBytesExpectedToReceive)
+    }
     return result
+}
+
+/// Reports a download's progress, or just the bytes so far when the total isn't known.
+private func reportDownload(received: Int64, expected: Int64) {
+    if expected > 0 {
+        let fraction = Double(received) / Double(expected)
+        LiveProgress.report(fraction, "Downloading \(LiveProgress.percent(fraction)) · "
+                                    + "\(LiveProgress.bytes(received)) of \(LiveProgress.bytes(expected))")
+    } else {
+        LiveProgress.report(nil, received > 0 ? "Downloading · \(LiveProgress.bytes(received))" : "Downloading…")
+    }
 }
 
 private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate: String?, curlOptions: String?) -> DownloadResult {
     // --fail makes HTTP >= 400 a non-zero exit instead of saving the error page;
     // --write-out reports the final status (after redirects) on stdout.
-    var args: [String] = ["-L", "-o", destination.path, "--silent", "--show-error",
+    // --progress-bar draws "###…  45.2%" on stderr, redrawn with "\r"; it is read below
+    // for the window, and the rest of stderr (errors) is kept for the log.
+    var args: [String] = ["-L", "-o", destination.path, "--progress-bar",
                           "--fail", "--write-out", "%{http_code}"]
 
     if let limitRate {
@@ -3007,22 +3049,25 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
     process.arguments = args
-    let outPipe = Pipe()
-    process.standardOutput = outPipe
-    let errPipe = Pipe()
-    process.standardError = errPipe
+    let errors = LockedLines()
+    let output: StreamedOutput
     do {
-        try process.run()
-        process.waitUntilExit()
+        LiveProgress.report(nil, "Downloading…")
+        output = try runStreaming(process, onStderr: { line in
+            if let fraction = curlProgressFraction(line) {
+                LiveProgress.report(fraction, "Downloading \(LiveProgress.percent(fraction))")
+            } else if !line.allSatisfy({ "#=O-  ".contains($0) }) {
+                errors.append(line)     // not progress-bar drawing
+            }
+        })
     } catch {
         Logger.log("❌ curl launch error: \(error)")
         try? FileManager.default.removeItem(at: destination)
         return .failed
     }
-    let httpStatus = Int(String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
+    let httpStatus = Int(output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     guard process.terminationStatus == 0 else {
-        let msg = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let msg = errors.joined
         Logger.log("❌ curl failed (exit \(process.terminationStatus)): \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
         try? FileManager.default.removeItem(at: destination)
         return httpStatus >= 400 ? .httpError(httpStatus) : .failed
@@ -3413,6 +3458,7 @@ func detachStalePatcherMounts() -> Int {
 /// Mounts a DMG at a temporary mount point, runs the closure, then detaches.
 /// Automatically handles SLA-protected DMGs by converting them before mounting.
 private func withMountedDMG<T>(at filePath: String, body: (String) -> T?) -> T? {
+    LiveProgress.report(nil, "Opening disk image…")
     // Preflight: detect and remove SLA before mounting
     if dmgHasSLA(at: filePath) {
         Logger.log("⚠️ DMG contains an SLA — converting before mount...")
@@ -3460,6 +3506,7 @@ private func withMountedDMG<T>(at filePath: String, body: (String) -> T?) -> T? 
 
 /// Unzips a file to a directory, runs the closure, returns its result (or nil on failure).
 private func unzipped<T>(filePath: String, to directory: String, body: () -> T?) -> T? {
+    LiveProgress.report(nil, "Extracting…")
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
     process.arguments = ["-xk", filePath, directory]
@@ -3476,6 +3523,7 @@ private func unzipped<T>(filePath: String, to directory: String, body: () -> T?)
 
 /// Untars a .tbz file to a directory, runs the closure, returns its result (or nil on failure).
 private func untarred<T>(filePath: String, to directory: String, body: () -> T?) -> T? {
+    LiveProgress.report(nil, "Extracting…")
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
     process.arguments = ["-xjf", filePath, "-C", directory]
@@ -4129,7 +4177,7 @@ func recordDeferralOutcome(labels: [String], result: DeferralPromptResult, date:
 /// Updates the `status` field in `active_phase.json` during a `patcher ensure` run.
 /// The scheduler writes the file before launching patcher and removes it after; this
 /// function updates it in-place so the UI can show granular progress.
-func writeEnsureStatus(_ status: String) {
+func writeEnsureStatus(_ status: String, fraction: Double? = nil) {
     let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("active_phase.json")
     var dict: [String: Any] = [:]
     if let data = try? Data(contentsOf: url),
@@ -4137,6 +4185,8 @@ func writeEnsureStatus(_ status: String) {
         dict = existing
     }
     dict["status"] = status
+    // 0…1 while a download or install reports progress; absent otherwise.
+    dict["fraction"] = fraction
     if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
         try? data.write(to: url, options: .atomic)
     }
