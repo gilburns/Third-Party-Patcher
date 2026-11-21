@@ -1476,7 +1476,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
         // ── Pre-scan: build the dialog item list before starting installs ──────────
         // swiftDialog needs the full list at launch time.
-        var dialogItems: [SwiftDialogController.ApplyItem] = []
+        var dialogItems: [ApplyItem] = []
         for dirURL in labelDirs {
             guard StagedCache.stagedFile(in: dirURL) != nil else { continue }
             let lbl = dirURL.lastPathComponent
@@ -1533,7 +1533,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     }
                 }
             }
-            dialogItems.append(SwiftDialogController.ApplyItem(label: lbl, displayName: displayName, iconPath: iconPath, installedVersion: installedVersion, newVersion: newVersion, isBlocked: isBlocked))
+            dialogItems.append(ApplyItem(label: lbl, displayName: displayName, iconPath: iconPath, installedVersion: installedVersion, newVersion: newVersion, isBlocked: isBlocked))
         }
 
         // ── Deferral gate + progress dialog ────────────────────────────────────
@@ -1544,7 +1544,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             // Skipped prompts still count as deferrals (blockedSkipOccurred below).
             Logger.log("▶️ Apply: notification mode — no deferral prompt.")
             dialog = presenter
-        } else if !suppressDialog, !silentApply, !dialogItems.isEmpty, let controller = SwiftDialogController.makeIfAvailable() {
+        } else if !suppressDialog, !silentApply, !dialogItems.isEmpty, let controller = Presenters.makeApplyWindow() {
             if prefs.applyNotificationsEnabled {
                 Logger.log("ℹ️ Apply: notifications unavailable — falling back to swiftDialog.")
             }
@@ -1606,7 +1606,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         var failedCount = 0
         var currentItemIndex = 0
         var blockedSkipOccurred = false
-        var quietInstalled: [(item: SwiftDialogController.ApplyItem, version: String)] = []
+        var quietInstalled: [(item: ApplyItem, version: String)] = []
 
         for labelDirURL in labelDirs {
             let label = labelDirURL.lastPathComponent
@@ -1629,7 +1629,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
             currentItemIndex += 1
             let dialogItem = dialogItems.first(where: { $0.label == label })
-                ?? SwiftDialogController.ApplyItem(label: label, displayName: label)
+                ?? ApplyItem(label: label, displayName: label)
 
             // Read the discovered plist for install metadata
             let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(label).plist")

@@ -337,7 +337,7 @@ func recordSelfServiceInstall(label: String, date: Date) {
 }
 
 /// Records a blocking-process dialog outcome for a single label.
-/// Call this from SwiftDialogController after the user responds to the blocking-process prompt.
+/// Call this from a presenter after the user responds to the blocking-process prompt.
 func recordBlockingProcessEvent(label: String, type: String, processName: String, date: Date) {
     let event: LabelHistoryEvent
     switch type {
