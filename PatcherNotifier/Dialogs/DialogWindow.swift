@@ -186,11 +186,20 @@ final class DialogWindow: NSObject, NSWindowDelegate {
 
     // MARK: Position
 
-    /// topleft | left | bottomleft | top | center | bottom | topright | right | bottomright
+    /// topleft | left | bottomleft | top | center | bottom | topright | right | bottomright,
+    /// or "x,y": the window's top-left corner, in points from the screen's top-left (as
+    /// swiftDialog's `--position x,y` did). Coordinates are kept inside the visible area.
     static func origin(for size: CGSize, position: String, on screen: NSScreen) -> NSPoint {
         let area   = screen.visibleFrame
         let margin: CGFloat = 20
-        let p      = position.lowercased()
+        let p      = position.lowercased().trimmingCharacters(in: .whitespaces)
+
+        let parts = p.split(separator: ",").map { Double($0.trimmingCharacters(in: .whitespaces)) }
+        if parts.count == 2, let px = parts[0], let py = parts[1] {
+            let x = min(max(screen.frame.minX + px, area.minX), area.maxX - size.width)
+            let y = min(max(screen.frame.maxY - py - size.height, area.minY), area.maxY - size.height)
+            return NSPoint(x: x.rounded(), y: y.rounded())
+        }
 
         let x: CGFloat
         if p.hasSuffix("left")       { x = area.minX + margin }

@@ -4,7 +4,7 @@
 
 🌐 **[thirdpartypatcher.org](https://thirdpartypatcher.org)**
 
-Third Party Patcher (TPP) is a macOS daemon-based patching system for IT administrators. It automatically discovers installed third-party applications, checks for available updates, downloads installers in the background, and applies them — with optional user-facing prompts via [swiftDialog](https://github.com/swiftDialog/swiftDialog) so users stay informed without being blocked.
+Third Party Patcher (TPP) is a macOS daemon-based patching system for IT administrators. It automatically discovers installed third-party applications, checks for available updates, downloads installers in the background, and applies them — with optional user-facing prompts and progress windows so users stay informed without being blocked.
 
 Updates are driven by [Installomator](https://github.com/Installomator/Installomator) label files, which Third Party Patcher downloads and keeps current automatically. Custom and override labels can be supplied by the IT team without modifying the Installomator project.
 
@@ -84,7 +84,7 @@ See the **[Scheduling wiki page](../../wiki/Scheduling)** for interval keys and 
 
 ## User Prompts and Deferrals
 
-All interactive UI uses swiftDialog, launched in the console user's session via `launchctl asuser`. Key prompt moments:
+All interactive UI is drawn by **PatcherNotifier**, an agent that runs in the console user's session; patcher (root) writes what to show and reads back the user's answers. Key prompt moments:
 
 - **Non-blocking progress** — a mini status window during Scan, Check, and Stage that auto-dismisses
 - **Deferral prompt** — shown before Apply when blocking processes are detected; users choose a defer duration or allow the update
@@ -154,7 +154,6 @@ See the **[Command-Line Reference wiki page](../../wiki/Command-Line-Reference)*
 ## Requirements
 
 - macOS 15 Sequoia or later
-- [swiftDialog](https://github.com/swiftDialog/swiftDialog) 3.x or later (for user prompts; install via `patcher ensure swiftdialog`)
 - Network access to GitHub (for Installomator label updates and app downloads)
 
 ---

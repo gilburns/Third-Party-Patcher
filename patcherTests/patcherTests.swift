@@ -3,7 +3,7 @@
 //  patcherTests
 //
 //  Tests for pure patcher logic — no process launching, no disk I/O,
-//  no swiftDialog UI interaction.
+//  no window UI interaction.
 //
 
 import Testing

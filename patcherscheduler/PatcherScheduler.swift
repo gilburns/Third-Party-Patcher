@@ -44,8 +44,6 @@ struct PatcherScheduler {
         // Check is only relevant when scan won't already cover it this cycle.
         let checkDue     = !scanDue && shouldRunCheck(state: state, now: now)
         let stageDue     = shouldRunStage(state: state, now: now)
-        let dialogDue    = prefs.swiftDialogEnabled &&
-                           !FileManager.default.fileExists(atPath: AppConstants.swiftDialogBinaryURL.path)
         let metadataDue  = shouldRunMetadataSync(state: state, now: now)
 
         // ── Apply lookahead ────────────────────────────────────────────────────
@@ -66,7 +64,7 @@ struct PatcherScheduler {
         // by confirming the response body from captive.apple.com says "Success".
         // apply is intentionally excluded — it runs from already-staged files.
         // lightScan is included because scanSingleLabel (called on hits) needs the network.
-        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || stageCatchUpNeeded || dialogDue || metadataDue
+        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || stageCatchUpNeeded || metadataDue
         let networkOK: Bool
         if networkPhaseDue {
             networkOK = isInternetAvailable()
@@ -76,9 +74,6 @@ struct PatcherScheduler {
         } else {
             networkOK = true   // no network phase due; value unused below
         }
-
-        // ── Bootstrap: ensure swiftDialog is installed before apply can use it ──
-        if dialogDue && networkOK { ensureSwiftDialog() }
 
         // ── Metadata sync ─────────────────────────────────────────────────────
         if metadataDue && networkOK {
@@ -709,19 +704,6 @@ struct PatcherScheduler {
         }
     }
 
-    /// Ensures swiftDialog is installed. Called before the normal scheduling
-    /// loop when SwiftDialogEnabled is true. Uses `patcher ensure dialog`
-    /// to scan, stage, and apply in one shot so swiftDialog is always available
-    /// for the apply phase.
-    private func ensureSwiftDialog() {
-        guard !FileManager.default.fileExists(atPath: AppConstants.swiftDialogBinaryURL.path) else {
-            Logger.log("ℹ️ swiftDialog: already installed at \(AppConstants.swiftDialogBinaryURL.path)")
-            return
-        }
-        Logger.log("ℹ️ swiftDialog: not found — bootstrapping via 'patcher ensure swiftdialog'")
-        runSubcommand("ensure", args: ["dialog"])
-    }
-
     private func loadEffectiveLabelsVersion() -> String {
         let installomator: String
         if prefs.installomatorLabelsDisable {
@@ -797,7 +779,7 @@ struct PatcherScheduler {
     /// changes (WatchPaths), and at login to deliver anything queued while logged out.
     private func manageNotifierApp() {
         let binaryURL = AppConstants.patcherNotifierAppURL.appendingPathComponent("Contents/MacOS/PatcherNotifier")
-        let enabled   = prefs.swiftDialogEnabled
+        let enabled   = prefs.dialogsEnabled
                      || prefs.showScanCheckProgressDialog
                      || (prefs.quietApplyEnabled && prefs.quietApplyNotifications)
                      || prefs.applyNotificationsEnabled
@@ -1094,7 +1076,7 @@ struct PatcherScheduler {
         runSubcommand("lightScan", args: ["--label", label])
     }
 
-    /// Installs a single label via `patcher ensure <label>`. Generalized form of ensureSwiftDialog().
+    /// Installs a single label via `patcher ensure <label>`.
     func ensureLabel(_ label: String) {
         Logger.log("ℹ️ Self-service install: starting 'patcher ensure \(label)'")
         // Record intent before running so the event is captured even if patcher exits non-zero.

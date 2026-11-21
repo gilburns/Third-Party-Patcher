@@ -98,7 +98,7 @@ func resolveIconURL(for label: String) -> URL? {
 // MARK: - Color from brand string
 
 /// Converts a brand color string to a 6-digit uppercase hex string (no "#") for
-/// use in SwiftDialog markdown color attributes.
+/// use in window branding.
 /// - Named colors map to their approximate macOS system color values (light mode).
 /// - Hex input ("RRGGBB" or "#RRGGBB", or 3-digit shorthand) is normalised to 6 digits.
 /// - Unrecognised values fall back to "007AFF" (system blue).

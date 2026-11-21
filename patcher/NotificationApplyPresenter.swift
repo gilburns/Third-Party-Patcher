@@ -2,7 +2,7 @@
 //  NotificationApplyPresenter.swift
 //  patcher
 //
-//  Notification-based apply (ApplyDialogSize = notifications). Instead of a swiftDialog
+//  Notification-based apply (ApplyDialogSize = notifications). Instead of a progress
 //  window, events are queued for PatcherNotifier to post to Notification Center:
 //
 //    • Apps that aren't running are installed without interruption; a result
@@ -10,7 +10,7 @@
 //    • A running blocking app gets an actionable "Quit & Update" notification. patcher
 //      waits up to BlockingProcessCountdownSeconds for a response, and proceeds as soon
 //      as the user quits the app themselves. Closing the notification skips the update;
-//      no response force-quits the app, matching the swiftDialog prompt's timer.
+//      no response force-quits the app, matching the blocking-app prompt's timer.
 //
 
 import Foundation
@@ -26,7 +26,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
     private var installed: [(item: ApplyItem, version: String)] = []
 
     /// Returns a presenter, or nil when notifications can't reach the user — in which
-    /// case the caller falls back to swiftDialog. A prompt that nobody can see would
+    /// case the caller falls back to the apply window. A prompt that nobody can see would
     /// time out and force-quit the app, so the notifier must actually be loaded.
     static func makeIfAvailable() -> NotificationApplyPresenter? {
         guard let uid = consoleUserUID, uid > 0 else {
