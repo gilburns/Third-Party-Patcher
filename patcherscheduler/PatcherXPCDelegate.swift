@@ -165,7 +165,8 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
         reply(recorded, recorded ? "recorded" : "Failed to record response.")
     }
 
-    func respondToDialog(_ sessionID: String, response: String, reply: @escaping (Bool, String) -> Void) {
+    func respondToDialog(_ sessionID: String, response: String, value: String?,
+                         reply: @escaping (Bool, String) -> Void) {
         guard let parsed = DialogResponse(rawValue: response) else {
             reply(false, "Unknown response '\(response)'.")
             return
@@ -182,7 +183,12 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
             reply(false, "Dialog belongs to another user.")
             return
         }
-        let recorded = DialogSessionStore.writeResponse(id: session.id, parsed)
+        // A menu choice must be one the window offered.
+        if let value, !(session.menu?.options.contains { $0.value == value } ?? false) {
+            reply(false, "Value '\(value)' is not a choice in dialog \(session.id).")
+            return
+        }
+        let recorded = DialogSessionStore.writeResponse(id: session.id, parsed, value: value)
         Logger.log("🪟 XPC: dialog response '\(parsed.rawValue)' for \(session.kind.rawValue) \(session.id)\(recorded ? "" : " — failed to record").")
         reply(recorded, recorded ? "recorded" : "Failed to record response.")
     }

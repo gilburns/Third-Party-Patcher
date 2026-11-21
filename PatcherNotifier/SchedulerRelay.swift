@@ -41,7 +41,7 @@ enum SchedulerRelay {
     }
 
     /// Reports a window's response to patcherscheduler, for the waiting patcher process.
-    static func send(sessionID: String, response: DialogResponse) {
+    static func send(sessionID: String, response: DialogResponse, value: String? = nil) {
         let conn = NSXPCConnection(machServiceName: AppConstants.patcherXPCServiceName, options: .privileged)
         conn.remoteObjectInterface = NSXPCInterface(with: PatcherXPCProtocol.self)
         conn.resume()
@@ -55,7 +55,7 @@ enum SchedulerRelay {
             conn.invalidate()
             return
         }
-        proxy.respondToDialog(sessionID, response: response.rawValue) { ok, message in
+        proxy.respondToDialog(sessionID, response: response.rawValue, value: value) { ok, message in
             if ok {
                 notifierLog.info("Relayed dialog '\(response.rawValue, privacy: .public)' for \(sessionID, privacy: .public)")
             } else {

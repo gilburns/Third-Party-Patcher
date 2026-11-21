@@ -29,10 +29,17 @@ struct DialogSession: Codable, Equatable {
         case blockingNotice
         /// BlockingProcessAction = prompt: Skip Update, or Quit <App> before the countdown ends.
         case blockingPrompt
+        /// Before an apply: Defer (for the chosen time) or Continue.
+        case deferral
 
         /// Kinds the user answers. PatcherNotifier reports when these are on screen and
         /// which button was clicked.
-        var expectsResponse: Bool { self == .blockingNotice || self == .blockingPrompt }
+        var expectsResponse: Bool {
+            switch self {
+            case .blockingNotice, .blockingPrompt, .deferral: return true
+            case .applyList, .applyCompact, .progress:        return false
+            }
+        }
     }
 
     enum Phase: String, Codable {
@@ -44,6 +51,8 @@ struct DialogSession: Codable, Equatable {
     struct Item: Codable, Equatable, Identifiable {
         enum Status: String, Codable {
             case pending, working, success, failed, skipped
+            /// Deferral prompt: ready to install, or blocked by a running app.
+            case ready, blocked
         }
         /// The Installomator label.
         let id: String
@@ -71,6 +80,18 @@ struct DialogSession: Codable, Equatable {
     struct Countdown: Codable, Equatable {
         var ends: Date
         var seconds: Int
+    }
+
+    /// A dropdown whose choice is sent back with the primary button.
+    struct Menu: Codable, Equatable {
+        struct Option: Codable, Equatable {
+            var value: String
+            var label: String
+        }
+        var title: String
+        var options: [Option]
+        /// The `value` selected when the window opens.
+        var selected: String
     }
 
     struct WindowOptions: Codable, Equatable {
@@ -135,6 +156,7 @@ struct DialogSession: Codable, Equatable {
     /// Drawn to the left of `button`. Prompts only.
     var secondaryButton: Button?
     var countdown: Countdown?
+    var menu: Menu?
     var help: Help?
     /// When set, the agent closes the window at this time if the user hasn't.
     var autoCloseAt: Date?
@@ -233,15 +255,16 @@ enum DialogSessionStore {
         return session
     }
 
-    /// Records a response for the patcher process waiting on it. Requires root; called by
-    /// patcherscheduler's XPC handler. Stale files are pruned with notification responses.
-    static func writeResponse(id: String, _ response: DialogResponse) -> Bool {
+    /// Records a response, with the menu choice if there is one, for the patcher process
+    /// waiting on it. Requires root; called by patcherscheduler's XPC handler. Stale files
+    /// are pruned with notification responses.
+    static func writeResponse(id: String, _ response: DialogResponse, value: String? = nil) -> Bool {
         guard let url = responseURL(id: id, response) else { return false }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o755])
-            try Data().write(to: url, options: .atomic)
+            try Data((value ?? "").utf8).write(to: url, options: .atomic)
             return true
         } catch {
             Logger.log("⚠️ Failed to record dialog response for \(id): \(error)")
@@ -251,10 +274,15 @@ enum DialogSessionStore {
 
     /// True (and consumed) when the response has been recorded.
     static func takeResponse(id: String, _ response: DialogResponse) -> Bool {
+        takeResponseValue(id: id, response) != nil
+    }
+
+    /// The recorded response's menu value ("" when it has none), consumed; nil if not recorded.
+    static func takeResponseValue(id: String, _ response: DialogResponse) -> String? {
         guard let url = responseURL(id: id, response),
-              FileManager.default.fileExists(atPath: url.path) else { return false }
+              let data = FileManager.default.contents(atPath: url.path) else { return nil }
         try? FileManager.default.removeItem(at: url)
-        return true
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// Clears responses left for a session, so a reused id can't see old answers.
@@ -283,9 +311,9 @@ enum DialogSessionStore {
 enum DialogResponse: String, Codable, CaseIterable {
     /// The window is on screen. Until patcher has this, it never treats silence as consent.
     case displayed
-    /// The default button: Skip Update, or OK.
+    /// The default button: Skip Update, OK, or Defer (with the menu choice).
     case primary
-    /// Quit <App>.
+    /// Quit <App>, or Continue.
     case secondary
     /// Closed without a button (the quit key).
     case dismissed

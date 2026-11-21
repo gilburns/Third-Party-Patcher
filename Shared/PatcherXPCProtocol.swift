@@ -42,6 +42,8 @@ import Foundation
     /// - Parameters:
     ///   - sessionID: The DialogSession id.
     ///   - response: A DialogResponse raw value ("displayed", "primary", "secondary", "dismissed").
+    ///   - value: The menu choice sent with "primary", if the window has a menu.
     ///   - reply: Called with (true, "recorded") on success, or (false, reason) on failure.
-    func respondToDialog(_ sessionID: String, response: String, reply: @escaping (Bool, String) -> Void)
+    func respondToDialog(_ sessionID: String, response: String, value: String?,
+                         reply: @escaping (Bool, String) -> Void)
 }

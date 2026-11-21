@@ -35,17 +35,19 @@ final class DialogWindow: NSObject, NSWindowDelegate {
     private let model: DialogModel
     private let window: DialogNSWindow
     private var blurWindows: [NSWindow] = []
-    private let onAction: (DialogAction) -> Void
+    /// The action, with the menu choice when the window has a menu.
+    private let onAction: (DialogAction, String?) -> Void
 
-    init(session: DialogSession, onAction: @escaping (DialogAction) -> Void) {
+    init(session: DialogSession, onAction: @escaping (DialogAction, String?) -> Void) {
         self.id          = session.id
         self.onAction    = onAction
         self.model       = DialogModel(session: session)
 
         let buttons = Set(session.window.buttons)
-        // The large window draws its own title over a transparent title bar. The compact
-        // and progress windows match swiftDialog's mini style: AppTitle in a normal title bar.
-        let ownTitleBar = session.kind != .applyList
+        // The compact and progress windows match swiftDialog's mini style: AppTitle in a
+        // normal title bar. The rest draw their own title or branded banner, so the title
+        // bar is hidden and transparent.
+        let ownTitleBar = session.kind == .applyCompact || session.kind == .progress
         var style: NSWindow.StyleMask = ownTitleBar ? [.titled] : [.titled, .fullSizeContentView]
         if buttons.contains("close") { style.insert(.closable) }
         if buttons.contains("min")   { style.insert(.miniaturizable) }
@@ -55,8 +57,11 @@ final class DialogWindow: NSObject, NSWindowDelegate {
                                 styleMask: style, backing: .buffered, defer: false)
         super.init()
 
-        model.onAction   = { [weak self] action in self?.onAction(action) }
-        window.onQuitKey = { [weak self] in self?.onAction(.dismissed) }
+        model.onAction   = { [weak self] action in
+            guard let self else { return }
+            self.onAction(action, self.model.selection)
+        }
+        window.onQuitKey = { [weak self] in self?.onAction(.dismissed, nil) }
 
         window.title = session.branding.appTitle
         window.titleVisibility = ownTitleBar ? .visible : .hidden
@@ -69,8 +74,12 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self
-        window.contentView = NSHostingView(rootView: DialogRootView(model: model))
-        window.setContentSize(Self.contentSize(for: session))
+        let host = NSHostingView(rootView: DialogRootView(model: model))
+        // The prompts draw their banner under the hidden title bar, at the size DialogLayout
+        // gives. Left to itself, the hosting view grows the window to add room for the title bar.
+        if session.kind.expectsResponse { host.sizingOptions = [] }
+        window.contentView = host
+        window.setFrame(NSRect(origin: .zero, size: frameSize(for: Self.contentSize(for: session))), display: false)
 
         if session.kind.expectsResponse {
             // Above the apply window and its blur: the prompt needs an answer.
@@ -80,6 +89,15 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         } else {
             window.level = session.window.onTop ? .floating : .normal
         }
+    }
+
+    /// The window frame for a content size. A titled window's frame normally adds the title
+    /// bar's height, even when the title bar is hidden. The prompts draw from the window's
+    /// top edge, so their frame is exactly the layout size; otherwise the extra height ends
+    /// up as blank space below the buttons.
+    private func frameSize(for content: CGSize) -> CGSize {
+        if model.session.kind.expectsResponse { return content }
+        return window.frameRect(forContentRect: NSRect(origin: .zero, size: content)).size
     }
 
     private static func contentSize(for session: DialogSession) -> CGSize {
@@ -92,6 +110,9 @@ final class DialogWindow: NSObject, NSWindowDelegate {
             return DialogLayout.promptSize
         case .blockingNotice:
             return DialogLayout.noticeSize
+        case .deferral:
+            return CGSize(width: DialogLayout.deferralWidth,
+                          height: DialogLayout.deferralHeight(itemCount: session.items.count))
         }
     }
 
@@ -106,7 +127,7 @@ final class DialogWindow: NSObject, NSWindowDelegate {
 
         // Progress windows are shown on top without taking focus, so the user can keep
         // working while updates apply. The large window comes forward once it's complete
-        // and Done needs a click; the blocking-app windows come forward at once.
+        // and Done needs a click; prompts come forward at once.
         window.orderFrontRegardless()
         if session.kind.expectsResponse { bringForward() }
     }
@@ -117,11 +138,11 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         model.session = session
         window.title = session.branding.appTitle
 
-        let size = Self.contentSize(for: session)
-        if window.contentLayoutRect.size != size {
+        let size = frameSize(for: Self.contentSize(for: session))
+        if window.frame.size != size {
             // Grow or shrink from the top edge so the window doesn't jump.
-            var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
-            frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+            let frame = NSRect(x: window.frame.minX, y: window.frame.maxY - size.height,
+                               width: size.width, height: size.height)
             window.setFrame(frame, display: true, animate: false)
         }
         if session.kind == .applyList, session.phase == .complete, previous.phase != .complete {
@@ -188,7 +209,7 @@ final class DialogWindow: NSObject, NSWindowDelegate {
 
     /// The title-bar close button (only shown when DialogShowWindowButtons includes it).
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        onAction(.dismissed)
+        onAction(.dismissed, nil)
         return false
     }
 }

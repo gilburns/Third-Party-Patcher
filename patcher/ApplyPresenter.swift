@@ -70,12 +70,11 @@ enum Presenters {
     /// (UI disabled, no console user, or the UI is unavailable). nil means apply silently.
     ///
     /// Native windows are used when PatcherNotifier is loaded for the console user.
-    /// Until the native prompts exist, swiftDialog still draws the deferral and
-    /// blocking-app prompts, and is the whole UI when PatcherNotifier isn't loaded.
+    /// swiftDialog is the fallback when it isn't, until swiftDialog is removed.
     static func makeApplyWindow() -> (any ApplyWindowPresenter)? {
         guard Preferences().swiftDialogEnabled else { return nil }
         if let uid = PatcherNotifierAgent.windowTargetUID() {
-            return NativeApplyWindow(uid: uid, prompts: SwiftDialogController.makeIfAvailable())
+            return NativeApplyWindow(uid: uid)
         }
         return SwiftDialogController.makeIfAvailable()
     }
