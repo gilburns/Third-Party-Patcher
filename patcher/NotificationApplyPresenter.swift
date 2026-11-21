@@ -33,27 +33,15 @@ final class NotificationApplyPresenter: ApplyPresenter {
             Logger.log("ℹ️ Notifications: no console user logged in.")
             return nil
         }
-        let binary = AppConstants.patcherNotifierAppURL.appendingPathComponent("Contents/MacOS/PatcherNotifier")
-        guard FileManager.default.fileExists(atPath: binary.path) else {
+        guard PatcherNotifierAgent.isInstalled else {
             Logger.log("ℹ️ Notifications: PatcherNotifier not found at \(AppConstants.patcherNotifierAppURL.path).")
             return nil
         }
-        guard isNotifierLoaded(uid: uid) else {
+        guard PatcherNotifierAgent.isLoaded(uid: uid) else {
             Logger.log("ℹ️ Notifications: PatcherNotifier LaunchAgent is not loaded for uid \(uid).")
             return nil
         }
         return NotificationApplyPresenter()
-    }
-
-    private static func isNotifierLoaded(uid: uid_t) -> Bool {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = ["print", "gui/\(uid)/\(AppConstants.patcherNotifierLaunchAgentLabel)"]
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError  = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return false }
-        p.waitUntilExit()
-        return p.terminationStatus == 0
     }
 
     private func notificationID(for item: ApplyItem) -> String { "apply.\(item.label)" }

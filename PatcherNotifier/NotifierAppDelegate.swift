@@ -17,6 +17,7 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     private static let idleSeconds: TimeInterval = 30
 
     private let delivery = NotificationDelivery()
+    private let dialogs  = DialogWindowManager()
     private var queueWatcher: DispatchSourceFileSystemObject?
     private var idleTimer: Timer?
     private var retryTimer: Timer?
@@ -50,6 +51,7 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
             }
             startWatchingQueue()
             resetIdleTimer()
+            dialogs.reconcile()
             deliver()
         }
     }
@@ -98,6 +100,7 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
 
     private func queueChanged() {
         resetIdleTimer()
+        dialogs.reconcile()
         deliver()
     }
 
@@ -113,6 +116,11 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     }
 
     private func quitWhenIdle() {
+        // A window is open: stay until it closes.
+        if dialogs.hasOpenWindows {
+            resetIdleTimer()
+            return
+        }
         Task {
             // Final pass closes the window between the last watcher event and exit.
             if let retry = await delivery.deliverPending() {

@@ -13,7 +13,7 @@ struct Patcher: ParsableCommand {
         commandName: "patcher",
         abstract: "Scans and patches macOS applications using Installomator.",
         version: AppConstants.patcherVersion,
-        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, ApplyQuiet.self, EnsureTool.self, ResetHistory.self, ResetBrokenState.self, ResetLabel.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self],
+        subcommands: [Scan.self, Check.self, LightScan.self, Stage.self, StageOnDemand.self, Apply.self, ApplyQuiet.self, EnsureTool.self, ResetHistory.self, ResetBrokenState.self, ResetLabel.self, RepairPermissions.self, CleanLogs.self, SendReport.self, TestWebhook.self, SyncMetadata.self, DialogDemo.self],
 //        defaultSubcommand: Scan.self
     )
 }
