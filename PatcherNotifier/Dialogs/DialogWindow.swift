@@ -35,10 +35,12 @@ final class DialogWindow: NSObject, NSWindowDelegate {
     private let model: DialogModel
     private let window: DialogNSWindow
     private var blurWindows: [NSWindow] = []
-    /// The action, with the menu choice when the window has a menu.
+    /// The action, with the menu choice (primary) or checkbox state (secondary) when the
+    /// window has one.
     private let onAction: (DialogAction, String?) -> Void
 
-    init(session: DialogSession, onAction: @escaping (DialogAction, String?) -> Void) {
+    init(session: DialogSession, onToggle: @escaping (Bool) -> Void = { _ in },
+         onAction: @escaping (DialogAction, String?) -> Void) {
         self.id          = session.id
         self.onAction    = onAction
         self.model       = DialogModel(session: session)
@@ -59,8 +61,17 @@ final class DialogWindow: NSObject, NSWindowDelegate {
 
         model.onAction   = { [weak self] action in
             guard let self else { return }
-            self.onAction(action, self.model.selection)
+            switch action {
+            case .primary:
+                self.onAction(action, self.model.selection)
+            case .secondary:
+                let state = self.model.session.checkbox == nil ? nil : DialogSession.Checkbox.value(self.model.checked)
+                self.onAction(action, state)
+            case .dismissed:
+                self.onAction(action, nil)
+            }
         }
+        model.onToggle   = onToggle
         window.onQuitKey = { [weak self] in self?.onAction(.dismissed, nil) }
 
         window.title = session.branding.appTitle

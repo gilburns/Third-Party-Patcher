@@ -54,7 +54,7 @@ enum BlockingProcessAction {
 
 enum BlockingActionResponse {
     case proceed         // blocker was quit; install can continue (no relaunch)
-    case proceedRelaunch // user explicitly clicked "Quit <App>"; relaunch after install
+    case proceedRelaunch // blocker was quit; reopen it after the install
     case skip            // user or policy chose to skip this label
 }
 
