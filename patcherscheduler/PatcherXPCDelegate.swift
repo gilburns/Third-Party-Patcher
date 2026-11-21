@@ -164,4 +164,26 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
         Logger.log("🔔 XPC: notification response '\(parsed.rawValue)' for \(event.label ?? event.id)\(recorded ? "" : " — failed to record").")
         reply(recorded, recorded ? "recorded" : "Failed to record response.")
     }
+
+    func respondToDialog(_ sessionID: String, response: String, reply: @escaping (Bool, String) -> Void) {
+        guard let parsed = DialogResponse(rawValue: response) else {
+            reply(false, "Unknown response '\(response)'.")
+            return
+        }
+        // Only a prompt that is still running (and so still being waited on), shown to
+        // the user sending the response. This also validates the id before it is used
+        // as a filename.
+        guard let session = DialogSessionStore.answerableSession(id: sessionID) else {
+            reply(false, "No pending dialog with id '\(sessionID)'.")
+            return
+        }
+        if let caller = NSXPCConnection.current()?.effectiveUserIdentifier, caller != session.consoleUID {
+            Logger.log("⛔️ XPC: dialog response for \(session.id) from uid \(caller), expected \(session.consoleUID) — rejected.")
+            reply(false, "Dialog belongs to another user.")
+            return
+        }
+        let recorded = DialogSessionStore.writeResponse(id: session.id, parsed)
+        Logger.log("🪟 XPC: dialog response '\(parsed.rawValue)' for \(session.kind.rawValue) \(session.id)\(recorded ? "" : " — failed to record").")
+        reply(recorded, recorded ? "recorded" : "Failed to record response.")
+    }
 }

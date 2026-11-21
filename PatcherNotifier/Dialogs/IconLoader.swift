@@ -57,7 +57,9 @@ final class IconLoader {
 
         let coreTypes = "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/"
         switch spec.lowercased() {
+        // AlertCautionIcon.icns is gone from recent macOS; the named image is the same icon.
         case "caution", "warning": return NSImage(contentsOfFile: coreTypes + "AlertCautionIcon.icns")
+                                       ?? NSImage(named: NSImage.cautionName)
         case "info":               return NSImage(contentsOfFile: coreTypes + "AlertNoteIcon.icns")
         case "stop", "error":      return NSImage(contentsOfFile: coreTypes + "AlertStopIcon.icns")
         case "computer":           return NSImage(named: NSImage.computerName)

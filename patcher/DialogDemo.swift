@@ -15,18 +15,21 @@ extension Patcher {
         static let configuration = CommandConfiguration(
             commandName: "dialog-demo",
             abstract: "Show a window with sample data, without installing anything.",
-            discussion: "Kinds: large, compact, progress. Run with sudo; PatcherNotifier must be loaded for the console user."
+            discussion: "Kinds: large, compact, progress, notice, prompt. Run with sudo; PatcherNotifier must be loaded for the console user. The notice and prompt report what patcher would do but never quit an app."
         )
 
-        @Argument(help: "Which window to show: large, compact or progress.")
+        @Argument(help: "Which window to show: large, compact, progress, notice or prompt.")
         var kind: String = "large"
 
         @Option(name: .long, help: "Seconds each step stays on screen.")
         var step: Double = 1.5
 
+        @Option(name: .long, help: "Seconds on the prompt's countdown.")
+        var countdown: Int = 60
+
         func validate() throws {
-            guard ["large", "compact", "progress"].contains(kind.lowercased()) else {
-                throw ValidationError("Unknown kind '\(kind)'. Use large, compact or progress.")
+            guard ["large", "compact", "progress", "notice", "prompt"].contains(kind.lowercased()) else {
+                throw ValidationError("Unknown kind '\(kind)'. Use large, compact, progress, notice or prompt.")
             }
             guard getuid() == 0 else {
                 throw ValidationError("dialog-demo needs root: run it with sudo.")
@@ -40,6 +43,19 @@ extension Patcher {
             switch kind.lowercased() {
             case "progress": runProgress(uid: uid)
             case "compact":  runApply(uid: uid, size: .compact)
+            case "notice":
+                NativeBlockingPrompt(uid: uid, dryRun: true)
+                    .notify(processName: "TextEdit", item: Self.sampleItems[1])
+                print("Notice closed.")
+            case "prompt":
+                let response = NativeBlockingPrompt(uid: uid, dryRun: true)
+                    .prompt(processName: "TextEdit", item: Self.sampleItems[1],
+                            countdownSeconds: countdown, deferIfScreenLocks: true)
+                switch response {
+                case .skip:            print("Result: skip the update.")
+                case .proceed:         print("Result: quit TextEdit and install (countdown ended). Nothing was quit.")
+                case .proceedRelaunch: print("Result: quit TextEdit, install, then reopen it. Nothing was quit.")
+                }
             default:         runApply(uid: uid, size: .large)
             }
         }

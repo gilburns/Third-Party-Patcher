@@ -8,11 +8,21 @@
 import Combine
 import SwiftUI
 
+/// What the user did to a window.
+enum DialogAction {
+    /// The default button: Done, OK, or Skip Update.
+    case primary
+    /// Quit <App>.
+    case secondary
+    /// The quit key or the title-bar close button.
+    case dismissed
+}
+
 /// The live state of one window. DialogWindow replaces `session` whenever its file changes.
 final class DialogModel: ObservableObject {
     @Published var session: DialogSession
-    /// Set by DialogWindow: the Done button closes the window as a user dismissal.
-    var onDone: () -> Void = {}
+    /// Set by DialogWindow.
+    var onAction: (DialogAction) -> Void = { _ in }
 
     init(session: DialogSession) {
         self.session = session
@@ -22,6 +32,8 @@ final class DialogModel: ObservableObject {
 enum DialogLayout {
     static let listWidth: CGFloat = 770
     static let compactSize = CGSize(width: 560, height: 124)
+    static let promptSize  = CGSize(width: 480, height: 320)
+    static let noticeSize  = CGSize(width: 600, height: 250)
 
     static func listHeight(itemCount: Int) -> CGFloat {
         min(520, max(450, 220 + CGFloat(itemCount) * 60))
@@ -34,9 +46,11 @@ struct DialogRootView: View {
     var body: some View {
         switch model.session.kind {
         case .applyList:
-            ApplyListView(session: model.session, onDone: model.onDone)
+            ApplyListView(session: model.session, onDone: { model.onAction(.primary) })
         case .applyCompact, .progress:
             CompactProgressView(session: model.session)
+        case .blockingNotice, .blockingPrompt:
+            BlockingAppView(session: model.session, onAction: model.onAction)
         }
     }
 }
@@ -332,5 +346,90 @@ struct CompactProgressView: View {
         .padding(.vertical, 14)
         .frame(width: DialogLayout.compactSize.width, height: DialogLayout.compactSize.height)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+// MARK: - Blocking-app notice and prompt
+
+struct BlockingAppView: View {
+    let session: DialogSession
+    let onAction: (DialogAction) -> Void
+
+    private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
+    private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
+    private var size: CGSize { session.kind == .blockingNotice ? DialogLayout.noticeSize : DialogLayout.promptSize }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(session.title)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(brandText)
+                .lineLimit(1)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                .background(brandBackground)
+
+            HStack(alignment: .top, spacing: 16) {
+                DialogIconView(spec: session.icon, overlay: session.overlayIcon, size: 80)
+                MarkdownText(session.message)
+                    .font(.system(size: session.kind == .blockingNotice ? 15 : 13))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+
+            Spacer(minLength: 12)
+
+            if let countdown = session.countdown {
+                CountdownView(countdown: countdown)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 12)
+            }
+
+            HStack(spacing: 10) {
+                Spacer()
+                if let secondary = session.secondaryButton {
+                    Button(secondary.title) { onAction(.secondary) }
+                        .controlSize(.large)
+                        .disabled(!secondary.enabled)
+                }
+                if let button = session.button {
+                    Button(button.title) { onAction(.primary) }
+                        .keyboardShortcut(.defaultAction)
+                        .controlSize(.large)
+                        .disabled(!button.enabled)
+                }
+            }
+            .padding([.horizontal, .bottom], 20)
+        }
+        .frame(width: size.width, height: size.height)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// A bar that drains as patcher's countdown runs, with the time left.
+private struct CountdownView: View {
+    let countdown: DialogSession.Countdown
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let total     = Double(max(countdown.seconds, 1))
+            let remaining = min(max(countdown.ends.timeIntervalSince(context.date), 0), total)
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: remaining, total: total)
+                    .progressViewStyle(.linear)
+                Text("Time remaining: \(Self.format(remaining))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    private static func format(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded(.up))
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 }

@@ -5,10 +5,10 @@
 //  Windows drawn by PatcherNotifier. patcher describes each window as a DialogSession
 //  and rewrites its file on every change; the agent in the user's session renders it.
 //
-//  This phase covers the windows that only report progress: the large and compact
-//  apply windows and the scan/check/stage window. The deferral prompt and the
-//  blocking-app prompts are still swiftDialog until they get native versions, so
-//  NativeApplyWindow hands those calls to a SwiftDialogController when one is available.
+//  Covers the large and compact apply windows, the scan/check/stage window, and (via
+//  NativeBlockingPrompt) the blocking-app notice and prompt. The deferral prompt is still
+//  swiftDialog until it gets a native version, so NativeApplyWindow hands that call to a
+//  SwiftDialogController when one is available.
 //
 
 import Foundation
@@ -118,6 +118,8 @@ final class DialogSessionWriter {
             items:       [],
             progress:    DialogSession.Progress(current: 0, total: max(total, 0), indeterminate: false, text: ""),
             button:      nil,
+            secondaryButton: nil,
+            countdown:   nil,
             help:        nil,
             autoCloseAt: nil
         )
@@ -125,14 +127,14 @@ final class DialogSessionWriter {
 }
 
 /// The installer package icon, used for items without an icon of their own.
-private let packageIconPath = "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns"
+let packageIconPath = "/System/Library/CoreServices/Installer.app/Contents/Resources/package.icns"
 
 // MARK: - Apply window
 
 final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     private let uid: uid_t
-    /// Temporary: swiftDialog still draws the deferral and blocking-app prompts.
+    /// Temporary: swiftDialog still draws the deferral prompt.
     private let prompts: SwiftDialogController?
     private var writer: DialogSessionWriter?
     /// Fixed by `dialog-demo`; otherwise read from ApplyDialogSize at launch.
@@ -282,17 +284,28 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     func handleBlockingProcess(processName: String, item: ApplyItem,
                                action: BlockingProcessAction, countdownSeconds: Int,
                                deferIfScreenLocks: Bool) -> BlockingActionResponse {
-        guard let prompts else {
-            return Self.handleWithoutPrompt(processName: processName, item: item, action: action)
-        }
-        if action == .prompt {
-            // Show the pause in this window; swiftDialog draws the prompt itself.
+        switch action {
+        case .ignore:
+            Logger.log("ℹ️ BlockingProcessAction=ignore — proceeding despite '\(processName)' running")
+            return .proceed
+        case .kill:
+            Logger.log("ℹ️ BlockingProcessAction=kill — force-quitting '\(processName)'")
+            forceQuit(processName)
+            return .proceed
+        case .defer_:
+            Logger.log("ℹ️ BlockingProcessAction=defer — skipping '\(item.label)' this cycle")
+            return .skip
+        case .notify:
+            NativeBlockingPrompt(uid: uid).notify(processName: processName, item: item)
+            return .skip
+        case .prompt:
+            // Show the pause in this window while the prompt waits.
             setProgressText("Waiting for user — \(item.displayName)")
             setSkipped(item: item, reason: "Waiting for user…")
+            return NativeBlockingPrompt(uid: uid).prompt(processName: processName, item: item,
+                                                         countdownSeconds: countdownSeconds,
+                                                         deferIfScreenLocks: deferIfScreenLocks)
         }
-        return prompts.handleBlockingProcess(processName: processName, item: item, action: action,
-                                             countdownSeconds: countdownSeconds,
-                                             deferIfScreenLocks: deferIfScreenLocks)
     }
 
     // MARK: DeferralPresenter
@@ -372,26 +385,6 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         return DialogSession.Item(id: item.label, title: item.displayName, subtitle: subtitle,
                                   icon: item.iconPath ?? packageIconPath,
                                   status: .pending, statusText: "Waiting")
-    }
-
-    /// Matches the apply loop's behavior when no UI is available at all.
-    private static func handleWithoutPrompt(processName: String, item: ApplyItem,
-                                            action: BlockingProcessAction) -> BlockingActionResponse {
-        switch action {
-        case .ignore:
-            return .proceed
-        case .kill:
-            Logger.log("ℹ️ BlockingProcessAction=kill — force-quitting '\(processName)'")
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-            p.arguments = ["-x", processName]
-            try? p.run(); p.waitUntilExit()
-            Thread.sleep(forTimeInterval: 2.0)
-            return .proceed
-        case .notify, .prompt, .defer_:
-            Logger.log("ℹ️ No prompt available — skipping '\(item.label)' while '\(processName)' is running")
-            return .skip
-        }
     }
 }
 

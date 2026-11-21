@@ -35,11 +35,11 @@ final class DialogWindow: NSObject, NSWindowDelegate {
     private let model: DialogModel
     private let window: DialogNSWindow
     private var blurWindows: [NSWindow] = []
-    private let onUserClose: () -> Void
+    private let onAction: (DialogAction) -> Void
 
-    init(session: DialogSession, onUserClose: @escaping () -> Void) {
+    init(session: DialogSession, onAction: @escaping (DialogAction) -> Void) {
         self.id          = session.id
-        self.onUserClose = onUserClose
+        self.onAction    = onAction
         self.model       = DialogModel(session: session)
 
         let buttons = Set(session.window.buttons)
@@ -55,8 +55,8 @@ final class DialogWindow: NSObject, NSWindowDelegate {
                                 styleMask: style, backing: .buffered, defer: false)
         super.init()
 
-        model.onDone = { [weak self] in self?.onUserClose() }
-        window.onQuitKey = { [weak self] in self?.onUserClose() }
+        model.onAction   = { [weak self] action in self?.onAction(action) }
+        window.onQuitKey = { [weak self] in self?.onAction(.dismissed) }
 
         window.title = session.branding.appTitle
         window.titleVisibility = ownTitleBar ? .visible : .hidden
@@ -72,7 +72,10 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         window.contentView = NSHostingView(rootView: DialogRootView(model: model))
         window.setContentSize(Self.contentSize(for: session))
 
-        if session.window.blurScreen {
+        if session.kind.expectsResponse {
+            // Above the apply window and its blur: the prompt needs an answer.
+            window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
+        } else if session.window.blurScreen {
             window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         } else {
             window.level = session.window.onTop ? .floating : .normal
@@ -85,6 +88,10 @@ final class DialogWindow: NSObject, NSWindowDelegate {
             return CGSize(width: DialogLayout.listWidth, height: DialogLayout.listHeight(itemCount: session.items.count))
         case .applyCompact, .progress:
             return DialogLayout.compactSize
+        case .blockingPrompt:
+            return DialogLayout.promptSize
+        case .blockingNotice:
+            return DialogLayout.noticeSize
         }
     }
 
@@ -97,9 +104,11 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         if session.window.blurScreen { showBlur() }
         if session.window.hideOtherApps { NSApp.hideOtherApplications(nil) }
 
-        // Shown on top without taking focus, so the user can keep working while updates
-        // apply. The large window comes forward once it's complete and Done needs a click.
+        // Progress windows are shown on top without taking focus, so the user can keep
+        // working while updates apply. The large window comes forward once it's complete
+        // and Done needs a click; the blocking-app windows come forward at once.
         window.orderFrontRegardless()
+        if session.kind.expectsResponse { bringForward() }
     }
 
     func update(_ session: DialogSession) {
@@ -179,7 +188,7 @@ final class DialogWindow: NSObject, NSWindowDelegate {
 
     /// The title-bar close button (only shown when DialogShowWindowButtons includes it).
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        onUserClose()
+        onAction(.dismissed)
         return false
     }
 }
