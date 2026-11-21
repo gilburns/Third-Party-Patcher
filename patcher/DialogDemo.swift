@@ -15,21 +15,24 @@ extension Patcher {
         static let configuration = CommandConfiguration(
             commandName: "dialog-demo",
             abstract: "Show a window with sample data, without installing anything.",
-            discussion: "Kinds: large, compact, progress, notice, prompt. Run with sudo; PatcherNotifier must be loaded for the console user. The notice and prompt report what patcher would do but never quit an app."
+            discussion: "Kinds: large, compact, progress, notice, prompt, deferral. Run with sudo; PatcherNotifier must be loaded for the console user. The prompts report what patcher would do but never quit an app or record a deferral."
         )
 
-        @Argument(help: "Which window to show: large, compact, progress, notice or prompt.")
+        @Argument(help: "Which window to show: large, compact, progress, notice, prompt or deferral.")
         var kind: String = "large"
 
         @Option(name: .long, help: "Seconds each step stays on screen.")
         var step: Double = 1.5
 
-        @Option(name: .long, help: "Seconds on the prompt's countdown.")
+        @Option(name: .long, help: "Seconds on the blocking-app prompt's countdown.")
         var countdown: Int = 60
 
+        @Flag(name: .long, help: "Show the deferral prompt as it looks once the hard deadline is reached.")
+        var deadline = false
+
         func validate() throws {
-            guard ["large", "compact", "progress", "notice", "prompt"].contains(kind.lowercased()) else {
-                throw ValidationError("Unknown kind '\(kind)'. Use large, compact, progress, notice or prompt.")
+            guard ["large", "compact", "progress", "notice", "prompt", "deferral"].contains(kind.lowercased()) else {
+                throw ValidationError("Unknown kind '\(kind)'. Use large, compact, progress, notice, prompt or deferral.")
             }
             guard getuid() == 0 else {
                 throw ValidationError("dialog-demo needs root: run it with sudo.")
@@ -47,6 +50,22 @@ extension Patcher {
                 NativeBlockingPrompt(uid: uid, dryRun: true)
                     .notify(processName: "TextEdit", item: Self.sampleItems[1])
                 print("Notice closed.")
+            case "deferral":
+                // Uses the real deferral settings (menu, countdown, automatic action); records nothing.
+                let prefs = Preferences()
+                var items = Self.sampleItems
+                items[3] = ApplyItem(label: "chess", displayName: "Chess",
+                                     iconPath: "/System/Applications/Chess.app", isBlocked: true)
+                let result = NativeDeferralPrompt(uid: uid).show(
+                    items: items, daysPending: 3, hardDeadlineReached: deadline,
+                    allowedDeferralMinutes: PatchSchedule(prefs: prefs).allowedDeferralMinutes(daysPending: 3),
+                    prefs: prefs)
+                switch result {
+                case .proceed:                     print("Result: continue and install now.")
+                case .deferred(let minutes):       print("Result: deferred by the user for \(formatDeferralDuration(minutes)).")
+                case .timedOutDeferred(let minutes): print("Result: countdown ended — auto-deferred for \(formatDeferralDuration(minutes)).")
+                case .deadlineForced:              print("Result: hard deadline — install now.")
+                }
             case "prompt":
                 let response = NativeBlockingPrompt(uid: uid, dryRun: true)
                     .prompt(processName: "TextEdit", item: Self.sampleItems[1],
@@ -71,7 +90,7 @@ extension Patcher {
         ]
 
         private func runApply(uid: uid_t, size: ApplyDialogSize) {
-            let window = NativeApplyWindow(uid: uid, prompts: nil, size: size)
+            let window = NativeApplyWindow(uid: uid, size: size)
             let items  = Self.sampleItems
             window.launchProgressDialog(items: items)
             Thread.sleep(forTimeInterval: step)

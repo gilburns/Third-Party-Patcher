@@ -5,10 +5,8 @@
 //  Windows drawn by PatcherNotifier. patcher describes each window as a DialogSession
 //  and rewrites its file on every change; the agent in the user's session renders it.
 //
-//  Covers the large and compact apply windows, the scan/check/stage window, and (via
-//  NativeBlockingPrompt) the blocking-app notice and prompt. The deferral prompt is still
-//  swiftDialog until it gets a native version, so NativeApplyWindow hands that call to a
-//  SwiftDialogController when one is available.
+//  Covers the large and compact apply windows and the scan/check/stage window. The
+//  prompts are in NativeBlockingPrompt and NativeDeferralPrompt.
 //
 
 import Foundation
@@ -120,6 +118,7 @@ final class DialogSessionWriter {
             button:      nil,
             secondaryButton: nil,
             countdown:   nil,
+            menu:        nil,
             help:        nil,
             autoCloseAt: nil
         )
@@ -134,8 +133,6 @@ let packageIconPath = "/System/Library/CoreServices/Installer.app/Contents/Resou
 final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     private let uid: uid_t
-    /// Temporary: swiftDialog still draws the deferral prompt.
-    private let prompts: SwiftDialogController?
     private var writer: DialogSessionWriter?
     /// Fixed by `dialog-demo`; otherwise read from ApplyDialogSize at launch.
     private let sizeOverride: ApplyDialogSize?
@@ -149,9 +146,8 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     /// How long the compact window holds each result before the next item replaces it.
     private static let compactResultHoldSeconds: TimeInterval = 1.5
 
-    init(uid: uid_t, prompts: SwiftDialogController?, size: ApplyDialogSize? = nil) {
+    init(uid: uid_t, size: ApplyDialogSize? = nil) {
         self.uid = uid
-        self.prompts = prompts
         self.sizeOverride = size
     }
 
@@ -312,14 +308,9 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     func showDeferralPrompt(items: [ApplyItem], daysPending: Int, hardDeadlineReached: Bool,
                             allowedDeferralMinutes: [Int], prefs: Preferences) -> DeferralPromptResult {
-        guard let prompts else {
-            // Same as a prompt that couldn't be shown: proceed.
-            Logger.log("ℹ️ Deferral: no prompt available — proceeding")
-            return hardDeadlineReached ? .deadlineForced : .proceed
-        }
-        return prompts.showDeferralPrompt(items: items, daysPending: daysPending,
-                                          hardDeadlineReached: hardDeadlineReached,
-                                          allowedDeferralMinutes: allowedDeferralMinutes, prefs: prefs)
+        NativeDeferralPrompt(uid: uid).show(items: items, daysPending: daysPending,
+                                            hardDeadlineReached: hardDeadlineReached,
+                                            allowedDeferralMinutes: allowedDeferralMinutes, prefs: prefs)
     }
 
     // MARK: Helpers
@@ -349,7 +340,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         switch row.status {
         case .success, .failed: return true
         case .skipped:          return row.statusText != "Waiting for user…"
-        case .pending, .working: return false
+        case .pending, .working, .ready, .blocked: return false
         }
     }
 

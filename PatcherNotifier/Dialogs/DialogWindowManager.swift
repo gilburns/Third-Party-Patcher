@@ -57,8 +57,8 @@ final class DialogWindowManager {
             } else {
                 let id = session.id
                 let kind = session.kind
-                let window = DialogWindow(session: session) { [weak self] action in
-                    self?.handle(action, id: id, kind: kind)
+                let window = DialogWindow(session: session) { [weak self] action, value in
+                    self?.handle(action, value: value, id: id, kind: kind)
                 }
                 windows[id] = window
                 window.show()
@@ -77,15 +77,13 @@ final class DialogWindowManager {
         updateTimer()
     }
 
-    private func handle(_ action: DialogAction, id: String, kind: DialogSession.Kind) {
+    private func handle(_ action: DialogAction, value: String?, id: String, kind: DialogSession.Kind) {
         if kind.expectsResponse {
-            let response: DialogResponse
             switch action {
-            case .primary:   response = .primary
-            case .secondary: response = .secondary
-            case .dismissed: response = .dismissed
+            case .primary:   SchedulerRelay.send(sessionID: id, response: .primary, value: value)
+            case .secondary: SchedulerRelay.send(sessionID: id, response: .secondary)
+            case .dismissed: SchedulerRelay.send(sessionID: id, response: .dismissed)
             }
-            SchedulerRelay.send(sessionID: id, response: response)
         }
         userClosed(id)
     }
