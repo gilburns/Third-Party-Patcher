@@ -6,6 +6,9 @@
 //  it on every change; PatcherNotifier (console user) draws whatever the file says.
 //  Removing the file closes the window.
 //
+//  Prompts answer back through patcherscheduler: PatcherNotifier sends a DialogResponse
+//  over XPC, the daemon records it as a small file, and the waiting patcher takes it.
+//
 //  Session files use the `.dialog` extension so UserNotificationQueue, which reads
 //  `.json` files in the same folder, never sees them. The folder is already watched by
 //  PatcherNotifier's LaunchAgent (WatchPaths), so writing a session launches the agent.
@@ -22,6 +25,14 @@ struct DialogSession: Codable, Equatable {
         case applyCompact
         /// The small window for user-initiated scan / check / stage runs.
         case progress
+        /// BlockingProcessAction = notify: the app needs to be quit; OK closes it.
+        case blockingNotice
+        /// BlockingProcessAction = prompt: Skip Update, or Quit <App> before the countdown ends.
+        case blockingPrompt
+
+        /// Kinds the user answers. PatcherNotifier reports when these are on screen and
+        /// which button was clicked.
+        var expectsResponse: Bool { self == .blockingNotice || self == .blockingPrompt }
     }
 
     enum Phase: String, Codable {
@@ -54,6 +65,12 @@ struct DialogSession: Codable, Equatable {
     struct Button: Codable, Equatable {
         var title: String
         var enabled: Bool
+    }
+
+    /// A countdown patcher is running. Shown only: patcher acts when it ends, not the agent.
+    struct Countdown: Codable, Equatable {
+        var ends: Date
+        var seconds: Int
     }
 
     struct WindowOptions: Codable, Equatable {
@@ -113,7 +130,11 @@ struct DialogSession: Codable, Equatable {
     var sidePanel: String?
     var items: [Item]
     var progress: Progress
+    /// The default button (Return). For the apply window, Done.
     var button: Button?
+    /// Drawn to the left of `button`. Prompts only.
+    var secondaryButton: Button?
+    var countdown: Countdown?
     var help: Help?
     /// When set, the agent closes the window at this time if the user hasn't.
     var autoCloseAt: Date?
@@ -193,6 +214,56 @@ enum DialogSessionStore {
             .filter { !$0.isExpired }
     }
 
+    // MARK: Responses
+
+    private static func responseURL(id: String, _ response: DialogResponse) -> URL? {
+        guard UUID(uuidString: id) != nil else { return nil }
+        return AppConstants.patcherNotificationResponseFolderURL
+            .appendingPathComponent("\(id)-\(response.rawValue).\(responseExtension)")
+    }
+
+    static let responseExtension = "dialogresponse"
+
+    /// The running session with this id, if it is one the user can answer.
+    static func answerableSession(id: String) -> DialogSession? {
+        guard let url = url(for: id),
+              let session = try? decoder.decode(DialogSession.self, from: Data(contentsOf: url)),
+              !session.isExpired, session.phase == .running, session.kind.expectsResponse
+        else { return nil }
+        return session
+    }
+
+    /// Records a response for the patcher process waiting on it. Requires root; called by
+    /// patcherscheduler's XPC handler. Stale files are pruned with notification responses.
+    static func writeResponse(id: String, _ response: DialogResponse) -> Bool {
+        guard let url = responseURL(id: id, response) else { return false }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o755])
+            try Data().write(to: url, options: .atomic)
+            return true
+        } catch {
+            Logger.log("⚠️ Failed to record dialog response for \(id): \(error)")
+            return false
+        }
+    }
+
+    /// True (and consumed) when the response has been recorded.
+    static func takeResponse(id: String, _ response: DialogResponse) -> Bool {
+        guard let url = responseURL(id: id, response),
+              FileManager.default.fileExists(atPath: url.path) else { return false }
+        try? FileManager.default.removeItem(at: url)
+        return true
+    }
+
+    /// Clears responses left for a session, so a reused id can't see old answers.
+    static func removeResponses(id: String) {
+        for response in DialogResponse.allCases {
+            if let url = responseURL(id: id, response) { try? FileManager.default.removeItem(at: url) }
+        }
+    }
+
     /// Deletes expired or unreadable sessions. Requires root; called by patcherscheduler.
     static func pruneExpired() {
         var removed = 0
@@ -206,4 +277,16 @@ enum DialogSessionStore {
             Logger.verbose("🪟 Pruned \(removed) expired dialog session\(removed == 1 ? "" : "s").")
         }
     }
+}
+
+/// What PatcherNotifier reports back for a session that expects a response.
+enum DialogResponse: String, Codable, CaseIterable {
+    /// The window is on screen. Until patcher has this, it never treats silence as consent.
+    case displayed
+    /// The default button: Skip Update, or OK.
+    case primary
+    /// Quit <App>.
+    case secondary
+    /// Closed without a button (the quit key).
+    case dismissed
 }

@@ -20,6 +20,8 @@ final class DialogWindowManager {
 
     private var windows: [String: DialogWindow] = [:]
     private var dismissed: Set<String>
+    /// Sessions whose `.displayed` acknowledgement has been sent by this agent process.
+    private var acknowledged: Set<String> = []
     private var timer: Timer?
 
     var hasOpenWindows: Bool { !windows.isEmpty }
@@ -54,17 +56,38 @@ final class DialogWindowManager {
                 window.update(session)
             } else {
                 let id = session.id
-                let window = DialogWindow(session: session) { [weak self] in self?.userClosed(id) }
+                let kind = session.kind
+                let window = DialogWindow(session: session) { [weak self] action in
+                    self?.handle(action, id: id, kind: kind)
+                }
                 windows[id] = window
                 window.show()
                 notifierLog.info("Dialog \(id, privacy: .public) opened (\(session.kind.rawValue, privacy: .public))")
+                // patcher starts a prompt's countdown only once it knows the window is up.
+                if kind.expectsResponse, acknowledged.insert(id).inserted {
+                    SchedulerRelay.send(sessionID: id, response: .displayed)
+                }
             }
         }
 
         // Forget dismissals whose files are gone so the set stays small.
         dismissed.formIntersection(sessions.map(\.id))
+        acknowledged.formIntersection(sessions.map(\.id))
         UserDefaults.standard.set(Array(dismissed), forKey: Self.dismissedKey)
         updateTimer()
+    }
+
+    private func handle(_ action: DialogAction, id: String, kind: DialogSession.Kind) {
+        if kind.expectsResponse {
+            let response: DialogResponse
+            switch action {
+            case .primary:   response = .primary
+            case .secondary: response = .secondary
+            case .dismissed: response = .dismissed
+            }
+            SchedulerRelay.send(sessionID: id, response: response)
+        }
+        userClosed(id)
     }
 
     private func userClosed(_ id: String) {

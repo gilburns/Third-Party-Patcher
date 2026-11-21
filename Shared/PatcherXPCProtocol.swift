@@ -36,4 +36,12 @@ import Foundation
     ///   - action: A NotificationResponseAction raw value ("quitAndUpdate" or "skip").
     ///   - reply: Called with (true, "recorded") on success, or (false, reason) on failure.
     func respondToNotification(_ eventID: String, action: String, reply: @escaping (Bool, String) -> Void)
+
+    /// Relay a response to a window PatcherNotifier is showing for patcher (sent by
+    /// PatcherNotifier). The daemon records it for the patcher process waiting on it.
+    /// - Parameters:
+    ///   - sessionID: The DialogSession id.
+    ///   - response: A DialogResponse raw value ("displayed", "primary", "secondary", "dismissed").
+    ///   - reply: Called with (true, "recorded") on success, or (false, reason) on failure.
+    func respondToDialog(_ sessionID: String, response: String, reply: @escaping (Bool, String) -> Void)
 }
