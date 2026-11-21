@@ -1546,7 +1546,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             dialog = presenter
         } else if !suppressDialog, !silentApply, !dialogItems.isEmpty, let controller = Presenters.makeApplyWindow() {
             if prefs.applyNotificationsEnabled {
-                Logger.log("ℹ️ Apply: notifications unavailable — falling back to swiftDialog.")
+                Logger.log("ℹ️ Apply: notifications unavailable — falling back to a window.")
             }
 
             if userInitiated {

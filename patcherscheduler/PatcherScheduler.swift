@@ -790,13 +790,16 @@ struct PatcherScheduler {
         )
     }
 
-    /// Reconciles the PatcherNotifier LaunchAgent against the preferences that use it
+    /// Reconciles the PatcherNotifier LaunchAgent against the preferences that use it:
+    /// the windows (SwiftDialogEnabled, ShowScanCheckProgressDialog) and notifications
     /// (QuietApplyNotifications, ApplyDialogSize = notifications).
     /// The agent is launched on demand by launchd whenever the notification queue folder
     /// changes (WatchPaths), and at login to deliver anything queued while logged out.
     private func manageNotifierApp() {
         let binaryURL = AppConstants.patcherNotifierAppURL.appendingPathComponent("Contents/MacOS/PatcherNotifier")
-        let enabled   = (prefs.quietApplyEnabled && prefs.quietApplyNotifications)
+        let enabled   = prefs.swiftDialogEnabled
+                     || prefs.showScanCheckProgressDialog
+                     || (prefs.quietApplyEnabled && prefs.quietApplyNotifications)
                      || prefs.applyNotificationsEnabled
         if enabled {
             try? FileManager.default.createDirectory(
@@ -820,6 +823,7 @@ struct PatcherScheduler {
             ]
         )
         UserNotificationQueue.pruneExpired()
+        DialogSessionStore.pruneExpired()
     }
 
     /// Installs, updates, or removes a per-user LaunchAgent in /Library/LaunchAgents and

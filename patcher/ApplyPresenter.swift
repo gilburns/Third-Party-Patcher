@@ -3,7 +3,7 @@
 //  patcher
 //
 //  The user-facing side of patcher. Callers drive these protocols without knowing
-//  how the UI is drawn: a window (SwiftDialogController today) or macOS notifications
+//  how the UI is drawn: a window (NativeApplyWindow, or SwiftDialogController) or macOS notifications
 //  (NotificationApplyPresenter). `Presenters` is the one place that picks the
 //  window implementation.
 //
@@ -68,12 +68,23 @@ enum Presenters {
 
     /// The window presenter for the apply phase, or nil when no window can be shown
     /// (UI disabled, no console user, or the UI is unavailable). nil means apply silently.
+    ///
+    /// Native windows are used when PatcherNotifier is loaded for the console user.
+    /// Until the native prompts exist, swiftDialog still draws the deferral and
+    /// blocking-app prompts, and is the whole UI when PatcherNotifier isn't loaded.
     static func makeApplyWindow() -> (any ApplyWindowPresenter)? {
-        SwiftDialogController.makeIfAvailable()
+        guard Preferences().swiftDialogEnabled else { return nil }
+        if let uid = PatcherNotifierAgent.windowTargetUID() {
+            return NativeApplyWindow(uid: uid, prompts: SwiftDialogController.makeIfAvailable())
+        }
+        return SwiftDialogController.makeIfAvailable()
     }
 
     /// Opens a progress window for a user-initiated run, or returns nil when none can be shown.
     static func makeProgressWindow(title: String, message: String, total: Int = 0) -> (any ProgressWindowPresenter)? {
-        SwiftDialogController.launchProgressWindow(title: title, message: message, total: total)
+        if let uid = PatcherNotifierAgent.windowTargetUID() {
+            return NativeProgressWindow(uid: uid, title: title, message: message, total: total)
+        }
+        return SwiftDialogController.launchProgressWindow(title: title, message: message, total: total)
     }
 }
