@@ -218,6 +218,23 @@ struct Preferences {
         return value
     }
 
+    /// When true (the default), a label that fails to resolve locally — it timed out, or
+    /// returned no downloadURL — uses the latest appNewVersion and downloadURL that
+    /// Installomator-Tracker resolved for it, and a label on the broken list is retried when
+    /// the tracker currently resolves it. Tracker values are only used when its name, type and
+    /// expectedTeamID match the local label, and every download is still verified against the
+    /// local label's Team ID. Managed labels never use the tracker.
+    var labelTrackerFallbackEnabled: Bool {
+        prefs["LabelTrackerFallbackEnabled"] as? Bool ?? true
+    }
+
+    static let defaultLabelTrackerURL = "https://raw.githubusercontent.com/gilburns/Installomator-Tracker/main/label_status.json"
+
+    /// URL of the tracker's label_status.json. Override to use a fork or an internal mirror.
+    var labelTrackerURL: String {
+        pref("LabelTrackerURL", default: Preferences.defaultLabelTrackerURL)
+    }
+
     /// When true, labels that produce no appNewVersion value are skipped entirely during staging.
     /// Defaults to false.
     var ignoreUnknownVersionLabels: Bool {

@@ -360,6 +360,9 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) ->
         var ignoredCount = 0
         var brokenSkippedCount = 0
         var newlyBrokenLabels: [String] = []
+        var trackerResolvedLabels: [String] = []
+        var brokenRetriedLabels: Set<String> = []
+        var recoveredLabels: Set<String> = []
 
         // Iterate through each script file
         for fileURL in shFiles {
@@ -380,6 +383,10 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) ->
             if brokenAutoSkip.contains(label) {
                 if requiredLabels.contains(label) {
                     Logger.log("⭐ \(label) is required — overriding broken-skip")
+                } else if LabelTracker.shouldRetryBrokenLabel(label) {
+                    Logger.log("--------------------------------------------------")
+                    Logger.log("🔁 \(label) is on the broken list, but Installomator-Tracker resolves it — retrying")
+                    brokenRetriedLabels.insert(label)
                 } else {
                     Logger.log("--------------------------------------------------")
                     Logger.log("⚠️ Skipping previously broken label: \(label)")
@@ -392,7 +399,6 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) ->
 
             scannedCount += 1
             progressHandler?(scannedCount, shFiles.count, label)
-            let filePath = fileURL.path
             Logger.log("--------------------------------------------------")
             Logger.log("📜 Processing script: \(fileURL.lastPathComponent)")
 
@@ -405,38 +411,41 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) ->
                 }
             }
 
-            // Run the script and capture output
-            guard let output = ZshScriptRunner.runScript(at: scriptPath, arguments: [filePath]),
-                  let jsonDict = parseScriptOutput(output) else {
-                Logger.log("❌ Failed to run script or parse JSON for \(filePath)")
-                newlyBrokenLabels.append(label)
+            // Run the script (falling back to Installomator-Tracker values if it fails)
+            guard let jsonDict = resolveLabelOutput(label: label, labelFileURL: fileURL, scriptPath: scriptPath) else {
+                if !brokenRetriedLabels.contains(label) { newlyBrokenLabels.append(label) }
                 continue
             }
-
-            guard validateLabelRequiredKeys(jsonDict, label: label) else {
-                newlyBrokenLabels.append(label)
-                continue
-            }
+            if jsonDict["resolvedVia"] as? String == "tracker" { trackerResolvedLabels.append(label) }
+            if brokenRetriedLabels.contains(label) { recoveredLabels.insert(label) }
 
             // Now we have jsonDict containing parsed output from the script
             processScriptData(jsonDict)
         }
 
         // Build the persistent broken label list:
-        // - Same Installomator version: carry forward skipped labels and merge any newly broken ones
+        // - Same Installomator version: carry forward skipped labels and merge any newly broken ones,
+        //   minus broken labels that were retried and resolved this time
         // - New Installomator version: start fresh with only what broke this scan
         let updatedBrokenLabels: [String]
         if previousBrokenState.installomatorVersion == currentInstallomatorVersion {
-            updatedBrokenLabels = Array(Set(previousBrokenState.labels).union(newlyBrokenLabels)).sorted()
+            updatedBrokenLabels = Array(Set(previousBrokenState.labels).union(newlyBrokenLabels)
+                .subtracting(recoveredLabels)).sorted()
         } else {
             updatedBrokenLabels = newlyBrokenLabels.sorted()
         }
 
         let scanEnd = Date()
         let duration = scanEnd.timeIntervalSince(scanStart)
-        Logger.log("✅ Scan complete — \(scannedCount) scanned, \(ignoredCount) ignored, \(brokenSkippedCount) broken-skipped, \(newlyBrokenLabels.count) newly broken, \(String(format: "%.2f", duration))s")
+        Logger.log("✅ Scan complete — \(scannedCount) scanned, \(ignoredCount) ignored, \(brokenSkippedCount) broken-skipped, \(newlyBrokenLabels.count) newly broken, \(trackerResolvedLabels.count) via tracker, \(recoveredLabels.count) of \(brokenRetriedLabels.count) broken retried recovered, \(String(format: "%.2f", duration))s")
         if !newlyBrokenLabels.isEmpty {
             Logger.log("⚠️ Newly broken labels: \(newlyBrokenLabels.joined(separator: ", "))")
+        }
+        if !trackerResolvedLabels.isEmpty {
+            Logger.log("🛰️ Resolved via Installomator-Tracker: \(trackerResolvedLabels.joined(separator: ", "))")
+        }
+        if !recoveredLabels.isEmpty {
+            Logger.log("🔁 Recovered from the broken list: \(recoveredLabels.sorted().joined(separator: ", "))")
         }
         if !updatedBrokenLabels.isEmpty {
             Logger.log("📋 Cumulative broken labels (\(updatedBrokenLabels.count)): \(updatedBrokenLabels.joined(separator: ", "))")
@@ -450,6 +459,8 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) ->
             "lastScanFullLabelCount": scannedCount,
             "lastScanFullIgnoredCount": ignoredCount,
             "lastScanFullBrokenSkippedCount": brokenSkippedCount,
+            "lastScanFullTrackerResolvedLabels": trackerResolvedLabels.sorted(),
+            "lastScanFullBrokenRecoveredLabels": recoveredLabels.sorted(),
             "lastScanBrokenLabels": updatedBrokenLabels
         ])
 
@@ -543,14 +554,8 @@ func scanSingleLabel(_ labelName: String, bypassUpdateDelay: Bool = false) -> Bo
 
     Logger.log("📜 scanSingleLabel: processing '\(labelName)'")
 
-    guard let output = ZshScriptRunner.runScript(at: scriptPath, arguments: [labelFileURL.path]),
-          let jsonDict = parseScriptOutput(output) else {
-        Logger.log("❌ scanSingleLabel: script run or JSON parse failed for '\(labelName)'")
-        return false
-    }
-
-    guard validateLabelRequiredKeys(jsonDict, label: labelName) else {
-        Logger.log("❌ scanSingleLabel: key validation failed for '\(labelName)'")
+    guard let jsonDict = resolveLabelOutput(label: labelName, labelFileURL: labelFileURL, scriptPath: scriptPath) else {
+        Logger.log("❌ scanSingleLabel: '\(labelName)' could not be resolved")
         return false
     }
 
@@ -620,6 +625,9 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
         var ignoredCount = 0
         var brokenSkippedCount = 0
         var newlyBrokenLabels: [String] = []
+        var trackerResolvedLabels: [String] = []
+        var brokenRetriedLabels: Set<String> = []
+        var recoveredLabels: Set<String> = []
 
         for label in discoveredLabels {
             if !ignoredPatterns.isEmpty && labelIsIgnored(label, patterns: ignoredPatterns) {
@@ -638,6 +646,10 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
             if brokenAutoSkip.contains(label) {
                 if requiredLabels.contains(label) {
                     Logger.log("⭐ \(label) is required — overriding broken-skip")
+                } else if LabelTracker.shouldRetryBrokenLabel(label) {
+                    Logger.log("--------------------------------------------------")
+                    Logger.log("🔁 \(label) is on the broken list, but Installomator-Tracker resolves it — retrying")
+                    brokenRetriedLabels.insert(label)
                 } else {
                     Logger.log("--------------------------------------------------")
                     Logger.log("⚠️ Skipping previously broken label: \(label)")
@@ -678,25 +690,22 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
                 }
             }
 
-            guard let output = ZshScriptRunner.runScript(at: scriptPath, arguments: [labelFileURL.path]),
-                  let jsonDict = parseScriptOutput(output) else {
-                Logger.log("❌ Failed to run script or parse JSON for \(label)")
-                newlyBrokenLabels.append(label)
+            guard let jsonDict = resolveLabelOutput(label: label, labelFileURL: labelFileURL, scriptPath: scriptPath) else {
+                if !brokenRetriedLabels.contains(label) { newlyBrokenLabels.append(label) }
                 continue
             }
-
-            guard validateLabelRequiredKeys(jsonDict, label: label) else {
-                newlyBrokenLabels.append(label)
-                continue
-            }
+            if jsonDict["resolvedVia"] as? String == "tracker" { trackerResolvedLabels.append(label) }
+            if brokenRetriedLabels.contains(label) { recoveredLabels.insert(label) }
 
             processScriptData(jsonDict)
         }
 
-        // Merge broken labels with same version carry-forward logic
+        // Merge broken labels with same version carry-forward logic,
+        // minus broken labels that were retried and resolved this time
         let updatedBrokenLabels: [String]
         if previousBrokenState.installomatorVersion == currentInstallomatorVersion {
-            updatedBrokenLabels = Array(Set(previousBrokenState.labels).union(newlyBrokenLabels)).sorted()
+            updatedBrokenLabels = Array(Set(previousBrokenState.labels).union(newlyBrokenLabels)
+                .subtracting(recoveredLabels)).sorted()
         } else {
             updatedBrokenLabels = newlyBrokenLabels.sorted()
         }
@@ -704,9 +713,15 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
         let checkEnd = Date()
         let duration = checkEnd.timeIntervalSince(checkStart)
         Logger.log("--------------------------------------------------")
-        Logger.log("✅ Update check complete — \(checkedCount) checked, \(ignoredCount) ignored, \(brokenSkippedCount) broken-skipped, \(newlyBrokenLabels.count) newly broken, \(String(format: "%.2f", duration))s")
+        Logger.log("✅ Update check complete — \(checkedCount) checked, \(ignoredCount) ignored, \(brokenSkippedCount) broken-skipped, \(newlyBrokenLabels.count) newly broken, \(trackerResolvedLabels.count) via tracker, \(recoveredLabels.count) of \(brokenRetriedLabels.count) broken retried recovered, \(String(format: "%.2f", duration))s")
         if !newlyBrokenLabels.isEmpty {
             Logger.log("⚠️ Newly broken labels: \(newlyBrokenLabels.joined(separator: ", "))")
+        }
+        if !trackerResolvedLabels.isEmpty {
+            Logger.log("🛰️ Resolved via Installomator-Tracker: \(trackerResolvedLabels.joined(separator: ", "))")
+        }
+        if !recoveredLabels.isEmpty {
+            Logger.log("🔁 Recovered from the broken list: \(recoveredLabels.sorted().joined(separator: ", "))")
         }
         if !updatedBrokenLabels.isEmpty {
             Logger.log("📋 Cumulative broken labels (\(updatedBrokenLabels.count)): \(updatedBrokenLabels.joined(separator: ", "))")
@@ -720,6 +735,8 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
             "lastCheckLabelCount": checkedCount,
             "lastCheckIgnoredCount": ignoredCount,
             "lastCheckBrokenSkippedCount": brokenSkippedCount,
+            "lastCheckTrackerResolvedLabels": trackerResolvedLabels.sorted(),
+            "lastCheckBrokenRecoveredLabels": recoveredLabels.sorted(),
             "lastScanBrokenLabels": updatedBrokenLabels
         ])
 
@@ -888,6 +905,24 @@ struct FoundInstall {
     let path: String
     let version: String
     let discoveryMethod: String
+}
+
+/// Runs a label and returns its validated output. When the label fails locally, falls back
+/// to Installomator-Tracker values where that applies (see LabelTracker.fallbackOutput);
+/// such output carries `resolvedVia = "tracker"`. Returns nil when the label can't be resolved.
+func resolveLabelOutput(label: String, labelFileURL: URL, scriptPath: String) -> [String: Any]? {
+    let result = ZshScriptRunner.runScriptResult(at: scriptPath, arguments: [labelFileURL.path])
+    let parsed = result.output.flatMap { $0.isEmpty ? nil : parseScriptOutput($0) }
+
+    if let parsed, validateLabelRequiredKeys(parsed, label: label) {
+        return parsed
+    }
+    if parsed == nil {
+        let how = result.timedOut ? "timed out" : "exit \(result.exitStatus.map(String.init) ?? "?")"
+        Logger.log("❌ Failed to run script or parse JSON for \(labelFileURL.path) (\(how))")
+    }
+    return LabelTracker.fallbackOutput(label: label, labelFileURL: labelFileURL,
+                                       result: result, localOutput: parsed)
 }
 
 func validateLabelRequiredKeys(_ jsonDict: [String: Any], label: String) -> Bool {
@@ -3156,9 +3191,7 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
 private func refreshDiscoveredPlist(label: String, forceInstall: Bool, bypassUpdateDelay: Bool) -> [String: Any]? {
     guard let labelFileURL = resolveLabel(name: label),
           let scriptPath = ZshScriptRunner.writeScriptToFile(AppConstants.processLabelZsh)?.path,
-          let output = ZshScriptRunner.runScript(at: scriptPath, arguments: [labelFileURL.path]),
-          let jsonDict = parseScriptOutput(output),
-          validateLabelRequiredKeys(jsonDict, label: label) else {
+          let jsonDict = resolveLabelOutput(label: label, labelFileURL: labelFileURL, scriptPath: scriptPath) else {
         return nil
     }
 
