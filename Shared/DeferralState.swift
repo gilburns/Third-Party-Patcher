@@ -40,6 +40,11 @@ struct DeferralState: Codable {
     /// its blocking process was still running (the user never saw a prompt).
     var blockingProcessDeferralCount: Int = 0
 
+    /// Apps the user deferred on their own (unchecked in the prompt while installing the
+    /// rest), keyed by label, with when each deferral ends. The deadline still counts for
+    /// them; they are left out of applies until their time ends.
+    var labelExpiries: [String: Date] = [:]
+
     private static let stateURL: URL = AppConstants.patcherConfigFolderURL
         .appendingPathComponent("deferral_state.json")
 
@@ -49,6 +54,7 @@ struct DeferralState: Codable {
 
     private enum CodingKeys: String, CodingKey {
         case expiryDate, count, userDeferralCount, timedOutDeferralCount, blockingProcessDeferralCount
+        case labelExpiries
     }
 
     /// Lenient decoder — the split counters were added later, so state files
@@ -60,6 +66,7 @@ struct DeferralState: Codable {
         userDeferralCount            = try c.decodeIfPresent(Int.self, forKey: .userDeferralCount) ?? 0
         timedOutDeferralCount        = try c.decodeIfPresent(Int.self, forKey: .timedOutDeferralCount) ?? 0
         blockingProcessDeferralCount = try c.decodeIfPresent(Int.self, forKey: .blockingProcessDeferralCount) ?? 0
+        labelExpiries                = try c.decodeIfPresent([String: Date].self, forKey: .labelExpiries) ?? [:]
     }
 
     // MARK: Persistence
@@ -103,6 +110,24 @@ struct DeferralState: Codable {
         return now < expiry
     }
 
+    /// True while the user's deferral of this one app hasn't ended.
+    func isLabelDeferred(_ label: String, now: Date = Date()) -> Bool {
+        guard let expiry = labelExpiries[label] else { return false }
+        return now < expiry
+    }
+
+    /// Labels whose own deferral hasn't ended.
+    func deferredLabels(now: Date = Date()) -> Set<String> {
+        Set(labelExpiries.filter { now < $0.value }.keys)
+    }
+
+    /// True when a deferral (of everything, or of one app) ended after `date` and by `now`:
+    /// the user is due another prompt even if the apply interval hasn't passed.
+    func deferralEnded(after date: Date, now: Date = Date()) -> Bool {
+        let ends = labelExpiries.values + [expiryDate].compactMap { $0 }
+        return ends.contains { $0 > date && $0 <= now }
+    }
+
     /// Remaining deferral time in whole minutes (0 when expired or no deferral).
     func remainingMinutes(now: Date = Date()) -> Int {
         guard let expiry = expiryDate, now < expiry else { return 0 }
@@ -120,6 +145,20 @@ struct DeferralState: Codable {
         case .user:     userDeferralCount += 1
         case .timedOut: timedOutDeferralCount += 1
         }
+    }
+
+    /// Records the user deferring some apps for `minutes` while installing the rest. Counts
+    /// as one user deferral; sets no expiry for the others.
+    mutating func recordAppDeferral(labels: [String], minutes: Int, now: Date = Date()) {
+        let expiry = now.addingTimeInterval(TimeInterval(minutes * 60))
+        for label in labels { labelExpiries[label] = expiry }
+        count += 1
+        userDeferralCount += 1
+    }
+
+    /// Forgets app deferrals for labels no longer staged (installed, or gone).
+    mutating func pruneAppDeferrals(keeping staged: Set<String>) {
+        labelExpiries = labelExpiries.filter { staged.contains($0.key) }
     }
 
     /// Records an automatic Focus/DND deferral for `minutes` from `now`.
@@ -144,6 +183,7 @@ struct DeferralState: Codable {
         userDeferralCount            = 0
         timedOutDeferralCount        = 0
         blockingProcessDeferralCount = 0
+        labelExpiries                = [:]
     }
 }
 

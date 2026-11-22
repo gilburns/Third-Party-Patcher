@@ -80,8 +80,9 @@ enum ApplyDialogSize: Equatable {
 // MARK: - Deferral
 
 enum DeferralPromptResult {
-    case proceed                         // user clicked Continue
-    case deferred(minutes: Int)          // user explicitly clicked Defer
+    case proceed                         // user installed everything now
+    case partial(deferred: [String], minutes: Int) // user unchecked these apps; install the rest now
+    case deferred(minutes: Int)          // user explicitly clicked Defer All
     case timedOutDeferred(minutes: Int)  // countdown timer expired; auto-deferred
     case deadlineForced                  // hard deadline reached; proceeded without user choice
 }

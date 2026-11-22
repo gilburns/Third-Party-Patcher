@@ -587,14 +587,20 @@ struct Preferences {
         prefs["DeferralCountdownSeconds"] as? Int ?? 300
     }
 
-    /// Deferral action to automatically take when the "DeferralCountdownSeconds" reaches 0 and the dialog is not acknowledged
-    /// Options: ignore | kill | defer
-    ///   ignore — skip blocking process check entirely
-    ///   kill   — force-quit the blocking process silently
-    ///   defer  — skip this label silently; retry on next apply cycle
+    /// What happens when the deferral prompt's countdown (DeferralCountdownSeconds) ends
+    /// without an answer. Applies to every update in the prompt, whatever is checked.
+    /// Options: defer | continue
+    ///   defer    — defer all updates for DeferralTimerDefault minutes
+    ///   continue — install now
     /// Defaults to "defer".
     var deferralAutomaticAction: String {
         pref("DeferralAutomaticAction", default: "defer")
+    }
+
+    /// When true, the deferral prompt has a checkbox on each app so the user can defer
+    /// some apps and install the rest now. When false, it's all or nothing. Defaults to true.
+    var deferralPerAppEnabled: Bool {
+        prefs["DeferralPerAppEnabled"] as? Bool ?? true
     }
 
     /// The number of minutes to defer until the next update workflow attempt if a user chooses not to install updates

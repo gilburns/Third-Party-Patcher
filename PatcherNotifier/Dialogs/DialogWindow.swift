@@ -33,6 +33,8 @@ final class DialogWindow: NSObject, NSWindowDelegate {
 
     let id: String
     private let model: DialogModel
+    /// The session as last drawn.
+    var session: DialogSession { model.session }
     private let window: DialogNSWindow
     private var blurWindows: [NSWindow] = []
     /// The action, with the menu choice (primary) or checkbox state (secondary) when the
@@ -45,23 +47,18 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         self.onAction    = onAction
         self.model       = DialogModel(session: session)
 
-        let buttons = Set(session.window.buttons)
-        // The compact and progress windows match swiftDialog's mini style: AppTitle in a
-        // normal title bar. The rest draw their own title or branded banner, so the title
-        // bar is hidden and transparent.
-        let ownTitleBar = session.kind == .applyCompact || session.kind == .progress
-        var style: NSWindow.StyleMask = ownTitleBar ? [.titled] : [.titled, .fullSizeContentView]
-        if buttons.contains("close") { style.insert(.closable) }
-        if buttons.contains("min")   { style.insert(.miniaturizable) }
-        if buttons.contains("max")   { style.insert(.resizable) }
-
         window = DialogNSWindow(contentRect: NSRect(origin: .zero, size: Self.contentSize(for: session)),
-                                styleMask: style, backing: .buffered, defer: false)
+                                styleMask: Self.styleMask(for: session), backing: .buffered, defer: false)
         super.init()
 
         model.onAction   = { [weak self] action in
             guard let self else { return }
+            let choosing = self.model.session.phase == .choosing
             switch action {
+            case .primary where choosing:
+                self.onAction(action, self.model.choice.encoded())
+            case .secondary where choosing:
+                self.onAction(action, self.model.session.menu == nil ? nil : self.model.selection)
             case .primary:
                 self.onAction(action, self.model.selection)
             case .secondary:
@@ -75,30 +72,58 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         window.onQuitKey = { [weak self] in self?.onAction(.dismissed, nil) }
 
         window.title = session.branding.appTitle
-        window.titleVisibility = ownTitleBar ? .visible : .hidden
-        window.titlebarAppearsTransparent = !ownTitleBar
-        window.standardWindowButton(.closeButton)?.isHidden       = !buttons.contains("close")
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = !buttons.contains("min")
-        window.standardWindowButton(.zoomButton)?.isHidden        = !buttons.contains("max")
         window.isMovable = session.window.movable
         window.isMovableByWindowBackground = session.window.movable
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self
         let host = NSHostingView(rootView: DialogRootView(model: model))
-        // The prompts draw their banner under the hidden title bar, at the size DialogLayout
-        // gives. Left to itself, the hosting view grows the window to add room for the title bar.
-        if session.kind.expectsResponse { host.sizingOptions = [] }
+        // The prompts and the large apply window keep the size DialogLayout gives. Left to
+        // itself, the hosting view resizes the window from its content: room for the hidden
+        // title bar, or the apply window's wrapped message.
+        if session.kind.expectsResponse || session.kind == .applyList { host.sizingOptions = [] }
         window.contentView = host
+        applyChrome(for: session)
         window.setFrame(NSRect(origin: .zero, size: frameSize(for: Self.contentSize(for: session))), display: false)
+        window.level = Self.level(for: session)
+    }
 
-        if session.kind.expectsResponse {
-            // Above the apply window and its blur: the prompt needs an answer.
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
+    // MARK: Chrome
+
+    /// The compact and progress windows match swiftDialog's mini style: AppTitle in a
+    /// normal title bar. The rest draw their own title or branded banner, so the title bar
+    /// is hidden and transparent.
+    private static func hasOwnTitleBar(_ session: DialogSession) -> Bool {
+        session.kind == .applyCompact || session.kind == .progress
+    }
+
+    private static func styleMask(for session: DialogSession) -> NSWindow.StyleMask {
+        let buttons = Set(session.window.buttons)
+        var style: NSWindow.StyleMask = hasOwnTitleBar(session) ? [.titled] : [.titled, .fullSizeContentView]
+        if buttons.contains("close") { style.insert(.closable) }
+        if buttons.contains("min")   { style.insert(.miniaturizable) }
+        if buttons.contains("max")   { style.insert(.resizable) }
+        return style
+    }
+
+    private func applyChrome(for session: DialogSession) {
+        let ownTitleBar = Self.hasOwnTitleBar(session)
+        let buttons     = Set(session.window.buttons)
+        window.titleVisibility            = ownTitleBar ? .visible : .hidden
+        window.titlebarAppearsTransparent = !ownTitleBar
+        window.standardWindowButton(.closeButton)?.isHidden       = !buttons.contains("close")
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = !buttons.contains("min")
+        window.standardWindowButton(.zoomButton)?.isHidden        = !buttons.contains("max")
+    }
+
+    private static func level(for session: DialogSession) -> NSWindow.Level {
+        if session.awaitsResponse {
+            // Above the apply window and its blur: the window needs an answer.
+            return NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
         } else if session.window.blurScreen {
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+            return NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         } else {
-            window.level = session.window.onTop ? .floating : .normal
+            return session.window.onTop ? .floating : .normal
         }
     }
 
@@ -121,9 +146,6 @@ final class DialogWindow: NSObject, NSWindowDelegate {
             return DialogLayout.promptSize
         case .blockingNotice:
             return DialogLayout.noticeSize
-        case .deferral:
-            return CGSize(width: DialogLayout.deferralWidth,
-                          height: DialogLayout.deferralHeight(itemCount: session.items.count))
         }
     }
 
@@ -140,7 +162,7 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         // working while updates apply. The large window comes forward once it's complete
         // and Done needs a click; prompts come forward at once.
         window.orderFrontRegardless()
-        if session.kind.expectsResponse { bringForward() }
+        if session.awaitsResponse { bringForward() }
     }
 
     func update(_ session: DialogSession) {
@@ -148,6 +170,22 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         guard session != previous else { return }
         model.session = session
         window.title = session.branding.appTitle
+        window.level = Self.level(for: session)
+
+        if previous.window.blurScreen, !session.window.blurScreen { hideBlur() }
+
+        if session.kind != previous.kind {
+            // The apply window shrinking to the compact window after choosing: restyle it,
+            // and move it to the compact window's position as it shrinks.
+            window.styleMask = Self.styleMask(for: session)
+            applyChrome(for: session)
+            let size = frameSize(for: Self.contentSize(for: session))
+            if let screen = window.screen ?? NSScreen.main {
+                let origin = Self.origin(for: size, position: session.window.position, on: screen)
+                window.setFrame(NSRect(origin: origin, size: size), display: true, animate: true)
+            }
+            return
+        }
 
         let size = frameSize(for: Self.contentSize(for: session))
         if window.frame.size != size {
@@ -164,6 +202,10 @@ final class DialogWindow: NSObject, NSWindowDelegate {
     func close() {
         window.orderOut(nil)
         window.close()
+        hideBlur()
+    }
+
+    private func hideBlur() {
         for blur in blurWindows { blur.orderOut(nil); blur.close() }
         blurWindows = []
     }

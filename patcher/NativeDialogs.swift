@@ -6,7 +6,7 @@
 //  and rewrites its file on every change; the agent in the user's session renders it.
 //
 //  Covers the large and compact apply windows and the scan/check/stage window. The
-//  prompts are in NativeBlockingPrompt and NativeDeferralPrompt.
+//  prompts are in NativeBlockingPrompt; the deferral prompt is the apply window's choosing phase.
 //
 
 import Foundation
@@ -144,6 +144,10 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     /// The compact window's own icon and overlay, restored once the run completes.
     private var baseIcon: String?
     private var baseOverlay: String?
+    /// Apps the user unchecked while choosing, and for how long they're deferred. They stay
+    /// in the large window's list, marked deferred.
+    private var deferredLabels: Set<String> = []
+    private var deferredFor = ""
 
     /// How long the compact window holds each result before the next item replaces it.
     private static let compactResultHoldSeconds: TimeInterval = 1.5
@@ -156,30 +160,30 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     // MARK: ApplyPresenter
 
     func launchProgressDialog(items: [ApplyItem]) {
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            writer?.close()
+            return
+        }
         let prefs = Preferences()
-        size = sizeOverride ?? ApplyDialogSize(rawValue: prefs.applyDialogSize)
-        // .notifications only reaches a window when PatcherNotifier notifications are
-        // unavailable — use the default window.
-        if size == .notifications { size = .large }
-
-        DialogSessionStore.removeAll(kinds: [.applyList, .applyCompact])
+        size = resolvedSize(prefs)
         let count = items.count
         let word  = count == 1 ? "update" : "updates"
+
+        // The deferral prompt's window turns into the progress window in place.
+        if let writer, !writer.isClosed, writer.session.phase == .choosing {
+            continueFromChoosing(installing: count, prefs: prefs)
+            return
+        }
+
+        DialogSessionStore.removeAll(kinds: [.applyList, .applyCompact])
 
         switch size {
         case .large, .notifications:
             var session = DialogSessionWriter.makeSession(
                 kind: .applyList, uid: uid, prefs: prefs, position: prefs.dialogScreenPosition,
                 title: prefs.appTitle, message: "", total: count)
-            session.window.blurScreen    = prefs.dialogBlurscreen
-            session.window.hideOtherApps = prefs.dialogHideotherapps
-            session.window.buttons       = prefs.dialogShowWindowButtons
-                .lowercased()
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { ["close", "min", "max"].contains($0) }
-            session.sidePanel     = "There are **\(count) \(word)** waiting.\n\nThese updates are being attempted."
+            applyLargeWindowOptions(to: &session, prefs: prefs)
+            session.sidePanel     = Self.installingPanel(count: count, deferred: [], deferredFor: "")
             session.items         = items.map(Self.row)
             session.progress.text = "Preparing…"
             session.button        = DialogSession.Button(title: "Updating…", enabled: false)
@@ -328,11 +332,235 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     // MARK: DeferralPresenter
 
+    /// Opens the apply window in its choosing phase: each app with an "install now"
+    /// checkbox (when DeferralPerAppEnabled and not at the hard deadline), the countdown,
+    /// the "Defer for" menu, Defer All and Install. Install keeps the window, and
+    /// `launchProgressDialog` turns it into the progress window; Defer All closes it.
+    ///
+    /// patcher owns the countdown, which starts once the agent reports the window is on
+    /// screen. If it never appears, the apply proceeds: running apps are still protected by
+    /// the blocking-app prompt.
     func showDeferralPrompt(items: [ApplyItem], daysPending: Int, hardDeadlineReached: Bool,
                             allowedDeferralMinutes: [Int], prefs: Preferences) -> DeferralPromptResult {
-        NativeDeferralPrompt(uid: uid).show(items: items, daysPending: daysPending,
-                                            hardDeadlineReached: hardDeadlineReached,
-                                            allowedDeferralMinutes: allowedDeferralMinutes, prefs: prefs)
+        let menu        = allowedDeferralMinutes
+        let defaultMins = DeferralMenu.effectiveDefault(prefs.deferralTimerDefault, menu: menu)
+        let seconds     = max(prefs.deferralCountdownSeconds, 1)
+        let autoAction  = prefs.deferralAutomaticAction.lowercased()
+        let perApp      = prefs.deferralPerAppEnabled && !hardDeadlineReached && items.count > 1
+        let count       = items.count
+        let word        = count == 1 ? "update" : "updates"
+        size = resolvedSize(prefs)
+
+        var message = "You have **\(count) software \(word)** ready to install."
+        if perApp { message += " Uncheck any you’d like to put off." }
+        if hardDeadlineReached {
+            message += "\n\n**Installation is required** — the maximum deferral deadline has been reached."
+        } else if daysPending > 0 {
+            message += " \(count == 1 ? "It has" : "They have") been pending for **\(daysPending) day\(daysPending == 1 ? "" : "s")**."
+        }
+
+        DialogSessionStore.removeAll(kinds: [.applyList, .applyCompact])
+        var session = DialogSessionWriter.makeSession(
+            kind: .applyList, uid: uid, prefs: prefs, position: prefs.dialogScreenPosition,
+            title: prefs.appTitle, message: message, total: count)
+        applyLargeWindowOptions(to: &session, prefs: prefs)
+        session.phase = .choosing
+        let state = DeferralState.load()
+        session.sidePanel = "**Deferral Status**\n"
+                          + "Days pending: \(daysPending)\n"
+                          + "User deferrals: \(state.userDeferralCount)\n"
+                          + "Auto deferrals: \(state.automatedDeferralCount)"
+        session.items = items.map { item in
+            var row = Self.row(item)
+            row.status     = item.isBlocked ? .blocked : .ready
+            row.statusText = item.isBlocked ? "Open — will ask to quit" : "Ready"
+            row.selected   = perApp ? true : nil
+            return row
+        }
+        if hardDeadlineReached {
+            session.button = DialogSession.Button(title: "Install Now", enabled: true)
+        } else {
+            session.button = DialogSession.Button(title: count == 1 ? "Install Now" : "Install All Now", enabled: true)
+            session.secondaryButton = DialogSession.Button(
+                title: menu.isEmpty ? "Defer (\(formatDeferralDuration(defaultMins)))" : (count == 1 ? "Defer" : "Defer All"),
+                enabled: true)
+            if !menu.isEmpty {
+                session.menu = DialogSession.Menu(
+                    title:    "Defer for",
+                    options:  menu.map { DialogSession.Menu.Option(value: String($0), label: formatDeferralDuration($0)) },
+                    selected: String(defaultMins))
+            }
+        }
+
+        let writer = DialogSessionWriter(session: session)
+        self.writer = writer
+        let id = session.id
+        DialogSessionStore.removeResponses(id: id)
+        defer { DialogSessionStore.removeResponses(id: id) }
+        Logger.log("ℹ️ Deferral: apply window opened to choose (\(count) item\(count == 1 ? "" : "s"), \(seconds)s\(perApp ? ", per-app" : ""))")
+
+        /// The window closes: Defer All, or closed without an answer.
+        func closeWindow() {
+            writer.close()
+            self.writer = nil
+        }
+        func menuMinutes(_ value: String?) -> Int {
+            // The daemon only accepts a value from the menu; fall back to the default otherwise.
+            value.flatMap(Int.init).flatMap { menu.contains($0) ? $0 : nil } ?? defaultMins
+        }
+
+        guard waitForDisplay(id: id) else {
+            Logger.log("⚠️ Deferral: window was not shown within \(Int(NativeBlockingPrompt.displayTimeout))s — proceeding")
+            return hardDeadlineReached ? .deadlineForced : .proceed
+        }
+
+        let ends = Date().addingTimeInterval(TimeInterval(seconds))
+        writer.update { $0.countdown = DialogSession.Countdown(ends: ends, seconds: seconds) }
+
+        while Date() < ends {
+            if shutdownRequested {
+                Logger.log("⚠️ Deferral: shutdown requested while prompting — proceeding (the apply loop stops)")
+                return hardDeadlineReached ? .deadlineForced : .proceed
+            }
+            if let value = DialogSessionStore.takeResponseValue(id: id, .primary) {
+                if hardDeadlineReached {
+                    Logger.log("ℹ️ Deferral: hard deadline — user chose Install")
+                    return .deadlineForced
+                }
+                let choice   = DialogChoice.decode(value)
+                let deferred = Set(choice?.deferred ?? []).intersection(session.selectableIDs)
+                guard !deferred.isEmpty else {
+                    Logger.log("ℹ️ Deferral: user chose to install everything now")
+                    return .proceed
+                }
+                let minutes = menuMinutes(choice?.minutes)
+                deferredLabels = deferred
+                deferredFor    = formatDeferralDuration(minutes)
+                Logger.log("ℹ️ Deferral: user deferred \(deferred.sorted().joined(separator: ", ")) for \(deferredFor); installing the rest")
+                return .partial(deferred: deferred.sorted(), minutes: minutes)
+            }
+            if let value = DialogSessionStore.takeResponseValue(id: id, .secondary) {
+                let minutes = menuMinutes(value)
+                Logger.log("ℹ️ Deferral: user deferred all for \(formatDeferralDuration(minutes))")
+                closeWindow()
+                return .deferred(minutes: minutes)
+            }
+            if DialogSessionStore.takeResponse(id: id, .dismissed) {
+                // The agent has closed the window; a progress window is opened afresh.
+                closeWindow()
+                if hardDeadlineReached {
+                    Logger.log("ℹ️ Deferral: hard deadline — window dismissed, proceeding")
+                    return .deadlineForced
+                }
+                // Dismissing is a deferral, not consent.
+                Logger.log("ℹ️ Deferral: user dismissed the window — deferring \(formatDeferralDuration(defaultMins))")
+                return .deferred(minutes: defaultMins)
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        // The countdown ended: the automatic action applies to every app, whatever is checked.
+        if hardDeadlineReached {
+            Logger.log("ℹ️ Deferral: hard deadline — countdown ended, proceeding")
+            return .deadlineForced
+        }
+        if autoAction == "continue" {
+            Logger.log("ℹ️ Deferral: timer expired — auto-continuing")
+            return .proceed
+        }
+        Logger.log("ℹ️ Deferral: timer expired — auto-deferring \(formatDeferralDuration(defaultMins))")
+        closeWindow()
+        return .timedOutDeferred(minutes: defaultMins)
+    }
+
+    /// Waits for PatcherNotifier to report the window on screen.
+    private func waitForDisplay(id: String) -> Bool {
+        let deadline = Date().addingTimeInterval(NativeBlockingPrompt.displayTimeout)
+        while Date() < deadline, !shutdownRequested {
+            if DialogSessionStore.takeResponse(id: id, .displayed) { return true }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return false
+    }
+
+    /// Turns the choosing window into the progress window: the large window in place, or
+    /// shrunk to the compact window.
+    private func continueFromChoosing(installing count: Int, prefs: Preferences) {
+        let word = count == 1 ? "update" : "updates"
+        let deferred = deferredLabels
+        let deferredFor = deferredFor
+        writer?.update { s in
+            let deferredNames = s.items.filter { deferred.contains($0.id) }.map(\.title)
+            s.phase           = .running
+            s.countdown       = nil
+            s.menu            = nil
+            s.secondaryButton = nil
+            s.progress        = DialogSession.Progress(current: 0, total: count, indeterminate: false, text: "Preparing…")
+            switch size {
+            case .compact:
+                s.kind              = .applyCompact
+                s.window.position   = prefs.dialogScreenProgressPosition
+                s.window.blurScreen = false
+                s.window.buttons    = []
+                s.sidePanel         = nil
+                s.items             = []
+                s.button            = nil
+                s.help              = nil
+                s.message           = "There are **\(count) \(word)** waiting.\n\nPreparing…"
+            case .large, .notifications:
+                s.message   = ""
+                s.sidePanel = Self.installingPanel(count: count, deferred: deferredNames, deferredFor: deferredFor)
+                s.items     = s.items.map { row in
+                    var row = row
+                    row.selected = nil
+                    row.progress = nil
+                    if deferred.contains(row.id) {
+                        row.status     = .deferred
+                        row.statusText = "Deferred · \(deferredFor)"
+                    } else {
+                        row.status     = .pending
+                        row.statusText = "Waiting"
+                    }
+                    return row
+                }
+                s.button = DialogSession.Button(title: "Updating…", enabled: false)
+                s.help   = makeHelp(prefs: prefs, started: Date())
+            }
+        }
+        if size == .compact {
+            baseIcon    = writer?.session.icon
+            baseOverlay = writer?.session.overlayIcon
+        }
+        Logger.log("ℹ️ Native apply window continued from choosing (\(size == .compact ? "compact" : "large"), \(count) item\(count == 1 ? "" : "s")).")
+    }
+
+    /// The large window's side panel while installing.
+    private static func installingPanel(count: Int, deferred: [String], deferredFor: String) -> String {
+        var text = "There \(count == 1 ? "is" : "are") **\(count) update\(count == 1 ? "" : "s")** waiting.\n\nThese updates are being attempted."
+        if !deferred.isEmpty {
+            let names = deferred.count == 1 ? deferred[0]
+                : deferred.dropLast().joined(separator: ", ") + " and " + deferred.last!
+            text += "\n\n\(names) \(deferred.count == 1 ? "is" : "are") deferred for \(deferredFor)."
+        }
+        return text
+    }
+
+    private func resolvedSize(_ prefs: Preferences) -> ApplyDialogSize {
+        let size = sizeOverride ?? ApplyDialogSize(rawValue: prefs.applyDialogSize)
+        // .notifications only reaches a window when PatcherNotifier notifications are
+        // unavailable — use the default window.
+        return size == .notifications ? .large : size
+    }
+
+    /// Blur, hidden apps and title-bar buttons: the large window's preferences.
+    private func applyLargeWindowOptions(to session: inout DialogSession, prefs: Preferences) {
+        session.window.blurScreen    = prefs.dialogBlurscreen
+        session.window.hideOtherApps = prefs.dialogHideotherapps
+        session.window.buttons       = prefs.dialogShowWindowButtons
+            .lowercased()
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { ["close", "min", "max"].contains($0) }
     }
 
     // MARK: Helpers
@@ -372,7 +600,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         switch row.status {
         case .success, .failed: return true
         case .skipped:          return row.statusText != "Waiting for user…"
-        case .pending, .working, .ready, .blocked: return false
+        case .pending, .working, .ready, .blocked, .deferred: return false
         }
     }
 

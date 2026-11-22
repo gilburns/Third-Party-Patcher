@@ -183,17 +183,26 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
             reply(false, "Dialog belongs to another user.")
             return
         }
-        // A value must be one the window offered: a menu choice with the primary button,
-        // or a checkbox state with the secondary button or a toggle.
-        let allowed: Set<String>
-        switch parsed {
-        case .primary:             allowed = Set(session.menu?.options.map(\.value) ?? [])
-        case .secondary, .toggled: allowed = session.checkbox == nil ? [] : DialogSession.Checkbox.values
-        case .displayed, .dismissed: allowed = []
-        }
-        if let value, !allowed.contains(value) {
-            reply(false, "Value '\(value)' is not valid for '\(parsed.rawValue)' in dialog \(session.id).")
-            return
+        // A value must be one the window offered: while choosing, the picks (Install) or a
+        // menu value (Defer All); otherwise a menu value with the primary button, or a
+        // checkbox state with the secondary button or a toggle.
+        if let value {
+            let menuValues = Set(session.menu?.options.map(\.value) ?? [])
+            let checkbox   = session.checkbox == nil ? [] : DialogSession.Checkbox.values
+            let valid: Bool
+            switch parsed {
+            case .primary where session.phase == .choosing:
+                valid = DialogChoice.decode(value)?.isValid(for: session) ?? false
+            case .secondary where session.phase == .choosing:
+                valid = menuValues.contains(value)
+            case .primary:               valid = menuValues.contains(value)
+            case .secondary, .toggled:   valid = checkbox.contains(value)
+            case .displayed, .dismissed: valid = false
+            }
+            guard valid else {
+                reply(false, "Value is not valid for '\(parsed.rawValue)' in dialog \(session.id).")
+                return
+            }
         }
         if parsed == .toggled, value == nil {
             reply(false, "A toggle needs the checkbox state.")

@@ -169,8 +169,12 @@ struct PatcherScheduler {
         // Checks active deferrals, Focus blockers, and hard deadline.
         if let applySchedule = resolveApplySchedule(state: state, now: now) {
             let deferralState = DeferralState.load()
+            let staged = stagedLabels()
             if deferralState.isActive(now: now) {
                 Logger.log("⏸️ Apply: deferral active — \(formatDeferralDuration(deferralState.remainingMinutes(now: now))) remaining.")
+            } else if !applySchedule.hardDeadlineReached, !staged.isEmpty,
+                      staged.isSubset(of: deferralState.deferredLabels(now: now)) {
+                Logger.log("⏸️ Apply: every pending app is deferred by the user — waiting.")
             } else if prefs.focusCheckEnabled && !applySchedule.focusDeadlineReached && !applySchedule.hardDeadlineReached,
                let blocker = FocusDetector.activeBlocker(ignoredProcesses: prefs.focusIgnoredProcesses) {
                 let focusMins = prefs.deferralTimerFocus
@@ -566,8 +570,7 @@ struct PatcherScheduler {
                 let deferral = DeferralState.load()
                 // Only bypass if the expiry is after the last apply — an expiry that predates
                 // the last run was already consumed by it and should not trigger another prompt.
-                let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
-                    && deferral.expiryDate! > lastApply
+                let deferralExpired = deferral.deferralEnded(after: lastApply, now: now)
                 if deferralExpired {
                     Logger.log("ℹ️ Apply: monthly — deferral expired on patch day, prompting again.")
                 } else {
@@ -585,8 +588,7 @@ struct PatcherScheduler {
                 let intervalHours = prefs.applyIntervalHours
                 if hoursSince < intervalHours {
                     let deferral = DeferralState.load()
-                    let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
-                        && deferral.expiryDate! > lastApply
+                    let deferralExpired = deferral.deferralEnded(after: lastApply, now: now)
                     if deferralExpired {
                         Logger.log("ℹ️ Apply: monthly — deferral expired, bypassing \(intervalHours)h interval.")
                     } else {
@@ -618,8 +620,7 @@ struct PatcherScheduler {
                 let deferral = DeferralState.load()
                 // Only bypass if the expiry is after the last apply — an expiry that predates
                 // the last run was already consumed by it and should not trigger another prompt.
-                let deferralExpired = deferral.expiryDate != nil && !deferral.isActive(now: now)
-                    && deferral.expiryDate! > lastApply
+                let deferralExpired = deferral.deferralEnded(after: lastApply, now: now)
                 if deferralExpired {
                     Logger.log("ℹ️ Apply: deferral expired, bypassing \(intervalHours)h interval.")
                 } else {
@@ -907,6 +908,13 @@ struct PatcherScheduler {
 
     private func hasStagedUpdates() -> Bool {
         StagedCache.labelDirectories().contains { StagedCache.stagedFile(in: $0) != nil }
+    }
+
+    /// Labels with a staged update waiting to install.
+    private func stagedLabels() -> Set<String> {
+        Set(StagedCache.labelDirectories()
+            .filter { StagedCache.stagedFile(in: $0) != nil }
+            .map(\.lastPathComponent))
     }
 
     /// Returns true when a discovered item needs updating (updateStatus == "updateRequired")
