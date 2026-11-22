@@ -78,10 +78,10 @@ final class DialogWindow: NSObject, NSWindowDelegate {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self
         let host = NSHostingView(rootView: DialogRootView(model: model))
-        // The prompts and the large apply window keep the size DialogLayout gives. Left to
-        // itself, the hosting view resizes the window from its content: room for the hidden
-        // title bar, or the apply window's wrapped message.
-        if session.kind.expectsResponse || session.kind == .applyList { host.sizingOptions = [] }
+        // Every window keeps the size DialogLayout gives. Left to itself, the hosting view
+        // resizes the window from its content: room for the hidden title bar, or the apply
+        // window's wrapped message.
+        host.sizingOptions = []
         window.contentView = host
         applyChrome(for: session)
         window.setFrame(NSRect(origin: .zero, size: frameSize(for: Self.contentSize(for: session))), display: false)
@@ -90,16 +90,11 @@ final class DialogWindow: NSObject, NSWindowDelegate {
 
     // MARK: Chrome
 
-    /// The compact and progress windows match swiftDialog's mini style: AppTitle in a
-    /// normal title bar. The rest draw their own title or branded banner, so the title bar
-    /// is hidden and transparent.
-    private static func hasOwnTitleBar(_ session: DialogSession) -> Bool {
-        session.kind == .applyCompact || session.kind == .progress
-    }
-
+    /// Every window draws its own title or branded banner (the compact and progress windows
+    /// a header in place of the title bar), so the title bar is hidden and transparent.
     private static func styleMask(for session: DialogSession) -> NSWindow.StyleMask {
         let buttons = Set(session.window.buttons)
-        var style: NSWindow.StyleMask = hasOwnTitleBar(session) ? [.titled] : [.titled, .fullSizeContentView]
+        var style: NSWindow.StyleMask = [.titled, .fullSizeContentView]
         if buttons.contains("close") { style.insert(.closable) }
         if buttons.contains("min")   { style.insert(.miniaturizable) }
         if buttons.contains("max")   { style.insert(.resizable) }
@@ -107,10 +102,9 @@ final class DialogWindow: NSObject, NSWindowDelegate {
     }
 
     private func applyChrome(for session: DialogSession) {
-        let ownTitleBar = Self.hasOwnTitleBar(session)
-        let buttons     = Set(session.window.buttons)
-        window.titleVisibility            = ownTitleBar ? .visible : .hidden
-        window.titlebarAppearsTransparent = !ownTitleBar
+        let buttons = Set(session.window.buttons)
+        window.titleVisibility            = .hidden
+        window.titlebarAppearsTransparent = true
         window.standardWindowButton(.closeButton)?.isHidden       = !buttons.contains("close")
         window.standardWindowButton(.miniaturizeButton)?.isHidden = !buttons.contains("min")
         window.standardWindowButton(.zoomButton)?.isHidden        = !buttons.contains("max")
@@ -128,11 +122,11 @@ final class DialogWindow: NSObject, NSWindowDelegate {
     }
 
     /// The window frame for a content size. A titled window's frame normally adds the title
-    /// bar's height, even when the title bar is hidden. The prompts draw from the window's
-    /// top edge, so their frame is exactly the layout size; otherwise the extra height ends
-    /// up as blank space below the buttons.
+    /// bar's height, even when the title bar is hidden. The prompts and the compact window
+    /// draw from the window's top edge, so their frame is exactly the layout size; otherwise
+    /// the extra height ends up as blank space below the content.
     private func frameSize(for content: CGSize) -> CGSize {
-        if model.session.kind.expectsResponse { return content }
+        if model.session.kind != .applyList { return content }
         return window.frameRect(forContentRect: NSRect(origin: .zero, size: content)).size
     }
 

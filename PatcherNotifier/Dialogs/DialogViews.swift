@@ -48,7 +48,11 @@ final class DialogModel: ObservableObject {
 
 enum DialogLayout {
     static let listWidth: CGFloat = 770
-    static let compactSize = CGSize(width: 560, height: 124)
+    /// The compact window's branded header, in place of a title bar.
+    static let compactHeaderHeight: CGFloat = 34
+    /// The body: the 80pt icon and 14pt padding, with a two-line message, the progress bar
+    /// and its caption beside it.
+    static let compactSize = CGSize(width: 560, height: 110 + compactHeaderHeight)
     static let promptSize  = CGSize(width: 480, height: 320)
     static let noticeSize  = CGSize(width: 600, height: 250)
 
@@ -423,14 +427,24 @@ struct CompactProgressView: View {
     let session: DialogSession
 
     var body: some View {
+        VStack(spacing: 0) {
+            CompactHeader(session: session)
+            content
+        }
+        .frame(width: DialogLayout.compactSize.width, height: DialogLayout.compactSize.height)
+        .background(Color(nsColor: .windowBackgroundColor))
+        // The title bar is hidden; the header takes its place.
+        .ignoresSafeArea()
+    }
+
+    private var content: some View {
         HStack(alignment: .top, spacing: 16) {
             DialogIconView(spec: session.icon, overlay: session.overlayIcon, size: 80)
-            // The title is in the window's title bar, as in swiftDialog's mini window.
             VStack(alignment: .leading, spacing: 6) {
+                // Up to two lines, truncated rather than pushing the bar out of the window.
                 MarkdownText(session.message)
                     .font(.system(size: 13))
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
                 Spacer(minLength: 0)
                 SessionProgressBar(progress: session.progress)
                 Text(session.progress.text.isEmpty ? " " : session.progress.text)
@@ -442,8 +456,36 @@ struct CompactProgressView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .frame(width: DialogLayout.compactSize.width, height: DialogLayout.compactSize.height)
-        .background(Color(nsColor: .windowBackgroundColor))
+        // Pinned to the top, so the content never shifts as the message changes.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// The compact window's title bar: AppTitle and the DialogIcon on the brand colors, like
+/// PatcherMenu's header.
+private struct CompactHeader: View {
+    let session: DialogSession
+
+    private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
+    private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
+
+    /// Room for the window buttons, when DialogShowWindowButtons shows any.
+    private var leadingInset: CGFloat { session.window.buttons.isEmpty ? 12 : 76 }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            DialogIconView(spec: session.branding.icon ?? session.icon, size: 22)
+            Text(session.branding.appTitle)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(brandText)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, leadingInset)
+        .padding(.trailing, 12)
+        .frame(maxWidth: .infinity, minHeight: DialogLayout.compactHeaderHeight,
+               maxHeight: DialogLayout.compactHeaderHeight)
+        .background(brandBackground)
     }
 }
 
@@ -467,13 +509,16 @@ struct BlockingAppView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(session.title)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(brandText)
-                .lineLimit(1)
-                .padding(.horizontal, 20)
-                .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
-                .background(brandBackground)
+            HStack(spacing: 10) {
+                DialogIconView(spec: session.branding.icon, size: 30)
+                Text(session.title)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(brandText)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .background(brandBackground)
 
             HStack(alignment: .top, spacing: 16) {
                 DialogIconView(spec: session.icon, overlay: session.overlayIcon, size: 80)
