@@ -205,6 +205,19 @@ struct Preferences {
         return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
     }
     
+    /// GitHub personal access token used to authenticate api.github.com requests made while
+    /// labels resolve. Unauthenticated requests are limited to 60 per hour per public IP —
+    /// shared by every Mac behind the same NAT — and a full scan can exceed that on its own.
+    /// Use a fine-grained token with public repository read-only access and no permissions:
+    /// managed preferences are readable by any local user, and label code can read the value.
+    /// Returns nil when unset or blank.
+    var gitHubToken: String? {
+        guard let value = (prefs["GitHubToken"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return nil }
+        return value
+    }
+
     /// When true, labels that produce no appNewVersion value are skipped entirely during staging.
     /// Defaults to false.
     var ignoreUnknownVersionLabels: Bool {
@@ -830,10 +843,18 @@ struct Preferences {
 
     // MARK: - Diagnostic
 
+    /// Keys whose values are secrets and must never be displayed or logged.
+    static let sensitiveKeys: Set<String> = ["GitHubToken"]
+
     /// Raw preference entries sorted alphabetically by key. For diagnostic display only.
+    /// Values of `sensitiveKeys` are replaced with a redaction marker.
     var rawEntries: [(key: String, value: Any)] {
         prefs.sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-            .map { (key: $0.key, value: $0.value) }
+            .map { entry in
+                Preferences.sensitiveKeys.contains(entry.key)
+                    ? (key: entry.key, value: "•••••••• (set, hidden)" as Any)
+                    : (key: entry.key, value: entry.value)
+            }
     }
 
     // MARK: - Private helpers
