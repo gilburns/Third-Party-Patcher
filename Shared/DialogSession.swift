@@ -29,20 +29,21 @@ struct DialogSession: Codable, Equatable {
         case blockingNotice
         /// BlockingProcessAction = prompt: Skip Update, or Quit <App> before the countdown ends.
         case blockingPrompt
-        /// Before an apply: Defer (for the chosen time) or Continue.
-        case deferral
 
         /// Kinds the user answers. PatcherNotifier reports when these are on screen and
-        /// which button was clicked.
+        /// which button was clicked. (The apply window also asks, while `.choosing`.)
         var expectsResponse: Bool {
             switch self {
-            case .blockingNotice, .blockingPrompt, .deferral: return true
-            case .applyList, .applyCompact, .progress:        return false
+            case .blockingNotice, .blockingPrompt:      return true
+            case .applyList, .applyCompact, .progress:  return false
             }
         }
     }
 
     enum Phase: String, Codable {
+        /// The apply window before installing: the user picks which updates to install
+        /// now, or defers them all. Install turns it into `.running` in place.
+        case choosing
         case running
         /// Work has finished; the window stays until Done, `autoCloseAt`, or removal.
         case complete
@@ -51,8 +52,10 @@ struct DialogSession: Codable, Equatable {
     struct Item: Codable, Equatable, Identifiable {
         enum Status: String, Codable {
             case pending, working, success, failed, skipped
-            /// Deferral prompt: ready to install, or blocked by a running app.
+            /// Choosing: ready to install, or blocked by a running app.
             case ready, blocked
+            /// Deferred by the user in the choosing phase; not installed this run.
+            case deferred
         }
         /// The Installomator label.
         let id: String
@@ -65,6 +68,9 @@ struct DialogSession: Codable, Equatable {
         /// 0…1 while a working item reports how far along it is (download or install).
         /// nil shows a spinner.
         var progress: Double? = nil
+        /// Choosing: whether the row's "install now" checkbox starts checked. nil: no
+        /// checkbox (per-app deferral off, or the hard deadline).
+        var selected: Bool? = nil
     }
 
     struct Progress: Codable, Equatable {
@@ -143,7 +149,9 @@ struct DialogSession: Codable, Equatable {
     }
 
     let id: String
-    let kind: Kind
+    /// The apply window changes from `.applyList` to `.applyCompact` after the choosing
+    /// phase when ApplyDialogSize = compact.
+    var kind: Kind
     /// Only the agent running for this user shows the window.
     let consoleUID: UInt32
     /// The patcher process writing the session. A running session whose owner has
@@ -180,6 +188,36 @@ struct DialogSession: Codable, Equatable {
     var autoCloseAt: Date?
 
     var isExpired: Bool { expires < Date() }
+
+    /// The user is being asked something: a prompt, or the apply window while choosing.
+    /// PatcherNotifier reports when these are on screen, and patcher waits for the answer.
+    var awaitsResponse: Bool { kind.expectsResponse || phase == .choosing }
+
+    /// The row ids that offer a checkbox while choosing.
+    var selectableIDs: Set<String> { Set(items.filter { $0.selected != nil }.map(\.id)) }
+}
+
+/// What the user picked in the apply window's choosing phase, sent with Install.
+struct DialogChoice: Codable, Equatable {
+    /// Rows the user unchecked.
+    var deferred: [String]
+    /// The "Defer for" menu value, when the window has the menu.
+    var minutes: String?
+
+    func encoded() -> String {
+        (try? JSONEncoder().encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+    }
+
+    static func decode(_ value: String) -> DialogChoice? {
+        try? JSONDecoder().decode(DialogChoice.self, from: Data(value.utf8))
+    }
+
+    /// Only rows that offered a checkbox, and a menu value the window offered.
+    func isValid(for session: DialogSession) -> Bool {
+        guard Set(deferred).isSubset(of: session.selectableIDs) else { return false }
+        if let minutes { return session.menu?.options.contains { $0.value == minutes } ?? false }
+        return true
+    }
 }
 
 enum DialogSessionStore {
@@ -264,11 +302,12 @@ enum DialogSessionStore {
 
     static let responseExtension = "dialogresponse"
 
-    /// The running session with this id, if it is one the user can answer.
+    /// The session with this id, if the user can answer it now: a running prompt, or the
+    /// apply window while choosing.
     static func answerableSession(id: String) -> DialogSession? {
         guard let url = url(for: id),
               let session = try? decoder.decode(DialogSession.self, from: Data(contentsOf: url)),
-              !session.isExpired, session.phase == .running, session.kind.expectsResponse
+              !session.isExpired, session.awaitsResponse, session.phase != .complete
         else { return nil }
         return session
     }
@@ -329,9 +368,9 @@ enum DialogSessionStore {
 enum DialogResponse: String, Codable, CaseIterable {
     /// The window is on screen. Until patcher has this, it never treats silence as consent.
     case displayed
-    /// The default button: Skip Update, OK, or Defer (with the menu choice).
+    /// The default button: Skip Update, OK, or Install (with a DialogChoice) while choosing.
     case primary
-    /// Quit <App>, or Continue.
+    /// Quit <App> (with the checkbox state), or Defer All (with the menu value) while choosing.
     case secondary
     /// Closed without a button (the quit key).
     case dismissed

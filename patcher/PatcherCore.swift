@@ -1460,6 +1460,15 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
     let hardDeadlineReached = prefs.deadlineDaysHard > 0 && effectiveDaysPending >= prefs.deadlineDaysHard
     let countdownSeconds = prefs.blockingProcessCountdownSeconds
 
+    // Apps the user deferred on their own stay out of the apply until their deferral ends,
+    // except at the hard deadline, or when the user asked for the install (PatcherMenu,
+    // Available Software). Apps unchecked in this run's prompt are added below.
+    var appDeferrals: Set<String> = (userInitiated || hardDeadlineReached || labelFilter != nil)
+        ? [] : DeferralState.load().deferredLabels()
+    if !appDeferrals.isEmpty {
+        Logger.log("⏸️ Apply: deferred by the user until later — \(appDeferrals.sorted().joined(separator: ", "))")
+    }
+
     let cacheBaseURL = AppConstants.patcherCacheFolderURL
     let fileManager = FileManager.default
 
@@ -1480,6 +1489,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
         for dirURL in labelDirs {
             guard StagedCache.stagedFile(in: dirURL) != nil else { continue }
             let lbl = dirURL.lastPathComponent
+            if appDeferrals.contains(lbl) { continue }
             let plistURL = AppConstants.patcherDiscoveredFolderURL.appendingPathComponent("\(lbl).plist")
 
             var displayName = lbl
@@ -1575,6 +1585,13 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
                 let pendingLabels = dialogItems.map(\.label)
                 switch promptResult {
+                case .partial(let deferred, let minutes):
+                    recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
+                    deferralState.recordAppDeferral(labels: deferred, minutes: minutes)
+                    deferralState.save()
+                    appDeferrals.formUnion(deferred)
+                    dialogItems.removeAll { deferred.contains($0.label) }
+                    Logger.log("⏸️ Apply: \(deferred.joined(separator: ", ")) deferred for \(formatDeferralDuration(minutes)) (deferral #\(deferralState.count), user #\(deferralState.userDeferralCount)); installing the rest.")
                 case .deferred(let minutes):
                     recordDeferralOutcome(labels: pendingLabels, result: promptResult, date: Date())
                     deferralState.recordDeferral(minutes: minutes, kind: .user)
@@ -1618,6 +1635,12 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 Logger.log("⚠️ Shutdown requested — stopping apply before '\(label)'. Already applied: \(appliedCount).")
                 dialog?.setProgressText("Shutdown — stopping after \(appliedCount) item\(appliedCount == 1 ? "" : "s")")
                 break
+            }
+
+            // Deferred by the user on its own: left for a later apply.
+            if appDeferrals.contains(label) {
+                Logger.verbose("⏸️ \(label) — deferred by the user, not installing this run")
+                continue
             }
 
             // A cache dir with only metadata.json (or empty) means nothing is staged
@@ -2013,6 +2036,13 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             deferralState.save()
             Logger.log("ℹ️ All staged updates applied — deferral state reset.")
         } else {
+            // Forget per-app deferrals of apps that were installed.
+            var deferralState = DeferralState.load()
+            let staged = Set(StagedCache.labelDirectories()
+                .filter { StagedCache.stagedFile(in: $0) != nil }
+                .map(\.lastPathComponent))
+            deferralState.pruneAppDeferrals(keeping: staged)
+            deferralState.save()
             Logger.log("ℹ️ Some staged updates remain — deferral state preserved.")
         }
 
@@ -4154,8 +4184,19 @@ func updateDiscoveredPlist(label: String, updates: [String: Any]) {
 /// Records the outcome of the deferral prompt against every pending label.
 /// Defined here (patcher-only) because DeferralPromptResult is patcher-only.
 func recordDeferralOutcome(labels: [String], result: DeferralPromptResult, date: Date) {
+    if case .partial(let deferred, let minutes) = result {
+        for label in labels {
+            LabelHistory.append(event: deferred.contains(label) ? .userDeferred(date: date, minutes: minutes)
+                                                               : .userContinued(date: date),
+                                label: label)
+        }
+        Logger.verbose("📖 History: \(deferred.count) deferred, \(labels.count - deferred.count) continued")
+        return
+    }
     let event: LabelHistoryEvent
     switch result {
+    case .partial:
+        return      // handled above
     case .proceed:
         event = .userContinued(date: date)
     case .deferred(let minutes):

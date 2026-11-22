@@ -10,9 +10,9 @@ import SwiftUI
 
 /// What the user did to a window.
 enum DialogAction {
-    /// The default button: Done, OK, or Skip Update.
+    /// The default button: Done, OK, Skip Update, or Install while choosing.
     case primary
-    /// Quit <App>.
+    /// Quit <App>, or Defer All while choosing.
     case secondary
     /// The quit key or the title-bar close button.
     case dismissed
@@ -23,8 +23,10 @@ final class DialogModel: ObservableObject {
     @Published var session: DialogSession
     /// Set by DialogWindow.
     var onAction: (DialogAction) -> Void = { _ in }
-    /// The menu choice, sent back with the primary button.
+    /// The menu choice, sent back with the primary button (Defer All while choosing).
     var selection: String?
+    /// While choosing: rows the user unchecked.
+    @Published var deselected: Set<String>
     /// The checkbox state, reported on each change and sent with the secondary button.
     var checked: Bool
     /// Set by DialogWindow.
@@ -34,6 +36,13 @@ final class DialogModel: ObservableObject {
         self.session = session
         self.selection = session.menu?.selected
         self.checked = session.checkbox?.checked ?? false
+        self.deselected = Set(session.items.filter { $0.selected == false }.map(\.id))
+    }
+
+    /// While choosing: what Install sends back.
+    var choice: DialogChoice {
+        DialogChoice(deferred: session.selectableIDs.intersection(deselected).sorted(),
+                     minutes: session.menu == nil ? nil : selection)
     }
 }
 
@@ -42,14 +51,11 @@ enum DialogLayout {
     static let compactSize = CGSize(width: 560, height: 124)
     static let promptSize  = CGSize(width: 480, height: 320)
     static let noticeSize  = CGSize(width: 600, height: 250)
-    static let deferralWidth: CGFloat = 680
 
-    static func deferralHeight(itemCount: Int) -> CGFloat {
-        min(640, max(440, 300 + CGFloat(itemCount) * 60))
-    }
-
+    /// Room for the choosing phase's message too, so the window keeps one size from
+    /// choosing through installing.
     static func listHeight(itemCount: Int) -> CGFloat {
-        min(520, max(450, 220 + CGFloat(itemCount) * 60))
+        min(580, max(480, 260 + CGFloat(itemCount) * 60))
     }
 }
 
@@ -59,13 +65,11 @@ struct DialogRootView: View {
     var body: some View {
         switch model.session.kind {
         case .applyList:
-            ApplyListView(session: model.session, onDone: { model.onAction(.primary) })
+            ApplyListView(model: model)
         case .applyCompact, .progress:
             CompactProgressView(session: model.session)
         case .blockingNotice, .blockingPrompt:
             BlockingAppView(model: model)
-        case .deferral:
-            DeferralView(model: model)
         }
     }
 }
@@ -154,11 +158,22 @@ struct SessionProgressBar: View {
 // MARK: - Large apply window
 
 struct ApplyListView: View {
-    let session: DialogSession
-    let onDone: () -> Void
+    @ObservedObject var model: DialogModel
+    @State private var menuChoice = ""
 
+    private var session: DialogSession { model.session }
+    private var choosing: Bool { session.phase == .choosing }
     private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
     private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
+
+    /// While choosing, the rows still checked (rows without a checkbox always install).
+    private var installCount: Int { session.items.count - session.selectableIDs.intersection(model.deselected).count }
+
+    private var primaryTitle: String {
+        guard let button = session.button else { return "" }
+        guard choosing, !session.selectableIDs.isEmpty else { return button.title }
+        return installCount == session.items.count ? "Install All Now" : "Install \(installCount) Now"
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -170,10 +185,18 @@ struct ApplyListView: View {
                     .padding(.top, 22)
                     .padding(.bottom, 12)
 
+                if choosing, !session.message.isEmpty {
+                    MarkdownText(session.message)
+                        .font(.system(size: 13))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                }
+
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(session.items) { item in
-                            ItemRow(item: item)
+                            ItemRow(item: item, isChecked: checkBinding(for: item))
                             if item.id != session.items.last?.id { Divider().padding(.leading, 64) }
                         }
                     }
@@ -184,25 +207,48 @@ struct ApplyListView: View {
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: .separatorColor)))
                 .padding(.horizontal, 20)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    SessionProgressBar(progress: session.progress)
-                    Text(session.progress.text)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                Group {
+                    if choosing {
+                        if let countdown = session.countdown {
+                            CountdownView(countdown: countdown)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SessionProgressBar(progress: session.progress)
+                            Text(session.progress.text)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
 
-                HStack {
-                    if let help = session.help { HelpButton(help: help) }
+                HStack(spacing: 10) {
+                    if choosing, let menu = session.menu {
+                        Picker(menu.title, selection: $menuChoice) {
+                            ForEach(menu.options, id: \.value) { option in
+                                Text(option.label).tag(option.value)
+                            }
+                        }
+                        .fixedSize()
+                        .onChange(of: menuChoice) { _, value in model.selection = value }
+                    } else if !choosing, let help = session.help {
+                        HelpButton(help: help)
+                    }
                     Spacer()
+                    if choosing, let secondary = session.secondaryButton {
+                        Button(secondary.title) { model.onAction(.secondary) }
+                            .controlSize(.large)
+                            .disabled(!secondary.enabled)
+                    }
                     if let button = session.button {
-                        Button(button.title, action: onDone)
+                        Button(primaryTitle) { model.onAction(.primary) }
                             .keyboardShortcut(.defaultAction)
                             .controlSize(.large)
-                            .disabled(!button.enabled)
+                            .disabled(!button.enabled || (choosing && installCount == 0))
                     }
                 }
                 .padding(20)
@@ -210,6 +256,18 @@ struct ApplyListView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor))
         }
+        .onAppear { menuChoice = model.selection ?? session.menu?.selected ?? "" }
+    }
+
+    /// The row's "install now" checkbox while choosing; nil when it has none.
+    private func checkBinding(for item: DialogSession.Item) -> Binding<Bool>? {
+        guard choosing, item.selected != nil else { return nil }
+        let id = item.id
+        return Binding(
+            get: { !model.deselected.contains(id) },
+            set: { on in
+                if on { model.deselected.remove(id) } else { model.deselected.insert(id) }
+            })
     }
 
     private var sidePanel: some View {
@@ -233,9 +291,16 @@ struct ApplyListView: View {
 
 private struct ItemRow: View {
     let item: DialogSession.Item
+    /// The "install now" checkbox while choosing.
+    var isChecked: Binding<Bool>? = nil
 
     var body: some View {
         HStack(spacing: 12) {
+            if let isChecked {
+                Toggle("Install \(item.title) now", isOn: isChecked)
+                    .toggleStyle(.checkbox)
+                    .labelsHidden()
+            }
             DialogIconView(spec: item.icon, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
@@ -253,7 +318,9 @@ private struct ItemRow: View {
                 .frame(width: 20, height: 20)
         }
         .padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
+        .opacity(item.status == .deferred ? 0.55 : 1)
+        // A row with a checkbox keeps it reachable on its own.
+        .accessibilityElement(children: isChecked == nil ? .combine : .contain)
     }
 }
 
@@ -284,6 +351,8 @@ private struct StatusSymbol: View {
             Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
         case .blocked:
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+        case .deferred:
+            Image(systemName: "clock").foregroundStyle(.secondary)
         }
     }
 }
@@ -483,102 +552,5 @@ private struct CountdownView: View {
     private static func format(_ seconds: Double) -> String {
         let s = Int(seconds.rounded(.up))
         return String(format: "%d:%02d", s / 60, s % 60)
-    }
-}
-
-// MARK: - Deferral prompt
-
-struct DeferralView: View {
-    @ObservedObject var model: DialogModel
-    @State private var selected: String = ""
-
-    private var session: DialogSession { model.session }
-    private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
-    private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(session.branding.appTitle)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(brandText)
-                .lineLimit(1)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-                .background(brandBackground)
-
-            HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 16) {
-                    DialogIconView(spec: session.icon, overlay: session.overlayIcon, size: 96)
-                    if let status = session.sidePanel {
-                        MarkdownText(status)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .frame(width: 140, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    MarkdownText(session.message)
-                        .font(.system(size: 14))
-                        .fixedSize(horizontal: false, vertical: true)
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(session.items) { item in
-                                ItemRow(item: item)
-                                if item.id != session.items.last?.id { Divider().padding(.leading, 52) }
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                    }
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: .separatorColor)))
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-
-            if let countdown = session.countdown {
-                CountdownView(countdown: countdown)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
-            }
-
-            HStack(spacing: 10) {
-                if let menu = session.menu {
-                    Picker(menu.title, selection: $selected) {
-                        ForEach(menu.options, id: \.value) { option in
-                            Text(option.label).tag(option.value)
-                        }
-                    }
-                    .fixedSize()
-                    .onChange(of: selected) { _, value in model.selection = value }
-                }
-                Spacer()
-                if let secondary = session.secondaryButton {
-                    Button(secondary.title) { model.onAction(.secondary) }
-                        .controlSize(.large)
-                        .disabled(!secondary.enabled)
-                }
-                if let button = session.button {
-                    Button(button.title) { model.onAction(.primary) }
-                        .keyboardShortcut(.defaultAction)
-                        .controlSize(.large)
-                        .disabled(!button.enabled)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 14)
-            .padding(.bottom, 16)
-        }
-        // Fill the window, whatever its exact height, so spare room goes to the item list
-        // rather than below the buttons. The window is sized from DialogLayout.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
-        // The title bar is hidden; don't leave room for it above the banner.
-        .ignoresSafeArea()
-        .onAppear { selected = model.selection ?? session.menu?.selected ?? "" }
     }
 }

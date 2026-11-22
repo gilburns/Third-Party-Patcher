@@ -15,7 +15,7 @@ extension Patcher {
         static let configuration = CommandConfiguration(
             commandName: "dialog-demo",
             abstract: "Show a window with sample data, without installing anything.",
-            discussion: "Kinds: large, compact, progress, notice, prompt, deferral. Run with sudo; PatcherNotifier must be loaded for the console user. The prompts report what patcher would do but never quit an app or record a deferral."
+            discussion: "Kinds: large, compact, progress, notice, prompt, deferral. Run with sudo; PatcherNotifier must be loaded for the console user. The prompts report what patcher would do but never quit an app or record a deferral. 'deferral' opens the apply window to choose, then installs the chosen apps in the same window (add --compact to see it shrink)."
         )
 
         @Argument(help: "Which window to show: large, compact, progress, notice, prompt or deferral.")
@@ -29,6 +29,9 @@ extension Patcher {
 
         @Flag(name: .long, help: "Show the deferral prompt as it looks once the hard deadline is reached.")
         var deadline = false
+
+        @Flag(name: .long, help: "With 'deferral': continue in the compact window after Install.")
+        var compact = false
 
         func validate() throws {
             guard ["large", "compact", "progress", "notice", "prompt", "deferral"].contains(kind.lowercased()) else {
@@ -51,20 +54,32 @@ extension Patcher {
                     .notify(processName: "TextEdit", item: Self.sampleItems[1])
                 print("Notice closed.")
             case "deferral":
-                // Uses the real deferral settings (menu, countdown, automatic action); records nothing.
-                let prefs = Preferences()
-                var items = Self.sampleItems
-                items[3] = ApplyItem(label: "chess", displayName: "Chess",
-                                     iconPath: "/System/Applications/Chess.app", isBlocked: true)
-                let result = NativeDeferralPrompt(uid: uid).show(
+                // Uses the real deferral settings (menu, countdown, automatic action, per-app
+                // checkboxes); records nothing.
+                let prefs  = Preferences()
+                var items  = Self.sampleItems
+                items[3]   = ApplyItem(label: "chess", displayName: "Chess",
+                                       iconPath: "/System/Applications/Chess.app", isBlocked: true)
+                let window = NativeApplyWindow(uid: uid, size: compact ? .compact : .large)
+                let result = window.showDeferralPrompt(
                     items: items, daysPending: 3, hardDeadlineReached: deadline,
                     allowedDeferralMinutes: PatchSchedule(prefs: prefs).allowedDeferralMinutes(daysPending: 3),
                     prefs: prefs)
                 switch result {
-                case .proceed:                     print("Result: continue and install now.")
-                case .deferred(let minutes):       print("Result: deferred by the user for \(formatDeferralDuration(minutes)).")
+                case .proceed:                       print("Result: install everything now.")
+                case .partial(let deferred, let minutes):
+                    print("Result: defer \(deferred.joined(separator: ", ")) for \(formatDeferralDuration(minutes)); install the rest now.")
+                case .deferred(let minutes):         print("Result: deferred by the user for \(formatDeferralDuration(minutes)).")
                 case .timedOutDeferred(let minutes): print("Result: countdown ended — auto-deferred for \(formatDeferralDuration(minutes)).")
-                case .deadlineForced:              print("Result: hard deadline — install now.")
+                case .deadlineForced:                print("Result: hard deadline — install now.")
+                }
+                switch result {
+                case .deferred, .timedOutDeferred:
+                    return
+                case .partial(let deferred, _):
+                    simulateInstalls(window, items: items.filter { !deferred.contains($0.label) })
+                case .proceed, .deadlineForced:
+                    simulateInstalls(window, items: items)
                 }
             case "prompt":
                 let response = NativeBlockingPrompt(uid: uid, dryRun: true)
@@ -90,11 +105,15 @@ extension Patcher {
         ]
 
         private func runApply(uid: uid_t, size: ApplyDialogSize) {
-            let window = NativeApplyWindow(uid: uid, size: size)
-            let items  = Self.sampleItems
+            simulateInstalls(NativeApplyWindow(uid: uid, size: size), items: Self.sampleItems)
+        }
+
+        /// Runs the window through installing `items`: a package, a copy, a failure and a skip.
+        private func simulateInstalls(_ window: NativeApplyWindow, items: [ApplyItem]) {
             window.launchProgressDialog(items: items)
             Thread.sleep(forTimeInterval: step)
 
+            var applied = 0, skipped = 0, failed = 0
             for (index, item) in items.enumerated() {
                 window.setInProgress(item: item, current: index + 1, total: items.count)
                 // Simulated install progress: a package for the first, a copy for the second.
@@ -107,13 +126,13 @@ extension Patcher {
                 default: Thread.sleep(forTimeInterval: step)
                 }
                 switch index {
-                case 2:  window.setFailed(item: item)
-                case 3:  window.setSkipped(item: item, reason: "App running")
-                default: window.setSuccess(item: item, toVersion: item.newVersion ?? "")
+                case 2:  window.setFailed(item: item); failed += 1
+                case 3:  window.setSkipped(item: item, reason: "App running"); skipped += 1
+                default: window.setSuccess(item: item, toVersion: item.newVersion ?? ""); applied += 1
                 }
                 Thread.sleep(forTimeInterval: step / 2)
             }
-            window.complete(applied: 2, skipped: 1, failed: 1)
+            window.complete(applied: applied, skipped: skipped, failed: failed)
             window.waitForDialog(timeout: 60)
             print("Done. The large window stays until you click Done, or 60 seconds pass.")
         }

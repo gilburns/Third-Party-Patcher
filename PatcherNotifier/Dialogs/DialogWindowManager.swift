@@ -56,18 +56,17 @@ final class DialogWindowManager {
                 window.update(session)
             } else {
                 let id = session.id
-                let kind = session.kind
                 let window = DialogWindow(session: session, onToggle: { checked in
                     SchedulerRelay.send(sessionID: id, response: .toggled,
                                         value: DialogSession.Checkbox.value(checked))
                 }) { [weak self] action, value in
-                    self?.handle(action, value: value, id: id, kind: kind)
+                    self?.handle(action, value: value, id: id)
                 }
                 windows[id] = window
                 window.show()
                 notifierLog.info("Dialog \(id, privacy: .public) opened (\(session.kind.rawValue, privacy: .public))")
                 // patcher starts a prompt's countdown only once it knows the window is up.
-                if kind.expectsResponse, acknowledged.insert(id).inserted {
+                if session.awaitsResponse, acknowledged.insert(id).inserted {
                     SchedulerRelay.send(sessionID: id, response: .displayed)
                 }
             }
@@ -80,13 +79,16 @@ final class DialogWindowManager {
         updateTimer()
     }
 
-    private func handle(_ action: DialogAction, value: String?, id: String, kind: DialogSession.Kind) {
-        if kind.expectsResponse {
+    private func handle(_ action: DialogAction, value: String?, id: String) {
+        guard let session = windows[id]?.session else { return }
+        if session.awaitsResponse {
             switch action {
             case .primary:   SchedulerRelay.send(sessionID: id, response: .primary, value: value)
             case .secondary: SchedulerRelay.send(sessionID: id, response: .secondary, value: value)
             case .dismissed: SchedulerRelay.send(sessionID: id, response: .dismissed)
             }
+            // Install keeps the apply window: patcher turns it into the progress window.
+            if session.phase == .choosing, action == .primary { return }
         }
         userClosed(id)
     }
