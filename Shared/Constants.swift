@@ -328,6 +328,19 @@ if [[ -n "$resolvedCustomVersion" ]] && isBogusInstalledVersion "$resolvedCustom
     resolvedCustomVersion=""
 fi
 
+# Labels that scrape HTTP headers (curl -I | grep location | cut ...) keep the
+# header's trailing CR, e.g. appNewVersion="4.5\\r". Strip it from the values.
+appNewVersion="${appNewVersion//$'\\r'/}"
+downloadURL="${downloadURL//$'\\r'/}"
+
+# A label whose version scrape is broken can leave multiple lines or leftover
+# URL/query-string text in appNewVersion (e.g. "9.19.0" followed by a signed
+# release-asset URL). Blank it so the label is handled as unknown-version
+# instead of reporting garbage as a version.
+if [[ "$appNewVersion" =~ $'\\n|://|[?&=]' ]]; then
+    appNewVersion=""
+fi
+
 timeStamp=$(/bin/date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Serialize blockingProcesses array as newline-separated string so each element
@@ -371,8 +384,10 @@ if [[ "$json_output" == ERROR* ]]; then
     exit 1
 fi
 
-# Output JSON
-echo "$json_output" | LC_ALL=C.UTF-8 tr -d '\r'
+# Output JSON. Use printf, not echo: zsh's echo interprets backslash escapes,
+# turning JSON's escaped "\\n", "\\r", "\\\\" etc. back into raw characters and
+# producing invalid JSON.
+printf '%s\\n' "$json_output" | LC_ALL=C.UTF-8 tr -d '\r'
 """
 
     // MARK: - Ingnored Label Types
