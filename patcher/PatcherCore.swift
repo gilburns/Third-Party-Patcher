@@ -3086,9 +3086,48 @@ private enum DownloadResult {
     case failed
 }
 
-private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: String? = nil, curlOptions: String? = nil) -> DownloadResult {
+// MARK: - HTTPS-only downloads
+
+/// Returns the URL with an `http` scheme rewritten to `https` (dropping an explicit
+/// port 80). Every download goes over https, whether its URL came from a label run,
+/// Installomator-Tracker or a staging refresh. Hosts without https fail to download.
+func httpsUpgraded(_ url: URL) -> URL {
+    guard url.scheme?.lowercased() == "http",
+          var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+    components.scheme = "https"
+    if components.port == 80 { components.port = nil }
+    return components.url ?? url
+}
+
+/// Upgrades any redirect to an `http` URL to `https`, so a download can't be moved
+/// off https mid-transfer. (A command-line tool gets no App Transport Security.)
+private final class HTTPSRedirectUpgrader: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let url = request.url, url.scheme?.lowercased() == "http" else {
+            completionHandler(request)
+            return
+        }
+        var upgraded = request
+        upgraded.url = httpsUpgraded(url)
+        Logger.log("🔒 Redirect to http upgraded to https: \(upgraded.url?.absoluteString ?? "")")
+        completionHandler(upgraded)
+    }
+}
+
+private let httpsOnlySession = URLSession(configuration: .default,
+                                          delegate: HTTPSRedirectUpgrader(), delegateQueue: nil)
+
+private func downloadFile(from requestedURL: URL, to destination: URL, bandwidthLimit: String? = nil, curlOptions: String? = nil) -> DownloadResult {
     // Remove any stale file at the destination before downloading
     try? FileManager.default.removeItem(at: destination)
+
+    let url = httpsUpgraded(requestedURL)
+    if url != requestedURL {
+        Logger.log("🔒 Download URL upgraded to https: \(url.absoluteString)")
+    }
 
     // Use curl when a bandwidth limit or label-specific curl options are present
     if bandwidthLimit != nil || curlOptions != nil {
@@ -3098,7 +3137,7 @@ private func downloadFile(from url: URL, to destination: URL, bandwidthLimit: St
     let semaphore = DispatchSemaphore(value: 0)
     var result = DownloadResult.failed
 
-    let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
+    let task = httpsOnlySession.downloadTask(with: url) { tempURL, response, error in
         defer { semaphore.signal() }
         if let error {
             Logger.log("❌ Download error: \(error.localizedDescription)")
@@ -3143,8 +3182,11 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
     // --write-out reports the final status (after redirects) on stdout.
     // --progress-bar draws "###…  45.2%" on stderr, redrawn with "\r"; it is read below
     // for the window, and the rest of stderr (errors) is kept for the log.
+    // --proto/--proto-redir =https: https only, including every redirect. curl can't
+    // upgrade a redirect the way URLSession does, so a redirect to http fails the download.
     var args: [String] = ["-L", "-o", destination.path, "--progress-bar",
-                          "--fail", "--write-out", "%{http_code}"]
+                          "--fail", "--write-out", "%{http_code}",
+                          "--proto", "=https", "--proto-redir", "=https"]
 
     if let limitRate {
         args += ["--limit-rate", limitRate]
@@ -3333,13 +3375,13 @@ private func resolveDownloadFilename(from url: URL, label: String, type: String)
 
 /// Issues a HEAD request and returns the filename from the Content-Disposition header, if present.
 private func filenameFromContentDisposition(url: URL) -> String? {
-    var request = URLRequest(url: url, timeoutInterval: 15)
+    var request = URLRequest(url: httpsUpgraded(url), timeoutInterval: 15)
     request.httpMethod = "HEAD"
 
     let semaphore = DispatchSemaphore(value: 0)
     var filename: String? = nil
 
-    URLSession.shared.dataTask(with: request) { _, response, _ in
+    httpsOnlySession.dataTask(with: request) { _, response, _ in
         defer { semaphore.signal() }
         guard let http = response as? HTTPURLResponse,
               (200...299).contains(http.statusCode),

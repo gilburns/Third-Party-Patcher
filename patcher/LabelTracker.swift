@@ -27,8 +27,14 @@ enum LabelTracker {
         let status: String
         let timeStamp: String
 
+        /// The tracker resolved this label to a version and an absolute http(s) URL.
+        /// http is fine here: every download is upgraded to https (see httpsUpgraded).
         var resolved: Bool {
-            status == "success" && !appNewVersion.isEmpty && downloadURL.lowercased().hasPrefix("https://")
+            guard status == "success", !appNewVersion.isEmpty,
+                  let url = URL(string: downloadURL),
+                  ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  !(url.host ?? "").isEmpty else { return false }
+            return true
         }
     }
 
