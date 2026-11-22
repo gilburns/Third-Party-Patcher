@@ -180,6 +180,26 @@ currentUser=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print
 # FUNCTIONS FUNCTIONS FUNCTIONS
 ################################
 
+# Unauthenticated api.github.com calls are capped at 60/hour per public IP,
+# shared by every Mac behind the same NAT, which a full scan can exceed. When
+# GH_TOKEN is set (from the GitHubToken preference), wrap curl so every
+# api.github.com request - from downloadURLFromGit below or from a label's own
+# curl call, since labels are eval'd in this shell - is authenticated. curl
+# drops the Authorization header on redirects to other hosts, so the token
+# isn't sent to release-asset CDNs.
+#
+# Labels rarely set their own curl timeouts, so default to a 10s connect /
+# 30s total limit. curl uses the last value given, so a label that passes its
+# own --connect-timeout or --max-time still wins.
+curl() {
+    local -a defaults=(--connect-timeout 10 --max-time 30)
+    if [[ -n "${GH_TOKEN:-}" && "$*" == *api.github.com* ]]; then
+        command curl "${defaults[@]}" -H "Authorization: Bearer $GH_TOKEN" "$@"
+    else
+        command curl "${defaults[@]}" "$@"
+    fi
+}
+
 downloadURLFromGit() { # $1 git user name, $2 git repo name
     gitusername=${1?:"no git user name"}
     gitreponame=${2?:"no git repo name"}

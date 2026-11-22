@@ -37,10 +37,70 @@ class ZshScriptRunner {
     ///   - arguments: Optional arguments passed to the script.
     ///   - timeout: Maximum execution time in seconds (default: 30).
     /// - Returns: The script output as a string, or `nil` if an error occurs or timeout is reached.
+    /// GitHub token from the `GitHubToken` preference, read once per process.
+    /// Handed to label scripts only through the child environment (as GH_TOKEN) —
+    /// never as an argument (visible in `ps`) or written into the script file.
+    /// An expired or revoked token gets HTTP 401 on every API call — worse than no token —
+    /// so it is checked once against /rate_limit (which doesn't count against the limit)
+    /// and dropped if GitHub rejects it.
+    private static let gitHubToken: String? = {
+        guard let token = Preferences().gitHubToken else { return nil }
+        switch checkGitHubToken(token) {
+        case .accepted(let remaining, let limit):
+            Logger.log("🔑 GitHubToken accepted — \(remaining) of \(limit) GitHub API requests remaining this hour")
+            return token
+        case .rejected(let status):
+            Logger.log("⚠️ GitHubToken rejected by GitHub (HTTP \(status)) — expired or revoked? Label GitHub API requests will be unauthenticated (60/hour per IP).")
+            return nil
+        case .unverified(let reason):
+            Logger.log("⚠️ Could not verify GitHubToken (\(reason)) — using it anyway")
+            return token
+        }
+    }()
+
+    private enum GitHubTokenCheck {
+        case accepted(remaining: Int, limit: Int)
+        case rejected(status: Int)
+        case unverified(String)
+    }
+
+    private static func checkGitHubToken(_ token: String) -> GitHubTokenCheck {
+        var request = URLRequest(url: URL(string: "https://api.github.com/rate_limit")!, timeoutInterval: 10)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+
+        var result: GitHubTokenCheck = .unverified("no response")
+        let semaphore = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            defer { semaphore.signal() }
+            if let error {
+                result = .unverified(error.localizedDescription)
+                return
+            }
+            guard let http = response as? HTTPURLResponse else { return }
+            if http.statusCode == 401 {
+                result = .rejected(status: 401)
+            } else if http.statusCode == 200 {
+                let remaining = Int(http.value(forHTTPHeaderField: "x-ratelimit-remaining") ?? "") ?? -1
+                let limit = Int(http.value(forHTTPHeaderField: "x-ratelimit-limit") ?? "") ?? -1
+                result = .accepted(remaining: remaining, limit: limit)
+            } else {
+                result = .unverified("HTTP \(http.statusCode)")
+            }
+        }.resume()
+        _ = semaphore.wait(timeout: .now() + 15)
+        return result
+    }
+
     static func runScript(at scriptPath: String, arguments: [String] = [], timeout: TimeInterval = 30) -> String? {
         let process = Process()
         process.launchPath = "/bin/zsh"
         process.arguments = [scriptPath] + arguments
+        if let token = gitHubToken {
+            var environment = ProcessInfo.processInfo.environment
+            environment["GH_TOKEN"] = token
+            process.environment = environment
+        }
 
         let pipe = Pipe()
         process.standardOutput = pipe
