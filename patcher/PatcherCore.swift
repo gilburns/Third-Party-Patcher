@@ -7,6 +7,45 @@
 
 import Foundation
 import ArgumentParser
+import IOKit.pwr_mgt
+
+// MARK: - Idle Sleep Prevention
+
+/// Holds a PreventUserIdleSystemSleep power assertion until released.
+/// Long label runs (scan, check, stage) otherwise stall whenever the Mac idle-sleeps:
+/// a 30-second label timeout can stretch to 25+ minutes of wall-clock time, and network
+/// calls interrupted by sleep get the label wrongly recorded as broken.
+/// Only idle sleep is blocked — lid close, the Apple menu and low battery still sleep the Mac.
+final class IdleSleepAssertion {
+    private var assertionID = IOPMAssertionID(0)
+    private var held = false
+    private let reason: String
+
+    init(reason: String) {
+        self.reason = reason
+        let result = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            "Third Party Patcher: \(reason)" as CFString,
+            &assertionID
+        )
+        held = (result == kIOReturnSuccess)
+        if held {
+            Logger.log("☕ Preventing idle sleep during \(reason)")
+        } else {
+            Logger.log("⚠️ Could not create idle-sleep assertion for \(reason) (IOReturn \(result)) — continuing without it")
+        }
+    }
+
+    func release() {
+        guard held else { return }
+        IOPMAssertionRelease(assertionID)
+        held = false
+        Logger.verbose("☕ Released idle-sleep assertion for \(reason)")
+    }
+
+    deinit { release() }
+}
 
 // MARK: - Setup Folders
 func configureLogging() {
@@ -273,6 +312,8 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) ->
     let scanStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔍 Scan started at \(iso.string(from: scanStart))")
+    let sleepAssertion = IdleSleepAssertion(reason: "scan")
+    defer { sleepAssertion.release() }
 
     let preferences = Preferences()
     Logger.log("📋 Preferences source: \(preferences.source)")
@@ -523,6 +564,8 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
     let checkStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("🔎 Update check started at \(iso.string(from: checkStart))")
+    let sleepAssertion = IdleSleepAssertion(reason: "update check")
+    defer { sleepAssertion.release() }
 
     let preferences = Preferences()
     Logger.log("📋 Preferences source: \(preferences.source)")
@@ -2591,6 +2634,8 @@ func downloadAndStageUpdates(bypassBandwidthLimit: Bool = false,
     let stageStart = Date()
     let iso = ISO8601DateFormatter()
     Logger.log("⬇️ Staging started at \(iso.string(from: stageStart))")
+    let sleepAssertion = IdleSleepAssertion(reason: "staging")
+    defer { sleepAssertion.release() }
 
     let prefs = Preferences()
     Logger.log("📋 Preferences source: \(prefs.source)")
