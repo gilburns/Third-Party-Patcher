@@ -86,6 +86,7 @@ final class DialogSessionWriter {
                             position: String, title: String, message: String,
                             total: Int) -> DialogSession {
         let now = Date()
+        let dialogIcon = resolveDialogIcon(prefs: prefs)
         return DialogSession(
             id:          UUID().uuidString,
             kind:        kind,
@@ -106,9 +107,10 @@ final class DialogSessionWriter {
             branding: DialogSession.Branding(
                 appTitle:           prefs.appTitle,
                 textColorHex:       brandColorHex(prefs.brandColorFont),
-                backgroundColorHex: brandColorHex(prefs.brandColorBackground)
+                backgroundColorHex: brandColorHex(prefs.brandColorBackground),
+                icon:               dialogIcon
             ),
-            icon:        resolveDialogIcon(prefs: prefs),
+            icon:        dialogIcon,
             overlayIcon: resolveOverlayIcon(prefs: prefs),
             title:       title,
             message:     message,
@@ -193,7 +195,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         case .compact:
             var session = DialogSessionWriter.makeSession(
                 kind: .applyCompact, uid: uid, prefs: prefs, position: prefs.dialogScreenProgressPosition,
-                title: prefs.appTitle, message: "There are **\(count) \(word)** waiting.\n\nPreparing…", total: count)
+                title: prefs.appTitle, message: "There are **\(count) \(word)** waiting.", total: count)
             session.progress.text = "Preparing…"
             baseIcon    = session.icon
             baseOverlay = session.overlayIcon
@@ -271,7 +273,8 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
             writer?.update { s in
                 s.icon             = baseIcon
                 s.overlayIcon      = baseOverlay
-                s.message          = "**All possible updates have been applied**.\n\n\(summary)"
+                // The summary is in the caption under the bar.
+                s.message          = "**All possible updates have been applied.**"
                 s.progress.current = s.progress.total
                 s.progress.text    = "Complete — \(summary)"
                 s.phase            = .complete
@@ -506,7 +509,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                 s.items             = []
                 s.button            = nil
                 s.help              = nil
-                s.message           = "There are **\(count) \(word)** waiting.\n\nPreparing…"
+                s.message           = "There are **\(count) \(word)** waiting."
             case .large, .notifications:
                 s.message   = ""
                 s.sidePanel = Self.installingPanel(count: count, deferred: deferredNames, deferredFor: deferredFor)
