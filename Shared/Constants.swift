@@ -269,6 +269,27 @@ getJSONValue() {
 
 printlog() { :; }
 
+# Installomator's runAsUser, verbatim. Labels use it to read the console
+# user's settings (e.g. AppleLanguages in the *_intl and language pack labels).
+# Without it the call fails, the value comes back empty, and
+# libreofficelanguagepackintl loops forever trying shorter locale names.
+runAsUser() {
+    if [[ $currentUser != "loginwindow" ]]; then
+        uid=$(id -u "$currentUser")
+        launchctl asuser $uid sudo -u $currentUser "$@"
+    fi
+}
+
+# Installomator's cleanupAndExit, reduced to what applies while a label is
+# evaluated: log and exit. Its unmount, temp-folder, reopen and dialog steps
+# only matter during an install. Labels call it to stop deliberately (e.g.
+# nothing to install for this OS or language); exiting means no JSON output,
+# so the label is not processed further.
+cleanupAndExit() { # $1 exit code, $2 message, $3 log level
+    printlog "$2" "$3"
+    exit "${1:-1}"
+}
+
 ################################
 # MAIN  MAIN  MAIN  MAIN  MAIN
 ################################
@@ -294,6 +315,12 @@ label=$fullPathToLabel:t:r
 
 # Surpress helper tools from running when labels are evaluated
 INSTALL="force"
+
+# Set up as Installomator does in fragments/arguments.sh. Labels branch on
+# installedOSversion (e.g. macports picks its per-OS pkg, amadeuspro2 refuses
+# macOS 13+) and call the is-at-least zsh helper for OS checks.
+autoload is-at-least
+installedOSversion=$(sw_vers -productVersion)
 
 # Read contents of the label into variable
 labelFile=$(/bin/cat "${fullPathToLabel}")
