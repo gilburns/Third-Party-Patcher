@@ -74,7 +74,7 @@ struct MenuStatusView: View {
                     Text(vm.preferences.appTitle)
                         .font(.title3)
                         .foregroundColor(fontColor)
-                    Text("Refreshed \(vm.refreshedAgo)")
+                    Text(vm.refreshedText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .foregroundColor(fontColor)
@@ -194,8 +194,8 @@ struct MenuStatusView: View {
                     }
                         .disabled(!vm.hasPendingPatches)
                         .help(vm.hasPendingPatches
-                              ? "Apply any staged pending updates"
-                              : "No staged updates — run Download first")
+                              ? Text("Apply any staged pending updates")
+                              : Text("No staged updates — run Download first"))
                     if vm.preferences.showMenuDownloadAction
                         || vm.preferences.showMenuCheckAction
                         || vm.preferences.showMenuScanAction {
@@ -205,8 +205,8 @@ struct MenuStatusView: View {
                         Button("Download new Updates") { vm.triggerPhase("stage") }
                             .disabled(!vm.hasDetectedUpdates)
                             .help(vm.hasDetectedUpdates
-                                  ? "Download and verify any available updates"
-                                  : "No new updates detected — run Check or Scan first")
+                                  ? Text("Download and verify any available updates")
+                                  : Text("No new updates detected — run Check or Scan first"))
                     }
                     if vm.preferences.showMenuCheckAction {
                         Button("Check for Updates") {
@@ -215,8 +215,8 @@ struct MenuStatusView: View {
                         }
                             .disabled(!vm.hasDiscoveredApps)
                             .help(vm.hasDiscoveredApps
-                                  ? "Check for any available updates for previously discovered apps"
-                                  : "No apps discovered yet — run Full Discovery Scan first")
+                                  ? Text("Check for any available updates for previously discovered apps")
+                                  : Text("No apps discovered yet — run Full Discovery Scan first"))
                     }
                     if vm.preferences.showMenuScanAction {
                         Button("Full Discovery Scan") { vm.triggerPhase("scan") }
@@ -282,10 +282,10 @@ struct MenuStatusView: View {
                     .padding(.bottom, 2)
             }
 
-            if vm.stagedPatches.isEmpty, let startLabel = vm.initialDelayLabel {
+            if vm.stagedPatches.isEmpty, let startText = vm.initialDelayText {
                 // Initial deployment delay — nothing has been scanned yet, so
                 // "All apps up to date" would be misleading.
-                Label("Update checks start \(startLabel)", systemImage: "hourglass")
+                Label(startText, systemImage: "hourglass")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if let end = vm.initialDelayEndDate, end > Date() {
@@ -390,21 +390,19 @@ struct MenuStatusView: View {
 
                 // Hard deadline
                 if let deadline = vm.hardDeadlineDate, let days = vm.daysUntilHardDeadline {
-                    HStack(spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: "calendar.badge.exclamationmark")
                             .frame(width: 14)
                         if days <= 0 {
                             Text("Hard deadline: TODAY")
                                 .font(.caption).fontWeight(.semibold)
                                 .foregroundStyle(.red)
+                                .wrapsInPopover()
                         } else {
-                            Text("Hard deadline: ")
+                            Text("Hard deadline: \(shortDate(deadline)) (in \(shortDays(days)))",
+                                 comment: "First %@ = a short date such as “Dec 3”; second = days left, such as “5d”.")
                                 .font(.caption)
-                            + Text(deadline, format: .dateTime.month(.abbreviated).day())
-                                .font(.caption)
-                            + Text(" (in \(days)d)")
-                                .font(.caption)
-                                .foregroundStyle(deadlineColor(days: days))
+                                .wrapsInPopover()
                         }
                     }
                     .foregroundStyle(deadlineColor(days: days))
@@ -414,37 +412,36 @@ struct MenuStatusView: View {
                 if let focus = vm.focusDeadlineDate {
                     let focusDays = Calendar.current.dateComponents([.day], from: Date(), to: focus).day ?? 0
                     if focusDays > 0 {
-                        HStack(spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
                             Image(systemName: "moon.fill")
                                 .frame(width: 14)
-                            Text("Focus ignored after: ")
+                            Text("Focus ignored after: \(shortDate(focus)) (in \(shortDays(focusDays)))",
+                                 comment: "After this date, Focus / Do Not Disturb no longer postpones update prompts. First %@ = a short date such as “Dec 3”; second = days left, such as “5d”.")
                                 .font(.caption)
-                            + Text(focus, format: .dateTime.month(.abbreviated).day())
-                                .font(.caption)
-                            + Text(" (in \(focusDays)d)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .wrapsInPopover()
                         }
                         .foregroundStyle(.secondary)
                     }
                 }
 
                 // Deferral count
-                HStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Image(systemName: "arrow.uturn.backward")
                         .frame(width: 14)
                     Text(vm.deferralCountText)
                         .font(.caption)
+                        .wrapsInPopover()
                 }
                 .foregroundStyle(.secondary)
 
                 // Next prompt
-                if let label = vm.nextPromptLabel {
-                    HStack(spacing: 4) {
+                if let nextPrompt = vm.nextPromptText {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: "clock")
                             .frame(width: 14)
-                        Text("Next prompt: \(label)")
+                        Text(nextPrompt)
                             .font(.caption)
+                            .wrapsInPopover()
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -457,31 +454,38 @@ struct MenuStatusView: View {
     private var activitySection: some View {
         VStack(alignment: .leading, spacing: 4) {
             MenuSectionHeader("Last Activity")
-            activityRow("Apply", phase: "apply", date: vm.schedulerState?.lastApplyDate)
-            activityRow("Stage", phase: "stage", date: vm.schedulerState?.lastStageDate)
-            activityRow("Check", phase: "check", date: vm.schedulerState?.lastCheckDate)
-            activityRow("Scan",  phase: "scan",  date: vm.schedulerState?.lastScanDate)
+            // A Grid rather than a fixed-width label column, so longer translations of
+            // "Apply" / "Stage" widen the column instead of clipping.
+            Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 4) {
+                activityRow("Apply", phase: "apply", date: vm.schedulerState?.lastApplyDate)
+                activityRow("Stage", phase: "stage", date: vm.schedulerState?.lastStageDate)
+                activityRow("Check", phase: "check", date: vm.schedulerState?.lastCheckDate)
+                activityRow("Scan",  phase: "scan",  date: vm.schedulerState?.lastScanDate)
+            }
         }
     }
 
-    private func activityRow(_ label: String, phase: String, date: Date?) -> some View {
+    private func activityRow(_ label: LocalizedStringKey, phase: String, date: Date?) -> some View {
         let isRunning = vm.activePhase == phase
-        return HStack(spacing: 4) {
+        return GridRow {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .frame(width: 38, alignment: .leading)
-            if isRunning {
-                Text("Running")
-                    .font(.caption)
-                    .foregroundStyle(.primary)
-                ProgressView()
-                    .scaleEffect(0.40)
-                    .frame(width: 25, height: 6)
-            } else {
-                Text(date.map { formatDate($0) } ?? "Never")
-                    .font(.caption)
-                    .foregroundStyle(date == nil ? .tertiary : .primary)
+                .frame(minWidth: 38, alignment: .leading)
+            HStack(spacing: 4) {
+                if isRunning {
+                    Text("Running")
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                    ProgressView()
+                        .scaleEffect(0.40)
+                        .frame(width: 25, height: 6)
+                } else {
+                    Text(date.map { formatDate($0) }
+                         ?? String(localized: "Never", comment: "Last Activity: this phase has never run."))
+                        .font(.caption)
+                        .foregroundStyle(date == nil ? .tertiary : .primary)
+                }
             }
         }
         .animation(.default, value: isRunning)
@@ -523,6 +527,16 @@ struct MenuStatusView: View {
         if days <= 3 { return .orange }
         if days <= 7 { return Color(red: 0.8, green: 0.6, blue: 0) }
         return .secondary
+    }
+
+    /// "Dec 3", in the user's locale.
+    private func shortDate(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    /// "5d", in the user's locale.
+    private func shortDays(_ days: Int) -> String {
+        Duration.seconds(days * 86_400).formatted(.units(allowed: [.days], width: .narrow))
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -596,8 +610,8 @@ struct SupportInfoView: View {
 // MARK: - Section header
 
 private struct MenuSectionHeader: View {
-    let title: String
-    init(_ title: String) { self.title = title }
+    let title: LocalizedStringKey
+    init(_ title: LocalizedStringKey) { self.title = title }
 
     var body: some View {
         Text(title)
@@ -610,6 +624,13 @@ private struct MenuSectionHeader: View {
 }
 
 private extension View {
+    /// Lets a line wrap onto extra lines instead of truncating. The popover is a fixed
+    /// 300 pt wide and MenuBarExtra sizes its height to the content's ideal height, so
+    /// without this a long line (a longer translation, or the split deferral count) is cut off.
+    func wrapsInPopover() -> some View {
+        fixedSize(horizontal: false, vertical: true)
+    }
+
     /// Command-Option-click runs `app`, Command-Option-Shift-click runs `cache`. The modifier set
     /// must match exactly; plain clicks and other combinations do nothing.
     func revealOnModifierClick(app: @escaping () -> Void, cache: @escaping () -> Void) -> some View {

@@ -1,0 +1,193 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Actions" : {
+      "comment" : "Section header in the menu bar popover."
+    },
+    "All apps up to date" : {},
+    "Apply" : {
+      "comment" : "Last Activity row: the phase that installs downloaded updates."
+    },
+    "Apply any staged pending updates" : {},
+    "Apply pending updates" : {},
+    "Available Software" : {
+      "comment" : "Name of the companion app listing optional software the user can install."
+    },
+    "Check" : {
+      "comment" : "Last Activity row: the phase that checks known apps for newer versions."
+    },
+    "Check for Updates" : {},
+    "Check for any available updates for previously discovered apps" : {},
+    "Count: %lld" : {
+      "comment" : "Item count beside a section header."
+    },
+    "Deadline details" : {},
+    "Deferred %lld times (includes auto-deferrals)" : {
+      "comment" : "Deferral count line. %lld = total deferrals, user-chosen plus automatic.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld time (includes auto-deferrals)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld times (includes auto-deferrals)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Deferred %lld times by you" : {
+      "comment" : "Deferral count line. %lld = deferrals the user chose.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld time by you"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deferred %lld times by you"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Deferred %lld times by you · %lld times automatically" : {
+      "comment" : "Deferral count line. First %lld = deferrals the user chose; second = automatic ones (prompt timed out, or an app was blocking the update).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deferred %#@user@ by you · %#@auto@ automatically"
+          },
+          "substitutions" : {
+            "auto" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg time"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg times"
+                    }
+                  }
+                }
+              }
+            },
+            "user" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg time"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg times"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Download and verify any available updates" : {},
+    "Download new Updates" : {},
+    "Focus ignored after: %@ (in %@)" : {
+      "comment" : "After this date, Focus / Do Not Disturb no longer postpones update prompts. First %@ = a short date such as “Dec 3”; second = days left, such as “5d”."
+    },
+    "Full Discovery Scan" : {},
+    "Get Help" : {
+      "comment" : "Title of the support contact popover."
+    },
+    "Hard deadline: %@ (in %@)" : {
+      "comment" : "First %@ = a short date such as “Dec 3”; second = days left, such as “5d”."
+    },
+    "Hard deadline: TODAY" : {
+      "comment" : "The hard deadline for installing updates is today."
+    },
+    "Initial setup delay ends around %@" : {
+      "comment" : "%@ = a date and time, already formatted."
+    },
+    "Last Activity" : {},
+    "Never" : {
+      "comment" : "Last Activity: this phase has never run."
+    },
+    "Next patch cycle: %@" : {
+      "comment" : "%@ = a date such as “Tuesday, Dec 9”, already formatted."
+    },
+    "Next prompt: in about %@" : {
+      "comment" : "When the next update prompt will appear. %@ = a short duration such as “3 hr” or “45 min”."
+    },
+    "Next prompt: soon" : {
+      "comment" : "When the next update prompt will appear."
+    },
+    "No apps discovered yet — run Full Discovery Scan first" : {},
+    "No new updates detected — run Check or Scan first" : {},
+    "No staged updates — run Download first" : {},
+    "Open Available Software…" : {},
+    "Pending Downloads" : {},
+    "Pending Updates" : {},
+    "Quit" : {},
+    "Refresh" : {
+      "comment" : "Button that reloads the popover's information."
+    },
+    "Refreshed %@" : {
+      "comment" : "Header subtitle. %@ = a relative time such as “5 min. ago”, already formatted for the user's language."
+    },
+    "Refreshed just now" : {
+      "comment" : "Header subtitle: the menu's data was reloaded less than a minute ago."
+    },
+    "Run Now" : {
+      "comment" : "Menu button that opens a list of patching actions to run immediately."
+    },
+    "Run actions…" : {},
+    "Running" : {
+      "comment" : "Last Activity: this phase is running right now."
+    },
+    "Runs a full discovery scan for installed applications. This can take a while." : {},
+    "Scan" : {
+      "comment" : "Last Activity row: the phase that discovers installed apps."
+    },
+    "Stage" : {
+      "comment" : "Last Activity row: the phase that downloads and verifies updates ahead of installing."
+    },
+    "Update checks start in about %@" : {
+      "comment" : "Shown during the initial deployment delay. %@ = a short duration such as “3 hr” or “45 min”."
+    },
+    "Update checks start soon" : {
+      "comment" : "Shown during the initial deployment delay, before the first scan."
+    }
+  },
+  "version" : "1.0"
+}
