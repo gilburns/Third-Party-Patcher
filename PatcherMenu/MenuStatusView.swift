@@ -61,8 +61,8 @@ struct MenuStatusView: View {
 
     private var headerSection: some View {
         let prefs = Preferences()
-        let bgColor: String = prefs.brandColorBackground
-        let fontColor: String = prefs.brandColorFont
+        let bgColor   = prefs.brandBackgroundColor
+        let fontColor = prefs.brandFontColor
 
         return HStack(alignment: .center) {
             
@@ -73,11 +73,11 @@ struct MenuStatusView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(vm.preferences.appTitle)
                         .font(.title3)
-                        .foregroundColor(Color(brandString: fontColor))
+                        .foregroundColor(fontColor)
                     Text("Refreshed \(vm.refreshedAgo)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .foregroundColor(Color(brandString: fontColor))
+                        .foregroundColor(fontColor)
                         .padding(.leading, 5)
                 }
             }
@@ -93,7 +93,7 @@ struct MenuStatusView: View {
                 }
                 .buttonStyle(.plain)
 //                .foregroundStyle(.secondary)
-                .foregroundColor(Color(brandString: fontColor))
+                .foregroundColor(fontColor)
                 .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
                     SupportInfoView(preferences: vm.preferences)
                 }
@@ -101,7 +101,7 @@ struct MenuStatusView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(brandString: bgColor))
+        .background(bgColor)
     }
 
     

@@ -167,8 +167,8 @@ struct ApplyListView: View {
 
     private var session: DialogSession { model.session }
     private var choosing: Bool { session.phase == .choosing }
-    private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
-    private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
+    private var brandText: Color { session.branding.textColor }
+    private var brandBackground: Color { session.branding.backgroundColor }
 
     /// While choosing, the rows still checked (rows without a checkbox always install).
     private var installCount: Int { session.items.count - session.selectableIDs.intersection(model.deselected).count }
@@ -466,8 +466,8 @@ struct CompactProgressView: View {
 private struct CompactHeader: View {
     let session: DialogSession
 
-    private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
-    private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
+    private var brandText: Color { session.branding.textColor }
+    private var brandBackground: Color { session.branding.backgroundColor }
 
     /// Room for the window buttons, when DialogShowWindowButtons shows any.
     private var leadingInset: CGFloat { session.window.buttons.isEmpty ? 12 : 76 }
@@ -504,8 +504,8 @@ struct BlockingAppView: View {
     private var session: DialogSession { model.session }
     private func onAction(_ action: DialogAction) { model.onAction(action) }
 
-    private var brandText: Color { Color(nsColor: NSColor(hex: session.branding.textColorHex) ?? .white) }
-    private var brandBackground: Color { Color(nsColor: NSColor(hex: session.branding.backgroundColorHex) ?? .systemBlue) }
+    private var brandText: Color { session.branding.textColor }
+    private var brandBackground: Color { session.branding.backgroundColor }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -597,5 +597,21 @@ private struct CountdownView: View {
     private static func format(_ seconds: Double) -> String {
         let s = Int(seconds.rounded(.up))
         return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+// MARK: - Brand colors
+
+extension DialogSession.Branding {
+    /// BrandColorFont, switching to BrandColorFontDark in dark mode when it is set.
+    var textColor: Color { Self.color(textColorHex, dark: textColorDarkHex, fallback: .white) }
+
+    /// BrandColorBackground, switching to BrandColorBackgroundDark in dark mode when it is set.
+    var backgroundColor: Color { Self.color(backgroundColorHex, dark: backgroundColorDarkHex, fallback: .systemBlue) }
+
+    private static func color(_ lightHex: String, dark darkHex: String?, fallback: NSColor) -> Color {
+        let light = NSColor(hex: lightHex) ?? fallback
+        guard let darkHex, let dark = NSColor(hex: darkHex) else { return Color(nsColor: light) }
+        return Color(nsColor: .appearanceAware(light: light, dark: dark))
     }
 }

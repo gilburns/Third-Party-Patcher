@@ -108,6 +108,8 @@ final class DialogSessionWriter {
                 appTitle:           prefs.appTitle,
                 textColorHex:       brandColorHex(prefs.brandColorFont),
                 backgroundColorHex: brandColorHex(prefs.brandColorBackground),
+                textColorDarkHex:       prefs.brandColorFontDark.map(brandColorHex),
+                backgroundColorDarkHex: prefs.brandColorBackgroundDark.map(brandColorHex),
                 icon:               dialogIcon
             ),
             icon:        dialogIcon,

@@ -136,6 +136,37 @@ func brandColorHex(_ brandString: String) -> String {
     }
 }
 
+extension NSColor {
+    /// A color that resolves to `dark` in dark appearances and `light` otherwise,
+    /// following the system setting live.
+    static func appearanceAware(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        }
+    }
+}
+
+extension Color {
+    /// A brand color that switches to `dark` in dark mode. With no `dark` value,
+    /// `light` is used in both appearances.
+    init(brandString light: String, dark: String?) {
+        guard let dark else {
+            self.init(brandString: light)
+            return
+        }
+        self = Color(nsColor: .appearanceAware(light: NSColor(Color(brandString: light)),
+                                               dark:  NSColor(Color(brandString: dark))))
+    }
+}
+
+extension Preferences {
+    /// BrandColorFont, or BrandColorFontDark in dark mode when set.
+    var brandFontColor: Color { Color(brandString: brandColorFont, dark: brandColorFontDark) }
+
+    /// BrandColorBackground, or BrandColorBackgroundDark in dark mode when set.
+    var brandBackgroundColor: Color { Color(brandString: brandColorBackground, dark: brandColorBackgroundDark) }
+}
+
 extension Color {
     /// Resolves a brand color string to a SwiftUI Color.
     /// Accepts named system colors ("blue", "white", etc.) or hex strings ("#00A4C7").
