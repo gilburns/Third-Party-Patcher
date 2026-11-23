@@ -299,10 +299,10 @@ final class AvailableSoftwareViewModel: ObservableObject {
     
     private func promptRelaunch() {
         let alert = NSAlert()
-        alert.messageText = "App Icon Changed"
-        alert.informativeText = "The app icon preference has been updated. Relaunch to apply the new icon to the Dock and app switcher."
-        alert.addButton(withTitle: "Relaunch Now")
-        alert.addButton(withTitle: "Later")
+        alert.messageText = String(localized: "App Icon Changed")
+        alert.informativeText = String(localized: "The app icon preference has been updated. Relaunch to apply the new icon to the Dock and app switcher.")
+        alert.addButton(withTitle: String(localized: "Relaunch Now"))
+        alert.addButton(withTitle: String(localized: "Later", comment: "Alert button: relaunch the app later instead of now."))
         alert.alertStyle = .informational
         if alert.runModal() == .alertFirstButtonReturn {
             relaunchApp()

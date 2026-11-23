@@ -1,0 +1,274 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld Pending Downloads" : {
+      "comment" : "Count above the pending downloads grid. Singular form is in the catalog.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Pending Download"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Pending Downloads"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Pending Updates" : {
+      "comment" : "Count above the pending updates grid. Singular form is in the catalog.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Pending Update"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Pending Updates"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld apps" : {
+      "comment" : "About panel value: a number of apps. Singular form is in the catalog.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld app"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld apps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "About" : {},
+    "All" : {
+      "comment" : "History filter: show every event."
+    },
+    "All Applications" : {},
+    "All Apps Installed" : {},
+    "All managed software is up to date." : {},
+    "App Icon Changed" : {},
+    "Apply" : {
+      "comment" : "Last Activity row: the phase that installs downloaded updates."
+    },
+    "Apply All Updates" : {},
+    "Apply any staged pending updates" : {},
+    "Apply pending updates" : {},
+    "Apps Under Management" : {},
+    "Available Run Actions…" : {},
+    "Available Software" : {
+      "comment" : "Window title. Name of the app listing optional software the user can install."
+    },
+    "Available Version" : {},
+    "Available in Catalog" : {},
+    "A–Z" : {
+      "comment" : "Sort order: alphabetical."
+    },
+    "Back" : {
+      "comment" : "Navigation button: return to the previous list."
+    },
+    "Categories" : {},
+    "Check" : {
+      "comment" : "Last Activity row: the phase that checks known apps for newer versions."
+    },
+    "Check for Updates" : {},
+    "Check for any available updates for previously discovered apps" : {},
+    "Computer" : {
+      "comment" : "About panel row: this Mac's name."
+    },
+    "Currently Installed" : {},
+    "Default" : {
+      "comment" : "Sort order: the order the IT team configured."
+    },
+    "Discovered" : {
+      "comment" : "History filter: show only apps found during a scan."
+    },
+    "Discovered: v%@" : {
+      "comment" : "History event. %@ = the version found installed."
+    },
+    "Documentation" : {},
+    "Done" : {
+      "comment" : "Button: close the diagnostic sheet."
+    },
+    "Download Now" : {},
+    "Download and verify any available updates" : {},
+    "Download new Updates" : {},
+    "Every available software title is already installed." : {},
+    "Filter" : {},
+    "Full Discovery Scan" : {},
+    "Get Help" : {},
+    "Help Info…" : {},
+    "History" : {},
+    "Homepage" : {},
+    "Install" : {
+      "comment" : "Button: install this app."
+    },
+    "Installed" : {
+      "comment" : "Button title / sidebar row: the app is already installed."
+    },
+    "Installing…" : {},
+    "Installomator Labels" : {
+      "comment" : "About panel row. Installomator is a product name; do not translate it."
+    },
+    "Label Library" : {
+      "comment" : "About panel section: versions of the Installomator label scripts Patcher uses."
+    },
+    "Last Activity" : {},
+    "Later" : {
+      "comment" : "Alert button: relaunch the app later instead of now."
+    },
+    "Links" : {},
+    "Location" : {},
+    "Managed Labels" : {
+      "comment" : "About panel row: the IT team's own label scripts."
+    },
+    "Managed Software" : {},
+    "Never" : {},
+    "No Apps Installed" : {},
+    "No Apps in \"%@\"" : {
+      "comment" : "%@ = a category name from the IT team's catalog."
+    },
+    "No Managed Software" : {},
+    "No Matching Events" : {},
+    "No Pending Downloads" : {},
+    "No Pending Updates" : {},
+    "No Results for \"%@\"" : {
+      "comment" : "%@ = the user's search text."
+    },
+    "No Software Available" : {},
+    "No Software History" : {},
+    "No applications have been discovered yet. Run a scan to get started." : {},
+    "No apps discovered yet — run Full Discovery Scan first" : {},
+    "No available software titles are assigned to this category." : {},
+    "No history entries match the selected filter." : {},
+    "No new updates detected — run Check or Scan first" : {},
+    "No preferences configured — all defaults in use." : {},
+    "No staged updates — run Download first" : {},
+    "None of the available software titles are currently installed." : {},
+    "Not Installed" : {
+      "comment" : "Sidebar row: catalog apps that are not installed."
+    },
+    "Not configured" : {
+      "comment" : "About panel: no managed labels source is set up."
+    },
+    "Not installed" : {
+      "comment" : "Status: this app (or the label library) is not installed."
+    },
+    "Nothing to download at the moment." : {},
+    "Open" : {
+      "comment" : "Button: open the installed app."
+    },
+    "Out of Scope" : {
+      "comment" : "Status: the app is installed somewhere Patcher does not manage (such as the user's home folder)."
+    },
+    "Out of Scope — installed in user space" : {
+      "comment" : "Status: the app is installed in the user's home folder, which Patcher does not manage."
+    },
+    "Patcher hasn't applied any updates yet." : {},
+    "Pending Downloads" : {},
+    "Pending Updates" : {},
+    "Preferences Diagnostic" : {},
+    "Privacy Policy" : {},
+    "Queued — waiting for another operation to complete…" : {},
+    "Queued…" : {},
+    "Ready to install" : {},
+    "Relaunch Now" : {},
+    "Reload" : {
+      "comment" : "Menu command: reload the catalog."
+    },
+    "Reveal in Finder" : {},
+    "Run Now…" : {
+      "comment" : "Toolbar menu of patching actions to run immediately."
+    },
+    "Runs a full discovery scan for installed applications. This can take a while." : {},
+    "Scan" : {
+      "comment" : "Last Activity row: the phase that discovers installed apps."
+    },
+    "Search apps, publishers, keywords…" : {},
+    "Self-Service" : {
+      "comment" : "History filter: show only apps the user installed from Available Software."
+    },
+    "Self-service install: v%@" : {
+      "comment" : "History event: the user installed the app from Available Software. %@ = version."
+    },
+    "Software Details" : {},
+    "Software History" : {},
+    "Sort" : {},
+    "Source: %@" : {
+      "comment" : "Preferences diagnostic (admin only). %@ = where preferences were read from."
+    },
+    "Stage" : {
+      "comment" : "Last Activity row: the phase that downloads and verifies updates ahead of installing."
+    },
+    "Staged %@" : {
+      "comment" : "%@ = a relative time such as “2 days ago”, already formatted."
+    },
+    "Status Unknown" : {},
+    "System" : {},
+    "The app icon preference has been updated. Relaunch to apply the new icon to the Dock and app switcher." : {},
+    "Try a different search term, or select \"All Applications\"." : {},
+    "Try a different search term." : {},
+    "Unique Apps Updated" : {},
+    "Up to Date" : {},
+    "Update" : {
+      "comment" : "Section heading on a pending update's detail page."
+    },
+    "Update Available" : {},
+    "Update Statistics" : {},
+    "Updated: v%@ → v%@" : {
+      "comment" : "History event. First %@ = old version, second = new version."
+    },
+    "Updates" : {
+      "comment" : "History filter: show only updates applied by Patcher."
+    },
+    "Updates Applied (All Time)" : {},
+    "Version %@" : {
+      "comment" : "%@ = a version number."
+    },
+    "Version %@ installed" : {
+      "comment" : "%@ = the installed version number."
+    },
+    "Volume not mounted" : {},
+    "Your IT team hasn't configured any optional software titles." : {},
+    "macOS" : {
+      "comment" : "About panel row. Product name; do not translate."
+    },
+    "unknown" : {
+      "comment" : "Version number could not be determined."
+    },
+    "→ %@" : {
+      "comment" : "Pending update tile. %@ = the version it updates to."
+    }
+  },
+  "version" : "1.0"
+}

@@ -89,13 +89,27 @@ private struct ToolbarTitleLabel: NSViewRepresentable {
         label.backgroundColor  = NSColor(background)
         label.isBordered       = false
         label.alignment        = .left
+        label.lineBreakMode    = .byTruncatingTail
         label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        // Let the title give up width before the Run Now… button does, so a long
+        // (or translated) title truncates instead of squeezing the button's text away.
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
         nsView.stringValue = text
         nsView.textColor   = NSColor(color)
+    }
+
+    /// Ask for the full title width, and accept less only when the toolbar truly has
+    /// no more room. Without this, the low compression resistance made SwiftUI treat
+    /// the label as freely shrinkable, so it split the free space with the Spacer and
+    /// truncated even with room to spare.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextField, context: Context) -> CGSize? {
+        let ideal = nsView.intrinsicContentSize
+        let width = min(ideal.width, proposal.width ?? ideal.width)
+        return CGSize(width: width, height: ideal.height)
     }
 }
 
@@ -257,11 +271,14 @@ struct CatalogView: View {
                 mainContent
             }
         }
-        .navigationTitle("")
-        .frame(minWidth: 840, minHeight: 680)
+        .navigationTitle(Text(verbatim: ""))
+        .frame(minWidth: 850, minHeight: 680)
         .toolbar {
             ToolbarItemGroup(placement: .accessoryBar(id: "header")) {
-                ToolbarTitleLabel(text: "Available Software", color: fontColor, background: bgColor)
+                ToolbarTitleLabel(text: String(localized: "Available Software",
+                                               comment: "Window title. Name of the app listing optional software the user can install."),
+                                  color: fontColor, background: bgColor)
+                    .layoutPriority(1)   // gets its width before the Spacer takes the rest
                 
                 if vm.preferences.showHelpButton {
                     Button { showingHelp.toggle() } label: {
@@ -282,6 +299,7 @@ struct CatalogView: View {
 
                 runNowMenu
                     .buttonStyle(.bordered)
+                    .fixedSize()
 
             }
         }
@@ -343,9 +361,9 @@ struct CatalogView: View {
             // dismiss the detail view, returning to the grid.
             List {
                 Section("Available Software") {
-                    sidebarRow(.all,          label: "All Applications", icon: "square.grid.2x2",       badge: catalog.items.count)
-                    sidebarRow(.installed,    label: "Installed",        icon: "checkmark.circle.fill",  badge: installedCount)
-                    sidebarRow(.notInstalled, label: "Not Installed",    icon: "arrow.down.circle",      badge: notInstalledCount)
+                    sidebarRow(.all,          label: Text("All Applications"), icon: "square.grid.2x2",       badge: catalog.items.count)
+                    sidebarRow(.installed,    label: Text("Installed"),        icon: "checkmark.circle.fill",  badge: installedCount)
+                    sidebarRow(.notInstalled, label: Text("Not Installed"),    icon: "arrow.down.circle",      badge: notInstalledCount)
                 }
 
                 if !sortedCategories.isEmpty {
@@ -355,13 +373,16 @@ struct CatalogView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Text("Categories")
-                                Spacer()
-                                    .frame(maxWidth: categoriesExpanded ? 144 : 159, alignment: .init(horizontal: .leading, vertical: .center))
+                                    .lineLimit(1)
+                                // Flexible spacer + full-width row keeps the chevron at the
+                                // trailing edge whatever the title's length in each language.
+                                Spacer(minLength: 4)
                                 Image(systemName: "chevron.right")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .rotationEffect(.degrees(categoriesExpanded ? 90 : 0))
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding()
                             .contentShape(Rectangle())
                         }
@@ -369,7 +390,8 @@ struct CatalogView: View {
                     ) {
                         if categoriesExpanded {
                             ForEach(sortedCategories, id: \.name) { cat in
-                                sidebarRow(.category(cat.name), label: cat.name, icon: "tag", badge: cat.count)
+                                // Category names come from the catalog metadata, not the app.
+                                sidebarRow(.category(cat.name), label: Text(verbatim: cat.name), icon: "tag", badge: cat.count)
                             }
                         }
                     }
@@ -379,18 +401,20 @@ struct CatalogView: View {
                     .padding(.bottom, -10)
                 
                 Section("Managed Software") {
-                    sidebarRow(.managedSoftware,  label: "Software Details",   icon: "desktopcomputer",         badge: vm.managedApps.count)
-                    sidebarRow(.pendingUpdates,   label: "Pending Updates",    icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
-                    sidebarRow(.pendingDownloads, label: "Pending Downloads",  icon: "arrow.down.circle",       badge: pendingDownloadsCount)
-                    sidebarRow(.updateHistory,    label: "Software History",     icon: "clock.arrow.circlepath",  badge: 0)
-                    sidebarRow(.about,            label: "About",              icon: "info.circle.fill",        badge: 0)
+                    sidebarRow(.managedSoftware,  label: Text("Software Details"),  icon: "desktopcomputer",         badge: vm.managedApps.count)
+                    sidebarRow(.pendingUpdates,   label: Text("Pending Updates"),   icon: "arrow.down.circle.fill",  badge: vm.stagedPatches.count)
+                    sidebarRow(.pendingDownloads, label: Text("Pending Downloads"), icon: "arrow.down.circle",       badge: pendingDownloadsCount)
+                    sidebarRow(.updateHistory,    label: Text("Software History"),  icon: "clock.arrow.circlepath",  badge: 0)
+                    sidebarRow(.about,            label: Text("About"),             icon: "info.circle.fill",        badge: 0)
                 }
             }
             .listStyle(.sidebar)
         }
     }
 
-    private func sidebarRow(_ mode: FilterMode, label: String, icon: String, badge: Int) -> some View {
+    /// `label` is a Text so fixed rows translate (`Text("Installed")`) while category
+    /// rows show the catalog's own name as-is (`Text(verbatim:)`).
+    private func sidebarRow(_ mode: FilterMode, label: Text, icon: String, badge: Int) -> some View {
         Button {
             filterMode = mode
             selectedItem = nil
@@ -398,7 +422,7 @@ struct CatalogView: View {
             selectedManagedApp = nil
             selectedHistoryLabel = nil
         } label: {
-            Label(label, systemImage: icon)
+            Label { label } icon: { Image(systemName: icon) }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
@@ -503,7 +527,9 @@ struct CatalogView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: 120)
+            // Natural width rather than a 120 pt cap: a capped segmented control with
+            // longer labels draws past its frame, over the search field.
+            .fixedSize()
             .controlSize(.small)
 
             Spacer()
@@ -697,7 +723,7 @@ private struct CatalogGridItem: View {
         if isInstalling {
             HStack(spacing: 5) {
                 ProgressView().scaleEffect(0.65).frame(width: 14, height: 14)
-                Text(vm.activeStatus ?? "Installing…").font(.caption).foregroundStyle(.secondary)
+                Text(vm.activeStatus ?? String(localized: "Installing…")).font(.caption).foregroundStyle(.secondary)
             }
         } else if isQueued {
             Text("Queued…")
@@ -873,10 +899,10 @@ private struct ItemDetailView: View {
             case "selfServiceInstall":
                 pendingSelfService = true
             case "discovered":
-                let version = raw["installedVersion"] as? String ?? "unknown"
+                let version = raw["installedVersion"] as? String ?? String(localized: "unknown", comment: "Version number could not be determined.")
                 events.append(HistoryEvent(
                     date: date,
-                    title: "Discovered: v\(version)",
+                    title: String(localized: "Discovered: v\(version)", comment: "History event. %@ = the version found installed."),
                     icon: "magnifyingglass.circle.fill",
                     iconColor: .secondary
                 ))
@@ -886,7 +912,7 @@ private struct ItemDetailView: View {
                 if pendingSelfService {
                     events.append(HistoryEvent(
                         date: date,
-                        title: "Self-service install: v\(to)",
+                        title: String(localized: "Self-service install: v\(to)", comment: "History event: the user installed the app from Available Software. %@ = version."),
                         icon: "arrow.down.circle.fill",
                         iconColor: .blue
                     ))
@@ -894,7 +920,7 @@ private struct ItemDetailView: View {
                 } else {
                     events.append(HistoryEvent(
                         date: date,
-                        title: "Updated: v\(from) → v\(to)",
+                        title: String(localized: "Updated: v\(from) → v\(to)", comment: "History event. First %@ = old version, second = new version."),
                         icon: "arrow.up.circle.fill",
                         iconColor: .green
                     ))
@@ -912,13 +938,13 @@ private struct ItemDetailView: View {
     private var resolvedLinks: [AppLink] {
         var links: [AppLink] = []
         if let s = item.homepage,      !s.isEmpty, let u = URL(string: s) {
-            links.append(.init(title: "Homepage",       icon: "globe",       url: u))
+            links.append(.init(title: String(localized: "Homepage"),       icon: "globe",       url: u))
         }
         if let s = item.documentation, !s.isEmpty, let u = URL(string: s) {
-            links.append(.init(title: "Documentation",  icon: "doc.text",    url: u))
+            links.append(.init(title: String(localized: "Documentation"),  icon: "doc.text",    url: u))
         }
         if let s = item.privacy,       !s.isEmpty, let u = URL(string: s) {
-            links.append(.init(title: "Privacy Policy", icon: "lock.shield", url: u))
+            links.append(.init(title: String(localized: "Privacy Policy"), icon: "lock.shield", url: u))
         }
         return links
     }
@@ -944,7 +970,7 @@ private struct ItemDetailView: View {
     @ViewBuilder
     private var statusText: some View {
         if isInstalling {
-            Label(vm.activeStatus ?? "Installing…", systemImage: "arrow.down.circle")
+            Label(vm.activeStatus ?? String(localized: "Installing…"), systemImage: "arrow.down.circle")
                 .font(.caption).foregroundStyle(.secondary)
         } else if isQueued {
             Label("Queued — waiting for another operation to complete…", systemImage: "clock")
@@ -969,7 +995,7 @@ private struct ItemDetailView: View {
                 } else {
                     ProgressView().scaleEffect(0.8)
                 }
-                Text(vm.activeStatus ?? "Installing…").font(.callout).foregroundStyle(.secondary)
+                Text(vm.activeStatus ?? String(localized: "Installing…")).font(.callout).foregroundStyle(.secondary)
                     .monospacedDigit()
             }
         } else if isQueued {
@@ -1085,7 +1111,7 @@ private struct PendingUpdatesGrid: View {
         } else {
             
             HStack (alignment: .center) {
-                Text("\(patches.count) Pending Update\(patches.count == 1 ? "" : "s")")
+                Text("\(patches.count) Pending Updates", comment: "Count above the pending updates grid. Singular form is in the catalog.")
                     .font(.body)
                     .padding(.leading, 20)
              Spacer()
@@ -1356,7 +1382,7 @@ private struct PendingDownloadsGrid: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             HStack(alignment: .center) {
-                Text("\(apps.count) Pending Download\(apps.count == 1 ? "" : "s")")
+                Text("\(apps.count) Pending Downloads", comment: "Count above the pending downloads grid. Singular form is in the catalog.")
                     .font(.body)
                     .padding(.leading, 20)
                 Spacer()
@@ -1401,7 +1427,7 @@ private struct PendingDownloadsGrid: View {
 
 private struct ManagedAppDetailView: View {
     let app: AvailableSoftwareViewModel.ManagedApp
-    var backLabel: String = "Managed Software"
+    var backLabel: LocalizedStringKey = "Managed Software"
     let onBack: () -> Void
     @EnvironmentObject var vm: AvailableSoftwareViewModel
     @State private var metadata: LabelMetadata?
@@ -1469,7 +1495,7 @@ private struct ManagedAppDetailView: View {
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
                             .disabled(!pathIsAvailable(appPath))
-                            .help(pathIsAvailable(appPath) ? "" : "Volume not mounted")
+                            .help(pathIsAvailable(appPath) ? Text(verbatim: "") : Text("Volume not mounted"))
                         }
                     }
                     .padding(.bottom, 8)
@@ -1569,9 +1595,19 @@ private struct UpdateHistoryList: View {
         }
     }
 
+    private var filterPicker: some View {
+        Picker("Filter", selection: $filterType) {
+            Text("All").tag("all")
+            Text("Updates").tag("applied")
+            Text("Self-Service").tag("selfService")
+            Text("Discovered").tag("discovered")
+        }
+    }
+
     private var grouped: [(key: String, entries: [AvailableSoftwareViewModel.HistoryEntry])] {
         let fmt = DateFormatter()
-        fmt.dateFormat = "MMMM yyyy"
+        // Template, not a fixed format, so each locale gets its own month/year order and wording.
+        fmt.setLocalizedDateFormatFromTemplate("MMMMyyyy")
         var groups: [(key: String, entries: [AvailableSoftwareViewModel.HistoryEntry])] = []
         var seen: [String: Int] = [:]
         for entry in filteredHistory {
@@ -1597,14 +1633,18 @@ private struct UpdateHistoryList: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 0) {
-                Picker("Filter", selection: $filterType) {
-                    Text("All").tag("all")
-                    Text("Updates").tag("applied")
-                    Text("Self-Service").tag("selfService")
-                    Text("Discovered").tag("discovered")
+                // Segmented when the four filters fit; otherwise a pop-up menu, so long
+                // labels can't force the detail pane wider and squeeze the sidebar.
+                ViewThatFits(in: .horizontal) {
+                    filterPicker
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    filterPicker
+                        .pickerStyle(.menu)
+                        .fixedSize()
                 }
-                .pickerStyle(.segmented)
                 .labelsHidden()
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
 
@@ -1787,13 +1827,13 @@ private struct MetadataInfoSections: View {
         guard let m = metadata else { return [] }
         var result: [AppLink] = []
         if let s = m.homepage,      !s.isEmpty, let u = URL(string: s) {
-            result.append(.init(title: "Homepage",       icon: "globe",       url: u))
+            result.append(.init(title: String(localized: "Homepage"),       icon: "globe",       url: u))
         }
         if let s = m.documentation, !s.isEmpty, let u = URL(string: s) {
-            result.append(.init(title: "Documentation",  icon: "doc.text",    url: u))
+            result.append(.init(title: String(localized: "Documentation"),  icon: "doc.text",    url: u))
         }
         if let s = m.privacy,       !s.isEmpty, let u = URL(string: s) {
-            result.append(.init(title: "Privacy Policy", icon: "lock.shield", url: u))
+            result.append(.init(title: String(localized: "Privacy Policy"), icon: "lock.shield", url: u))
         }
         return result
     }
@@ -1846,11 +1886,13 @@ private func historyTitle(_ entry: AvailableSoftwareViewModel.HistoryEntry) -> S
     case "applied":
         let from = entry.fromVersion ?? "?"
         let to   = entry.toVersion   ?? "?"
-        return "Updated: v\(from) → v\(to)"
+        return String(localized: "Updated: v\(from) → v\(to)", comment: "History event. First %@ = old version, second = new version.")
     case "selfService":
-        return "Self-service install: v\(entry.toVersion ?? "?")"
+        let to = entry.toVersion ?? "?"
+        return String(localized: "Self-service install: v\(to)", comment: "History event: the user installed the app from Available Software. %@ = version.")
     case "discovered":
-        return "Discovered: v\(entry.toVersion ?? "unknown")"
+        let version = entry.toVersion ?? String(localized: "unknown", comment: "Version number could not be determined.")
+        return String(localized: "Discovered: v\(version)", comment: "History event. %@ = the version found installed.")
     default:
         return entry.eventType
     }
@@ -1934,13 +1976,13 @@ private struct AboutPanelView: View {
     private var installomatorVersion: String {
         (try? String(contentsOf: AppConstants.installomatorVersionFileURL, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty ?? "Not installed"
+            .nilIfEmpty ?? String(localized: "Not installed")
     }
 
     private var managedLabelsVersion: String {
         (try? String(contentsOf: AppConstants.managedLabelsVersionFileURL, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty ?? "Not configured"
+            .nilIfEmpty ?? String(localized: "Not configured", comment: "About panel: no managed labels source is set up.")
     }
 
     var body: some View {
@@ -1976,8 +2018,8 @@ private struct AboutPanelView: View {
                 aboutSection("Label Library") {
                     infoRow("Installomator Labels",  value: installomatorVersion)
                     infoRow("Managed Labels",        value: managedLabelsVersion)
-                    infoRow("Available in Catalog",  value: "\(catalog.items.count) apps")
-                    infoRow("Currently Installed",   value: "\(installedCount) apps")
+                    infoRow("Available in Catalog",  value: appCount(catalog.items.count))
+                    infoRow("Currently Installed",   value: appCount(installedCount))
                 }
 
                 // Update Statistics
@@ -2017,7 +2059,11 @@ private struct AboutPanelView: View {
         }
     }
 
-    private func aboutSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func appCount(_ n: Int) -> String {
+        String(localized: "\(n) apps", comment: "About panel value: a number of apps. Singular form is in the catalog.")
+    }
+
+    private func aboutSection<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.headline)
             Divider()
@@ -2025,7 +2071,7 @@ private struct AboutPanelView: View {
         }
     }
 
-    private func infoRow(_ label: String, value: String) -> some View {
+    private func infoRow(_ label: LocalizedStringKey, value: String) -> some View {
         HStack {
             Text(label).foregroundStyle(.secondary)
             Spacer()
@@ -2034,7 +2080,7 @@ private struct AboutPanelView: View {
         .font(.subheadline)
     }
 
-    private func activityRow(_ label: String, date: Date?) -> some View {
+    private func activityRow(_ label: LocalizedStringKey, date: Date?) -> some View {
         HStack {
             Text(label).foregroundStyle(.secondary)
             Spacer()
