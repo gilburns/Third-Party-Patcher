@@ -92,7 +92,23 @@ class ZshScriptRunner {
         return result
     }
 
+    /// Outcome of one script run.
+    struct ScriptResult {
+        /// Trimmed stdout+stderr, or nil when the run timed out.
+        let output: String?
+        let timedOut: Bool
+        /// The script's exit status; nil when it timed out or could not be launched.
+        let exitStatus: Int32?
+    }
+
+    /// Runs a script and returns its output, or nil on timeout.
     static func runScript(at scriptPath: String, arguments: [String] = [], timeout: TimeInterval = 30) -> String? {
+        runScriptResult(at: scriptPath, arguments: arguments, timeout: timeout).output
+    }
+
+    /// Runs a script and reports whether it timed out and how it exited, so callers can
+    /// tell a label that hung apart from one that exited deliberately without output.
+    static func runScriptResult(at scriptPath: String, arguments: [String] = [], timeout: TimeInterval = 30) -> ScriptResult {
         let process = Process()
         process.launchPath = "/bin/zsh"
         process.arguments = [scriptPath] + arguments
@@ -109,9 +125,11 @@ class ZshScriptRunner {
         let group = DispatchGroup()
         group.enter()
 
+        var launched = false
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try process.run()
+                launched = true
                 process.waitUntilExit()
             } catch {
                 Logger.log("❌ Error running script: \(error)")
@@ -126,14 +144,16 @@ class ZshScriptRunner {
         if result == .timedOut {
             Logger.log("⏳ Timeout reached: Killing script process.")
             process.terminate()
-            return nil
+            return ScriptResult(output: nil, timedOut: true, exitStatus: nil)
         }
 
         // Read output
         let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        let outputString = String(data: outputData, encoding: .utf8)
+        let outputString = String(data: outputData, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return outputString?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ScriptResult(output: outputString, timedOut: false,
+                            exitStatus: launched ? process.terminationStatus : nil)
     }
 }
 
