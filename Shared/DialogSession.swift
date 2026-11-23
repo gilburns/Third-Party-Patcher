@@ -133,6 +133,9 @@ struct DialogSession: Codable, Equatable {
         /// Six-digit hex, no "#".
         var textColorHex: String
         var backgroundColorHex: String
+        /// Dark-mode versions of the two colors above; nil uses the light value in both.
+        var textColorDarkHex: String? = nil
+        var backgroundColorDarkHex: String? = nil
         /// The DialogIcon spec, for the compact window's header. It stays put while
         /// `icon` changes to the app being installed.
         var icon: String? = nil

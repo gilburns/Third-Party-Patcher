@@ -461,6 +461,18 @@ struct Preferences {
         pref("BrandColorBackground", default: "blue")
     }
 
+    /// Font color used when the Mac is in dark mode. Same formats as BrandColorFont.
+    /// Nil when unset, in which case BrandColorFont is used in both appearances.
+    var brandColorFontDark: String? {
+        optionalPref("BrandColorFontDark")
+    }
+
+    /// Background color used when the Mac is in dark mode. Same formats as BrandColorBackground.
+    /// Nil when unset, in which case BrandColorBackground is used in both appearances.
+    var brandColorBackgroundDark: String? {
+        optionalPref("BrandColorBackgroundDark")
+    }
+
     // MARK: - Windows
 
     /// When true, the scheduler runs a silent apply pass before the interactive apply phase.
@@ -878,6 +890,12 @@ struct Preferences {
 
     private func pref(_ key: String, default defaultValue: String) -> String {
         guard let value = prefs[key] as? String, !value.isEmpty else { return defaultValue }
+        return value
+    }
+
+    /// A string pref, or nil when it is missing or blank.
+    private func optionalPref(_ key: String) -> String? {
+        guard let value = (prefs[key] as? String)?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
         return value
     }
 }

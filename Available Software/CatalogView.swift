@@ -231,12 +231,12 @@ struct CatalogView: View {
         } label: {
 //            Image(systemName: "play.circle")
             Text("Run Now…")
-                .foregroundColor(Color(brandString: vm.preferences.brandColorFont))
+                .foregroundColor(vm.preferences.brandFontColor)
 
         }
-        .border(Color(brandString: vm.preferences.brandColorFont), width: 2)
+        .border(vm.preferences.brandFontColor, width: 2)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .background(Color(brandString: vm.preferences.brandColorBackground))
+        .background(vm.preferences.brandBackgroundColor)
         .help("Available Run Actions…")
         .padding(.horizontal, 6)
     }
@@ -244,8 +244,8 @@ struct CatalogView: View {
     // MARK: - Body
 
     var body: some View {
-        let bgColor   = vm.preferences.brandColorBackground
-        let fontColor = vm.preferences.brandColorFont
+        let bgColor   = vm.preferences.brandBackgroundColor
+        let fontColor = vm.preferences.brandFontColor
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarContent
@@ -261,15 +261,15 @@ struct CatalogView: View {
         .frame(minWidth: 840, minHeight: 680)
         .toolbar {
             ToolbarItemGroup(placement: .accessoryBar(id: "header")) {
-                ToolbarTitleLabel(text: "Available Software", color: Color(brandString: fontColor), background: Color(brandString: bgColor))
+                ToolbarTitleLabel(text: "Available Software", color: fontColor, background: bgColor)
                 
                 if vm.preferences.showHelpButton {
                     Button { showingHelp.toggle() } label: {
-                        ColoredSymbol(systemName: "questionmark.circle", color: Color(brandString: fontColor))
+                        ColoredSymbol(systemName: "questionmark.circle", color: fontColor)
                             .frame(width: 16, height: 16)
 
                     }
-                    .foregroundStyle(Color(brandString: fontColor))
+                    .foregroundStyle(fontColor)
                     .buttonStyle(.plain)
                     .help("Help Info…")
                     .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
@@ -285,8 +285,8 @@ struct CatalogView: View {
 
             }
         }
-        .toolbarBackground(Color(brandString: bgColor), for: .windowToolbar)
-        .toolbarBackground(Color(brandString: bgColor), for: .accessoryBar(id: "header"))
+        .toolbarBackground(bgColor, for: .windowToolbar)
+        .toolbarBackground(bgColor, for: .accessoryBar(id: "header"))
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbarBackground(.visible, for: .accessoryBar(id: "header"))
         .onAppear {
