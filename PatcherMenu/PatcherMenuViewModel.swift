@@ -111,40 +111,77 @@ final class PatcherMenuViewModel: ObservableObject {
     }
 
     /// The deferral-count line shown in the popover, honoring `MenuDeferralCountDisplay`.
+    /// Singular/plural forms ("1 time" / "2 times") live in Localizable.xcstrings.
     var deferralCountText: String {
-        func times(_ n: Int) -> String { "\(n) time\(n == 1 ? "" : "s")" }
         switch deferralCountDisplay {
         case .combined:
-            return "Deferred \(times(deferralCount)) (includes auto-deferrals)"
+            return String(localized: "Deferred \(deferralCount) times (includes auto-deferrals)",
+                          comment: "Deferral count line. %lld = total deferrals, user-chosen plus automatic.")
         case .split:
-            return "Deferred \(times(userDeferralCount)) by you · \(times(autoDeferralCount)) automatically"
+            return String(localized: "Deferred \(userDeferralCount) times by you · \(autoDeferralCount) times automatically",
+                          comment: "Deferral count line. First %lld = deferrals the user chose; second = automatic ones (prompt timed out, or an app was blocking the update).")
         case .userOnly:
-            return "Deferred \(times(userDeferralCount)) by you"
+            return String(localized: "Deferred \(userDeferralCount) times by you",
+                          comment: "Deferral count line. %lld = deferrals the user chose.")
         }
     }
 
-    /// Approximate label for when the next apply prompt will appear.
+    /// A coarse "how long until" bucket. The menu turns each case into a whole sentence,
+    /// so every sentence is one translatable string rather than an English fragment
+    /// spliced into another string.
+    enum ApproximateWait: Equatable {
+        case hours(Int), minutes(Int), soon
+
+        /// "3 hr" / "45 min", formatted for the user's language.
+        var formattedDuration: String {
+            switch self {
+            case .hours(let h):
+                return Duration.seconds(h * 3600).formatted(.units(allowed: [.hours], width: .abbreviated))
+            case .minutes(let m):
+                return Duration.seconds(m * 60).formatted(.units(allowed: [.minutes], width: .abbreviated))
+            case .soon:
+                return ""
+            }
+        }
+
+        /// Hours above one hour, then minutes rounded up to the nearest 5 down to one
+        /// scheduler cycle (600 s), then "soon".
+        init(remaining: TimeInterval) {
+            if remaining > 3600 {
+                self = .hours(Int(ceil(remaining / 3600)))
+            } else if remaining > 600 {
+                self = .minutes(Int(ceil(remaining / 300)) * 5)
+            } else {
+                self = .soon
+            }
+        }
+    }
+
+    /// Approximately when the next apply prompt will appear.
     /// Coarsely bucketed — no exact countdown — because the prompt fires on the next
     /// scheduler cycle (up to 10 min) after the deferral expires.
     /// Returns nil once the deferral has been expired long enough that the scheduler
     /// has almost certainly run already.
-    var nextPromptLabel: String? {
+    var nextPromptWait: ApproximateWait? {
         guard let expiry = deferralState?.expiryDate else { return nil }
         let remaining = expiry.timeIntervalSince(Date())
         // Scheduler cycle is 600 s. After expiry the prompt fires on the next wake,
         // so "soon" honestly covers both the tail of the deferral and the post-expiry window.
-        let schedulerCycle: TimeInterval = 600
-        switch remaining {
-        case let r where r > 3600:
-            let hours = Int(ceil(r / 3600))
-            return "in about \(hours == 1 ? "1 hr" : "\(hours) hr")"
-        case let r where r > schedulerCycle:
-            let minutes = Int(ceil(r / 300)) * 5   // round up to nearest 5 min
-            return "in about \(minutes) min"
-        case let r where r > -schedulerCycle:
-            return "soon"
-        default:
-            return nil  // expired more than one full cycle ago — scheduler has run
+        guard remaining > -600 else { return nil }  // expired more than one full cycle ago — scheduler has run
+        return ApproximateWait(remaining: remaining)
+    }
+
+    /// The "Next prompt: …" line, or nil when there is no pending prompt to announce.
+    var nextPromptText: String? {
+        switch nextPromptWait {
+        case nil:
+            return nil
+        case .soon:
+            return String(localized: "Next prompt: soon",
+                          comment: "When the next update prompt will appear.")
+        case let wait?:
+            return String(localized: "Next prompt: in about \(wait.formattedDuration)",
+                          comment: "When the next update prompt will appear. %@ = a short duration such as “3 hr” or “45 min”.")
         }
     }
 
@@ -163,22 +200,18 @@ final class PatcherMenuViewModel: ObservableObject {
         return end
     }
 
-    /// Approximate label for when scheduled patching starts after the initial delay.
-    /// Bucketed like `nextPromptLabel` — work begins on the first scheduler wake after
+    /// The "Update checks start …" line shown during the initial delay.
+    /// Bucketed like `nextPromptWait` — work begins on the first scheduler wake after
     /// the delay ends, so an exact countdown would overstate precision.
-    var initialDelayLabel: String? {
+    var initialDelayText: String? {
         guard let end = initialDelayEndDate else { return nil }
-        let remaining = end.timeIntervalSince(Date())
-        let schedulerCycle: TimeInterval = 600
-        switch remaining {
-        case let r where r > 3600:
-            let hours = Int(ceil(r / 3600))
-            return "in about \(hours == 1 ? "1 hr" : "\(hours) hr")"
-        case let r where r > schedulerCycle:
-            let minutes = Int(ceil(r / 300)) * 5   // round up to nearest 5 min
-            return "in about \(minutes) min"
-        default:
-            return "soon"
+        switch ApproximateWait(remaining: end.timeIntervalSince(Date())) {
+        case .soon:
+            return String(localized: "Update checks start soon",
+                          comment: "Shown during the initial deployment delay, before the first scan.")
+        case let wait:
+            return String(localized: "Update checks start in about \(wait.formattedDuration)",
+                          comment: "Shown during the initial deployment delay. %@ = a short duration such as “3 hr” or “45 min”.")
         }
     }
 
@@ -211,10 +244,15 @@ final class PatcherMenuViewModel: ObservableObject {
         return schedule.nextPatchDay()
     }
 
-    var refreshedAgo: String {
-        let s = Date().timeIntervalSince(lastRefreshed)
-        if s < 60 { return "just now" }
-        return "\(Int(s / 60))m ago"
+    /// The "Refreshed …" line under the header title.
+    var refreshedText: String {
+        if Date().timeIntervalSince(lastRefreshed) < 60 {
+            return String(localized: "Refreshed just now",
+                          comment: "Header subtitle: the menu's data was reloaded less than a minute ago.")
+        }
+        let ago = lastRefreshed.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
+        return String(localized: "Refreshed \(ago)",
+                      comment: "Header subtitle. %@ = a relative time such as “5 min. ago”, already formatted for the user's language.")
     }
 
     // MARK: - Init
