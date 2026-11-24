@@ -55,25 +55,25 @@ extension Patcher {
             let total = userInitiated ? countScanLabels() : 0
             let dialog = userInitiated ? Presenters.makeProgressWindow(
                 title:   prefs.appTitle,
-                message: "Scanning \(total) application\(total == 1 ? "" : "s") for available updates…",
+                message: .scanningApps(count: total),
                 total:   total
             ) : nil
 
             let labelsAvailable = scanAppsForUpdates { current, total, labelName in
-                dialog?.setProgress(current, of: total, label: "Scanning \(labelName)…",
+                dialog?.setProgress(current, of: total, label: .scanningLabel(labelName),
                                     icon: resolveLabelIcon(label: labelName))
             }
 
             if let dialog {
                 dialog.resetIcons()
                 let updateCount = countPendingUpdates()
-                let summary = !labelsAvailable
-                    ? "Unable to scan — application labels could not be downloaded. The scan will retry automatically."
+                let summary: DialogText = !labelsAvailable
+                    ? .labelsUnavailable
                     : updateCount == 0
-                    ? "No updates available."
-                    : "\(updateCount) update\(updateCount == 1 ? "" : "s") available to download."
+                    ? .noUpdatesAvailable
+                    : .updatesAvailableToDownload(count: updateCount)
                 dialog.update(message: summary)
-                dialog.updateProgress("Complete")
+                dialog.updateProgress(.complete)
                 Thread.sleep(forTimeInterval: 5.0)
             }
             dialog?.close()
@@ -125,7 +125,7 @@ extension Patcher {
             let total = userInitiated ? countCheckLabels() : 0
             let dialog = userInitiated ? Presenters.makeProgressWindow(
                 title:   prefs.appTitle,
-                message: "Checking \(total) application\(total == 1 ? "" : "s") for available updates…",
+                message: .checkingApps(count: total),
                 total:   total
             ) : nil
 
@@ -151,17 +151,17 @@ extension Patcher {
                     guard let metaIcon = resolveIconURL(for: labelId) else { return nil }
                     return metaIcon.isFileURL ? metaIcon.path : metaIcon.absoluteString
                 }()
-                dialog?.setProgress(current, of: total, label: "Checking: **\(displayName)** for updates…", icon: iconPath)
+                dialog?.setProgress(current, of: total, label: .checkingApp(displayName), icon: iconPath)
             }
 
             if let dialog {
                 dialog.resetIcons()
                 let updateCount = countPendingUpdates()
-                let summary = updateCount == 0
-                    ? "No updates available."
-                    : "\(updateCount) update\(updateCount == 1 ? "" : "s") available to download."
+                let summary: DialogText = updateCount == 0
+                    ? .noUpdatesAvailable
+                    : .updatesAvailableToDownload(count: updateCount)
                 dialog.update(message: summary)
-                dialog.updateProgress("Complete")
+                dialog.updateProgress(.complete)
                 Thread.sleep(forTimeInterval: 5.0)
             }
             dialog?.close()
@@ -224,7 +224,7 @@ extension Patcher {
             let total = userInitiated ? countStageableUpdates() : 0
             let dialog = (userInitiated && total > 0) ? Presenters.makeProgressWindow(
                 title:   prefs.appTitle,
-                message: "Downloading \(total) update\(total == 1 ? "" : "s")…",
+                message: .downloadingUpdates(count: total),
                 total:   total
             ) : nil
 
@@ -257,7 +257,7 @@ extension Patcher {
                             .appendingPathComponent("\(labelId).png")
                         return fm.fileExists(atPath: metaIcon.path) ? metaIcon.path : nil
                     }()
-                    dialog?.beginItem(current: current, of: total, label: "Downloading: **\(displayName)**…", icon: iconPath)
+                    dialog?.beginItem(current: current, of: total, label: .downloadingApp(displayName), icon: iconPath)
                 },
                 onDownloadComplete: { current, total in
                     dialog?.completeItem(current: current, of: total)
@@ -268,16 +268,12 @@ extension Patcher {
                 dialog.resetIcons()
                 let ready = StagedCache.entries().count
                 let remaining = countPendingUpdates()
-                var parts: [String] = []
-                if ready > 0 {
-                    parts.append("\(ready) update\(ready == 1 ? "" : "s") ready to install.")
-                }
-                if remaining > 0 {
-                    parts.append("\(remaining) update\(remaining == 1 ? "" : "s") still waiting to download.")
-                }
-                let summary = parts.isEmpty ? "No more items to download." : parts.joined(separator: " ")
+                var parts: [DialogText] = []
+                if ready > 0 { parts.append(.updatesReadyToInstall(count: ready)) }
+                if remaining > 0 { parts.append(.updatesStillWaitingToDownload(count: remaining)) }
+                let summary: DialogText = parts.isEmpty ? .noMoreToDownload : .sentences(parts)
                 dialog.update(message: summary)
-                dialog.updateProgress("Complete")
+                dialog.updateProgress(.complete)
                 Thread.sleep(forTimeInterval: 5.0)
             }
             dialog?.close()

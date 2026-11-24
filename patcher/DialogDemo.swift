@@ -148,16 +148,16 @@ extension Patcher {
 
         private func runProgress(uid: uid_t) {
             let items  = Self.sampleItems
-            let window = NativeProgressWindow(uid: uid, title: Preferences().appTitle,
-                                              message: "Checking \(items.count) applications for available updates…",
+            let window = NativeProgressWindow(uid: uid, title: .verbatim(Preferences().appTitle),
+                                              message: .checkingApps(count: items.count),
                                               total: items.count)
             Thread.sleep(forTimeInterval: step)
             for (index, item) in items.enumerated() {
                 window.setProgress(index + 1, of: items.count,
-                                   label: "Checking: **\(item.displayName)** for updates…", icon: item.iconPath)
+                                   label: .checkingApp(item.displayName), icon: item.iconPath)
                 Thread.sleep(forTimeInterval: step)
             }
-            window.beginItem(current: items.count, of: items.count, label: "Downloading: **Safari**…",
+            window.beginItem(current: items.count, of: items.count, label: .downloadingApp(items[0].displayName),
                              icon: items[0].iconPath)
             let size: Int64 = 98_400_000
             Self.simulate(step * 2) { fraction in
@@ -166,8 +166,8 @@ extension Patcher {
             }
             window.completeItem(current: items.count, of: items.count)
             window.resetIcons()
-            window.update(message: "2 updates available to download.")
-            window.updateProgress("Complete")
+            window.update(message: .updatesAvailableToDownload(count: 2))
+            window.updateProgress(.complete)
             Thread.sleep(forTimeInterval: step * 2)
             window.close()
         }

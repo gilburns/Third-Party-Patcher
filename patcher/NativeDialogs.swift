@@ -62,13 +62,17 @@ final class DialogSessionWriter {
     private(set) var isClosed = false
 
     init(session: DialogSession) {
+        var session = session
+        session.resolveText(authoritative: true)
         self.session = session
         DialogSessionStore.write(session)
     }
 
+    /// Applies `change`, fills the English beside each typed text, and writes the file.
     func update(_ change: (inout DialogSession) -> Void) {
         guard !isClosed else { return }
         change(&session)
+        session.resolveText(authoritative: true)
         session.revision += 1
         session.expires = Date().addingTimeInterval(DialogSessionStore.lifetime)
         DialogSessionStore.write(session)
@@ -83,7 +87,7 @@ final class DialogSessionWriter {
 
     /// A new session with the shared defaults filled in from preferences.
     static func makeSession(kind: DialogSession.Kind, uid: uid_t, prefs: Preferences,
-                            position: String, title: String, message: String,
+                            position: String, title: DialogText, message: DialogText?,
                             total: Int) -> DialogSession {
         let now = Date()
         let dialogIcon = resolveDialogIcon(prefs: prefs)
@@ -114,8 +118,8 @@ final class DialogSessionWriter {
             ),
             icon:        dialogIcon,
             overlayIcon: resolveOverlayIcon(prefs: prefs),
-            title:       title,
-            message:     message,
+            title:       title.text,
+            message:     message?.text ?? "",
             sidePanel:   nil,
             items:       [],
             progress:    DialogSession.Progress(current: 0, total: max(total, 0), indeterminate: false, text: ""),
@@ -124,7 +128,9 @@ final class DialogSessionWriter {
             countdown:   nil,
             menu:        nil,
             help:        nil,
-            autoCloseAt: nil
+            autoCloseAt: nil,
+            titleText:   title,
+            messageText: message
         )
     }
 }
@@ -144,14 +150,14 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     /// Items whose result is final, for the large window's progress bar.
     private var finishedCount = 0
     /// The compact window's "Update 2 of 5", kept so progress can be appended to it.
-    private var compactStepText = ""
+    private var compactStepText = DialogText.verbatim("")
     /// The compact window's own icon and overlay, restored once the run completes.
     private var baseIcon: String?
     private var baseOverlay: String?
     /// Apps the user unchecked while choosing, and for how long they're deferred. They stay
     /// in the large window's list, marked deferred.
     private var deferredLabels: Set<String> = []
-    private var deferredFor = ""
+    private var deferredMinutes = 0
 
     /// How long the compact window holds each result before the next item replaces it.
     private static let compactResultHoldSeconds: TimeInterval = 1.5
@@ -171,7 +177,6 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         let prefs = Preferences()
         size = resolvedSize(prefs)
         let count = items.count
-        let word  = count == 1 ? "update" : "updates"
 
         // The deferral prompt's window turns into the progress window in place.
         if let writer, !writer.isClosed, writer.session.phase == .choosing {
@@ -185,20 +190,20 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         case .large, .notifications:
             var session = DialogSessionWriter.makeSession(
                 kind: .applyList, uid: uid, prefs: prefs, position: prefs.dialogScreenPosition,
-                title: prefs.appTitle, message: "", total: count)
+                title: .verbatim(prefs.appTitle), message: nil, total: count)
             applyLargeWindowOptions(to: &session, prefs: prefs)
-            session.sidePanel     = Self.installingPanel(count: count, deferred: [], deferredFor: "")
-            session.items         = items.map(Self.row)
-            session.progress.text = "Preparing…"
-            session.button        = DialogSession.Button(title: "Updating…", enabled: false)
+            session.sidePanelText    = Self.installingPanel(count: count, deferred: [], deferredMinutes: 0)
+            session.items            = items.map(Self.row)
+            session.progress.caption = .preparing
+            session.button           = DialogSession.Button(.updating, enabled: false)
             session.help          = makeHelp(prefs: prefs, started: Date())
             writer = DialogSessionWriter(session: session)
 
         case .compact:
             var session = DialogSessionWriter.makeSession(
                 kind: .applyCompact, uid: uid, prefs: prefs, position: prefs.dialogScreenProgressPosition,
-                title: prefs.appTitle, message: "There are **\(count) \(word)** waiting.", total: count)
-            session.progress.text = "Preparing…"
+                title: .verbatim(prefs.appTitle), message: .updatesWaiting(count: count), total: count)
+            session.progress.caption = .preparing
             baseIcon    = session.icon
             baseOverlay = session.overlayIcon
             writer = DialogSessionWriter(session: session)
@@ -206,26 +211,26 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         Logger.log("ℹ️ Native apply window opened (\(size == .compact ? "compact" : "large"), \(count) item\(count == 1 ? "" : "s")).")
     }
 
-    func setProgressText(_ text: String) {
-        writer?.update { $0.progress.text = text }
+    func setProgressText(_ text: DialogText) {
+        writer?.update { $0.progress.caption = text }
     }
 
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
         if size == .compact {
-            compactStepText = "Update \(current) of \(total)"
+            compactStepText = .updateOfTotal(current: current, total: total)
             writer?.update { s in
                 showItemIcon(item, in: &s)
                 // The bar counts finished updates; this one's progress is added as it arrives.
                 s.progress.current  = current - 1
                 s.progress.fraction = nil
-                s.progress.text     = compactStepText
-                s.message          = "Installing: \(item.displayName)\(versionSuffix(item.newVersion))…"
+                s.progress.caption  = compactStepText
+                s.messageText       = .installingApp(app: item.displayName, version: item.newVersion)
             }
             return
         }
         writer?.update { s in
-            s.progress.text = "Update \(current) of \(total) - Installing: \(item.displayName)…"
-            setRow(item, status: .working, text: .verbatim("Installing…"), in: &s)
+            s.progress.caption = .updateOfTotalInstalling(current: current, total: total, app: item.displayName)
+            setRow(item, status: .working, text: .progress(.installing(fraction: nil)), in: &s)
         }
     }
 
@@ -234,14 +239,13 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         if size == .compact {
             writer?.update { s in
                 s.progress.fraction = fraction
-                s.progress.text     = "\(compactStepText) · \(detail.text)"
+                s.progress.caption  = .withDetail(compactStepText, .progress(detail))
             }
             return
         }
         writer?.update { s in
             guard let index = s.items.firstIndex(where: { $0.id == item.label }),
                   s.items[index].status == .working else { return }
-            s.items[index].statusText   = detail.text
             s.items[index].statusDetail = .progress(detail)
             s.items[index].progress     = fraction
             s.progress.fraction         = fraction
@@ -249,38 +253,31 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     }
 
     func setSuccess(item: ApplyItem, toVersion: String) {
-        finish(item, status: .success, rowText: .verbatim("Updated"),
-               compactMessage: "✅ Updated: \(item.displayName)\(versionSuffix(toVersion))")
+        finish(item, status: .success, rowText: .updated,
+               compactMessage: .updatedApp(app: item.displayName, version: toVersion))
     }
 
     func setFailed(item: ApplyItem) {
-        finish(item, status: .failed, rowText: .verbatim("Failed"),
-               compactMessage: "❌ Failed: \(item.displayName)\(versionSuffix(item.newVersion))")
+        finish(item, status: .failed, rowText: .failed,
+               compactMessage: .failedApp(app: item.displayName, version: item.newVersion))
     }
 
     func setSkipped(item: ApplyItem, reason: SkipReason) {
         finish(item, status: .skipped, rowText: .skipped(reason),
-               compactMessage: "⚠️ \(item.displayName) — \(reason.text)")
+               compactMessage: .skippedApp(app: item.displayName, reason: reason))
     }
 
     func complete(applied: Int, skipped: Int, failed: Int) {
-        let summary: String
-        if failed > 0 {
-            summary = "\(applied) updated · \(skipped) skipped · \(failed) failed"
-        } else if skipped > 0 {
-            summary = "\(applied) updated · \(skipped) skipped"
-        } else {
-            summary = "\(applied) update\(applied == 1 ? "" : "s") applied successfully"
-        }
+        let summary = DialogText.completeSummary(applied: applied, skipped: skipped, failed: failed)
 
         if size == .compact {
             writer?.update { s in
                 s.icon             = baseIcon
                 s.overlayIcon      = baseOverlay
                 // The summary is in the caption under the bar.
-                s.message          = "**All possible updates have been applied.**"
+                s.messageText      = .allUpdatesApplied
                 s.progress.current = s.progress.total
-                s.progress.text    = "Complete — \(summary)"
+                s.progress.caption = summary
                 s.phase            = .complete
             }
             // The compact window has no Done button: show the summary briefly, then close.
@@ -290,11 +287,11 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
 
         writer?.update { s in
-            s.sidePanel        = "**All possible updates have been applied**.\n\nThese updates were just attempted."
+            s.sidePanelText    = .paragraphs([.allUpdatesApplied, .updatesJustAttempted])
             s.progress.current = s.progress.total
             s.progress.indeterminate = false
-            s.progress.text    = "Complete — \(summary)"
-            s.button           = DialogSession.Button(title: "Done", enabled: true)
+            s.progress.caption = summary
+            s.button           = DialogSession.Button(.done, enabled: true)
             s.phase            = .complete
         }
     }
@@ -329,7 +326,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
             return .skip
         case .prompt:
             // Show the pause in this window while the prompt waits.
-            setProgressText("Waiting for user — \(item.displayName)")
+            setProgressText(.waitingForUserApp(item.displayName))
             setSkipped(item: item, reason: .waitingForUser)
             return NativeBlockingPrompt(uid: uid).prompt(processName: processName, item: item,
                                                          countdownSeconds: countdownSeconds,
@@ -355,47 +352,48 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         let autoAction  = prefs.deferralAutomaticAction.lowercased()
         let perApp      = prefs.deferralPerAppEnabled && !hardDeadlineReached && items.count > 1
         let count       = items.count
-        let word        = count == 1 ? "update" : "updates"
         size = resolvedSize(prefs)
 
-        var message = "You have **\(count) software \(word)** ready to install."
-        if perApp { message += " Uncheck any you’d like to put off." }
+        var sentences: [DialogText] = [.readyToInstall(count: count)]
+        if perApp { sentences.append(.uncheckToPutOff) }
+        let message: DialogText
         if hardDeadlineReached {
-            message += "\n\n**Installation is required** — the maximum deferral deadline has been reached."
-        } else if daysPending > 0 {
-            message += " \(count == 1 ? "It has" : "They have") been pending for **\(daysPending) day\(daysPending == 1 ? "" : "s")**."
+            message = .paragraphs([.sentences(sentences), .installationRequired])
+        } else {
+            if daysPending > 0 { sentences.append(.pendingForDays(count: count, days: daysPending)) }
+            message = .sentences(sentences)
         }
 
         DialogSessionStore.removeAll(kinds: [.applyList, .applyCompact])
         var session = DialogSessionWriter.makeSession(
             kind: .applyList, uid: uid, prefs: prefs, position: prefs.dialogScreenPosition,
-            title: prefs.appTitle, message: message, total: count)
+            title: .verbatim(prefs.appTitle), message: message, total: count)
         applyLargeWindowOptions(to: &session, prefs: prefs)
         session.phase = .choosing
         let state = DeferralState.load()
-        session.sidePanel = "**Deferral Status**\n"
-                          + "Days pending: \(daysPending)\n"
-                          + "User deferrals: \(state.userDeferralCount)\n"
-                          + "Auto deferrals: \(state.automatedDeferralCount)"
+        session.sidePanelText = .deferralStatus(daysPending: daysPending,
+                                                userDeferrals: state.userDeferralCount,
+                                                autoDeferrals: state.automatedDeferralCount)
         session.items = items.map { item in
             var row = Self.row(item)
-            row.status     = item.isBlocked ? .blocked : .ready
-            row.statusText = item.isBlocked ? "Open — will ask to quit" : "Ready"
-            row.selected   = perApp ? true : nil
+            row.status       = item.isBlocked ? .blocked : .ready
+            row.statusDetail = item.isBlocked ? .openWillAskToQuit : .ready
+            row.selected     = perApp ? true : nil
             return row
         }
         if hardDeadlineReached {
-            session.button = DialogSession.Button(title: "Install Now", enabled: true)
+            session.button = DialogSession.Button(.installNow, enabled: true)
         } else {
-            session.button = DialogSession.Button(title: count == 1 ? "Install Now" : "Install All Now", enabled: true)
+            session.button = DialogSession.Button(count == 1 ? .installNow : .installAllNow, enabled: true)
             session.secondaryButton = DialogSession.Button(
-                title: menu.isEmpty ? "Defer (\(formatDeferralDuration(defaultMins)))" : (count == 1 ? "Defer" : "Defer All"),
+                menu.isEmpty ? .deferForDuration(minutes: defaultMins) : (count == 1 ? .deferOne : .deferAll),
                 enabled: true)
             if !menu.isEmpty {
                 session.menu = DialogSession.Menu(
-                    title:    "Defer for",
-                    options:  menu.map { DialogSession.Menu.Option(value: String($0), label: formatDeferralDuration($0)) },
-                    selected: String(defaultMins))
+                    title:     DialogText.deferForMenu.text,
+                    titleText: .deferForMenu,
+                    options:   menu.map { DialogSession.Menu.Option(value: String($0), label: .shortDuration(minutes: $0)) },
+                    selected:  String(defaultMins))
             }
         }
 
@@ -441,9 +439,9 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                     return .proceed
                 }
                 let minutes = menuMinutes(choice?.minutes)
-                deferredLabels = deferred
-                deferredFor    = formatDeferralDuration(minutes)
-                Logger.log("ℹ️ Deferral: user deferred \(deferred.sorted().joined(separator: ", ")) for \(deferredFor); installing the rest")
+                deferredLabels  = deferred
+                deferredMinutes = minutes
+                Logger.log("ℹ️ Deferral: user deferred \(deferred.sorted().joined(separator: ", ")) for \(formatDeferralDuration(minutes)); installing the rest")
                 return .partial(deferred: deferred.sorted(), minutes: minutes)
             }
             if let value = DialogSessionStore.takeResponseValue(id: id, .secondary) {
@@ -493,16 +491,16 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     /// Turns the choosing window into the progress window: the large window in place, or
     /// shrunk to the compact window.
     private func continueFromChoosing(installing count: Int, prefs: Preferences) {
-        let word = count == 1 ? "update" : "updates"
         let deferred = deferredLabels
-        let deferredFor = deferredFor
+        let deferredMinutes = deferredMinutes
         writer?.update { s in
             let deferredNames = s.items.filter { deferred.contains($0.id) }.map(\.title)
             s.phase           = .running
             s.countdown       = nil
             s.menu            = nil
             s.secondaryButton = nil
-            s.progress        = DialogSession.Progress(current: 0, total: count, indeterminate: false, text: "Preparing…")
+            s.progress        = DialogSession.Progress(current: 0, total: count, indeterminate: false, text: "",
+                                                       caption: .preparing)
             switch size {
             case .compact:
                 s.kind              = .applyCompact
@@ -513,24 +511,26 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                 s.items             = []
                 s.button            = nil
                 s.help              = nil
-                s.message           = "There are **\(count) \(word)** waiting."
+                s.sidePanelText     = nil
+                s.messageText       = .updatesWaiting(count: count)
             case .large, .notifications:
-                s.message   = ""
-                s.sidePanel = Self.installingPanel(count: count, deferred: deferredNames, deferredFor: deferredFor)
+                s.messageText   = nil
+                s.sidePanelText = Self.installingPanel(count: count, deferred: deferredNames,
+                                                       deferredMinutes: deferredMinutes)
                 s.items     = s.items.map { row in
                     var row = row
                     row.selected = nil
                     row.progress = nil
                     if deferred.contains(row.id) {
-                        row.status     = .deferred
-                        row.statusText = "Deferred · \(deferredFor)"
+                        row.status       = .deferred
+                        row.statusDetail = .deferredFor(minutes: deferredMinutes)
                     } else {
-                        row.status     = .pending
-                        row.statusText = "Waiting"
+                        row.status       = .pending
+                        row.statusDetail = .waiting
                     }
                     return row
                 }
-                s.button = DialogSession.Button(title: "Updating…", enabled: false)
+                s.button = DialogSession.Button(.updating, enabled: false)
                 s.help   = makeHelp(prefs: prefs, started: Date())
             }
         }
@@ -542,14 +542,10 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     }
 
     /// The large window's side panel while installing.
-    private static func installingPanel(count: Int, deferred: [String], deferredFor: String) -> String {
-        var text = "There \(count == 1 ? "is" : "are") **\(count) update\(count == 1 ? "" : "s")** waiting.\n\nThese updates are being attempted."
-        if !deferred.isEmpty {
-            let names = deferred.count == 1 ? deferred[0]
-                : deferred.dropLast().joined(separator: ", ") + " and " + deferred.last!
-            text += "\n\n\(names) \(deferred.count == 1 ? "is" : "are") deferred for \(deferredFor)."
-        }
-        return text
+    private static func installingPanel(count: Int, deferred: [String], deferredMinutes: Int) -> DialogText {
+        var paragraphs: [DialogText] = [.updatesWaiting(count: count), .updatesBeingAttempted]
+        if !deferred.isEmpty { paragraphs.append(.appsDeferred(names: deferred, minutes: deferredMinutes)) }
+        return .paragraphs(paragraphs)
     }
 
     private func resolvedSize(_ prefs: Preferences) -> ApplyDialogSize {
@@ -572,15 +568,15 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     // MARK: Helpers
 
-    private func finish(_ item: ApplyItem, status: DialogSession.Item.Status, rowText: DialogText, compactMessage: String) {
+    private func finish(_ item: ApplyItem, status: DialogSession.Item.Status, rowText: DialogText, compactMessage: DialogText) {
         if size == .compact {
             writer?.update { s in
                 showItemIcon(item, in: &s)
-                s.message = compactMessage
+                s.messageText = compactMessage
                 if isFinalResult(status: status, rowText: rowText) {
                     s.progress.current  = min(s.progress.current + 1, s.progress.total)
                     s.progress.fraction = nil
-                    s.progress.text     = compactStepText
+                    s.progress.caption  = compactStepText
                 }
             }
             Thread.sleep(forTimeInterval: Self.compactResultHoldSeconds)
@@ -611,17 +607,15 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
     }
 
-    /// Sets the row's status, typed and in English for older PatcherNotifier builds.
+    /// Sets the row's status. The writer fills the English beside it.
     private func setRow(_ item: ApplyItem, status: DialogSession.Item.Status, text: DialogText, in s: inout DialogSession) {
         if let index = s.items.firstIndex(where: { $0.id == item.label }) {
             s.items[index].status       = status
-            s.items[index].statusText   = text.text
             s.items[index].statusDetail = text
             s.items[index].progress     = nil
         } else {
             var row = Self.row(item)
             row.status       = status
-            row.statusText   = text.text
             row.statusDetail = text
             s.items.append(row)
         }
@@ -633,11 +627,6 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         s.overlayIcon = baseIcon
     }
 
-    private func versionSuffix(_ version: String?) -> String {
-        guard let version, !version.isEmpty else { return "" }
-        return " → \(version)"
-    }
-
     private static func row(_ item: ApplyItem) -> DialogSession.Item {
         var subtitle: String?
         if let installed = item.installedVersion, !installed.isEmpty,
@@ -646,7 +635,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
         return DialogSession.Item(id: item.label, title: item.displayName, subtitle: subtitle,
                                   icon: item.iconPath ?? packageIconPath,
-                                  status: .pending, statusText: "Waiting")
+                                  status: .pending, statusText: DialogText.waiting.text, statusDetail: .waiting)
     }
 }
 
@@ -659,25 +648,26 @@ func makeHelp(prefs: Preferences, started: Date) -> DialogSession.Help {
     let phone   = prefs.supportTeamPhone
     let email   = prefs.supportTeamEmail
     let website = prefs.supportTeamWebsite
-    if phone != "hide", !phone.isEmpty { contact.append(Row(label: "Phone", value: phone)) }
-    if email != "hide", !email.isEmpty { contact.append(Row(label: "Email", value: email, link: "mailto:\(email)")) }
+    if phone != "hide", !phone.isEmpty { contact.append(Row(label: .phone, value: .verbatim(phone))) }
+    if email != "hide", !email.isEmpty {
+        contact.append(Row(label: .email, value: .verbatim(email), link: "mailto:\(email)"))
+    }
     if website != "hide", !website.isEmpty {
         let url = (website.hasPrefix("https://") || website.hasPrefix("http://")) ? website : "https://\(website)"
-        contact.append(Row(label: "Website", value: website, link: url))
+        contact.append(Row(label: .website, value: .verbatim(website), link: url))
     }
-    let started = DateFormatter.localizedString(from: started, dateStyle: .medium, timeStyle: .short)
     return DialogSession.Help(
         supportTeamName: prefs.supportTeamName,
         contact: contact,
         computer: [
-            Row(label: "Computer Name", value: Host.current().localizedName ?? ""),
-            Row(label: "Serial Number", value: macSerialNumber),
-            Row(label: "Started", value: started),
+            Row(label: .computerName, value: .verbatim(Host.current().localizedName ?? "")),
+            Row(label: .serialNumber, value: .verbatim(macSerialNumber)),
+            Row(label: .started, value: .date(started)),
         ],
         software: [
-            Row(label: AppConstants.patcherFullName, value: AppConstants.patcherVersion),
-            Row(label: "Installomator", value: installomatorVersion),
-            Row(label: "macOS", value: macOSVersion),
+            Row(label: .verbatim(AppConstants.patcherFullName), value: .verbatim(AppConstants.patcherVersion)),
+            Row(label: .verbatim("Installomator"), value: .verbatim(installomatorVersion)),
+            Row(label: .verbatim("macOS"), value: .verbatim(macOSVersion)),
         ]
     )
 }
@@ -690,9 +680,9 @@ final class NativeProgressWindow: ProgressWindowPresenter {
     private let baseIcon: String?
     private let baseOverlay: String?
     /// "2 of 5" for the item started by `beginItem`, kept so progress can be appended to it.
-    private var itemStepText = ""
+    private var itemStepText: DialogText?
 
-    init(uid: uid_t, title: String, message: String, total: Int) {
+    init(uid: uid_t, title: DialogText, message: DialogText, total: Int) {
         let prefs = Preferences()
         DialogSessionStore.removeAll(kinds: [.progress])
         let session = DialogSessionWriter.makeSession(
@@ -701,44 +691,44 @@ final class NativeProgressWindow: ProgressWindowPresenter {
         baseIcon    = session.icon
         baseOverlay = session.overlayIcon
         writer = DialogSessionWriter(session: session)
-        Logger.log("ℹ️ Native progress window opened: \(title)")
+        Logger.log("ℹ️ Native progress window opened: \(title.text)")
     }
 
-    func update(message: String) {
-        writer.update { $0.message = message }
+    func update(message: DialogText) {
+        writer.update { $0.messageText = message }
     }
 
-    func updateProgress(_ text: String) {
-        writer.update { $0.progress.text = text }
+    func updateProgress(_ text: DialogText) {
+        writer.update { $0.progress.caption = text }
     }
 
-    func setProgress(_ current: Int, of total: Int, label: String, icon: String?) {
+    func setProgress(_ current: Int, of total: Int, label: DialogText, icon: String?) {
         writer.update { s in
             if let icon {
                 s.icon        = icon
                 s.overlayIcon = baseIcon
             }
-            s.message = label
+            s.messageText = label
             s.progress.current = current
             s.progress.total   = total
             s.progress.indeterminate = false
-            s.progress.text    = "\(current) of \(total)"
+            s.progress.caption = .countOfTotal(current: current, total: total)
         }
     }
 
-    func beginItem(current: Int, of total: Int, label: String, icon: String?) {
+    func beginItem(current: Int, of total: Int, label: DialogText, icon: String?) {
         writer.update { s in
             if let icon {
                 s.icon        = icon
                 s.overlayIcon = baseIcon
             }
-            s.message = label
+            s.messageText = label
             s.progress.total   = total
             s.progress.indeterminate = true
             s.progress.fraction = nil
-            s.progress.text    = "\(current) of \(total)"
+            s.progress.caption = .countOfTotal(current: current, total: total)
         }
-        itemStepText = "\(current) of \(total)"
+        itemStepText = .countOfTotal(current: current, total: total)
     }
 
     func setItemProgress(_ detail: ProgressDetail) {
@@ -746,18 +736,18 @@ final class NativeProgressWindow: ProgressWindowPresenter {
         writer.update { s in
             s.progress.indeterminate = fraction == nil
             s.progress.fraction      = fraction
-            s.progress.text          = itemStepText.isEmpty ? detail.text : "\(itemStepText) · \(detail.text)"
+            s.progress.caption       = itemStepText.map { .withDetail($0, .progress(detail)) } ?? .progress(detail)
         }
     }
 
     func completeItem(current: Int, of total: Int) {
-        itemStepText = ""
+        itemStepText = nil
         writer.update { s in
             s.progress.current = current
             s.progress.total   = total
             s.progress.indeterminate = false
             s.progress.fraction = nil
-            s.progress.text    = "\(current) of \(total)"
+            s.progress.caption = .countOfTotal(current: current, total: total)
         }
     }
 
@@ -772,7 +762,7 @@ final class NativeProgressWindow: ProgressWindowPresenter {
         writer.update { s in
             s.progress.current = s.progress.total
             s.progress.indeterminate = false
-            s.message = "Process completed"
+            s.messageText = .processCompleted
             s.phase   = .complete
         }
         Thread.sleep(forTimeInterval: 3.0)

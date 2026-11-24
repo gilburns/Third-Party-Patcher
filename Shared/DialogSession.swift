@@ -84,15 +84,30 @@ struct DialogSession: Codable, Equatable {
         var current: Int
         var total: Int
         var indeterminate: Bool
+        /// English, for PatcherNotifier builds that predate `caption`.
         var text: String
         /// 0…1 of the item now under way, added to `current` so the bar moves within an
         /// item. nil when the item doesn't report progress.
         var fraction: Double? = nil
+        /// The caption under the bar, worded by PatcherNotifier.
+        @Lenient var caption: DialogText? = nil
     }
 
     struct Button: Codable, Equatable {
+        /// English, for PatcherNotifier builds that predate `label`.
         var title: String
         var enabled: Bool
+        @Lenient var label: DialogText? = nil
+
+        init(title: String, enabled: Bool) {
+            self.title = title
+            self.enabled = enabled
+        }
+
+        init(_ label: DialogText, enabled: Bool) {
+            self.init(title: label.text, enabled: enabled)
+            self.label = label
+        }
     }
 
     /// A countdown patcher is running. Shown only: patcher acts when it ends, not the agent.
@@ -106,8 +121,16 @@ struct DialogSession: Codable, Equatable {
         struct Option: Codable, Equatable {
             var value: String
             var label: String
+            @Lenient var labelText: DialogText? = nil
+
+            init(value: String, label: DialogText) {
+                self.value = value
+                self.label = label.text
+                self.labelText = label
+            }
         }
         var title: String
+        @Lenient var titleText: DialogText? = nil
         var options: [Option]
         /// The `value` selected when the window opens.
         var selected: String
@@ -118,6 +141,13 @@ struct DialogSession: Codable, Equatable {
     struct Checkbox: Codable, Equatable {
         var label: String
         var checked: Bool
+        @Lenient var labelText: DialogText? = nil
+
+        init(label: DialogText, checked: Bool) {
+            self.label = label.text
+            self.checked = checked
+            self.labelText = label
+        }
 
         /// How a checkbox state travels as a response value.
         static func value(_ checked: Bool) -> String { checked ? "1" : "0" }
@@ -154,6 +184,16 @@ struct DialogSession: Codable, Equatable {
             var value: String
             /// Opened when the value is clicked (website rows).
             var link: String?
+            @Lenient var labelText: DialogText? = nil
+            @Lenient var valueText: DialogText? = nil
+
+            init(label: DialogText, value: DialogText, link: String? = nil) {
+                self.label = label.text
+                self.value = value.text
+                self.link = link
+                self.labelText = label
+                self.valueText = value
+            }
         }
         var supportTeamName: String
         var contact: [Row]
@@ -182,6 +222,8 @@ struct DialogSession: Codable, Equatable {
     /// (caution, info, stop, computer), or an SF Symbol spec ("SF=name,weight=…,palette=…").
     var icon: String?
     var overlayIcon: String?
+    /// `title`, `message` and `sidePanel` are English, for PatcherNotifier builds that
+    /// predate the typed fields below; `resolveText` fills them.
     var title: String
     /// Inline Markdown (bold, italic, links). Newlines are kept.
     var message: String
@@ -199,6 +241,9 @@ struct DialogSession: Codable, Equatable {
     var help: Help?
     /// When set, the agent closes the window at this time if the user hasn't.
     var autoCloseAt: Date?
+    @Lenient var titleText: DialogText? = nil
+    @Lenient var messageText: DialogText? = nil
+    @Lenient var sidePanelText: DialogText? = nil
 
     var isExpired: Bool { expires < Date() }
 
@@ -208,6 +253,51 @@ struct DialogSession: Codable, Equatable {
 
     /// The row ids that offer a checkbox while choosing.
     var selectableIDs: Set<String> { Set(items.filter { $0.selected != nil }.map(\.id)) }
+}
+
+// MARK: - Typed text
+
+extension DialogSession {
+    /// Words each typed text into the String field beside it. patcher calls this before
+    /// every write (`authoritative`: a typed field that is nil clears the optional text
+    /// beside it), filling the English that older PatcherNotifier builds draw.
+    /// PatcherNotifier calls it after reading, so the window shows the user's language;
+    /// fields a session doesn't type (an older patcher's) keep their English.
+    mutating func resolveText(authoritative: Bool = false) {
+        if let titleText { title = titleText.text }
+        if let messageText { message = messageText.text } else if authoritative { message = "" }
+        if let sidePanelText { sidePanel = sidePanelText.text } else if authoritative { sidePanel = nil }
+        if let caption = progress.caption { progress.text = caption.text }
+        for i in items.indices {
+            if let detail = items[i].statusDetail { items[i].statusText = detail.text }
+        }
+        if let label = button?.label { button?.title = label.text }
+        if let label = secondaryButton?.label { secondaryButton?.title = label.text }
+        if var menu {
+            if let titleText = menu.titleText { menu.title = titleText.text }
+            for i in menu.options.indices {
+                if let labelText = menu.options[i].labelText { menu.options[i].label = labelText.text }
+            }
+            self.menu = menu
+        }
+        if let labelText = checkbox?.labelText { checkbox?.label = labelText.text }
+        if var help {
+            for keyPath in [\Help.contact, \Help.computer, \Help.software] {
+                for i in help[keyPath: keyPath].indices {
+                    if let label = help[keyPath: keyPath][i].labelText { help[keyPath: keyPath][i].label = label.text }
+                    if let value = help[keyPath: keyPath][i].valueText { help[keyPath: keyPath][i].value = value.text }
+                }
+            }
+            self.help = help
+        }
+    }
+
+    /// The session as this process words it. See `resolveText`.
+    func resolved() -> DialogSession {
+        var copy = self
+        copy.resolveText()
+        return copy
+    }
 }
 
 /// What the user picked in the apply window's choosing phase, sent with Install.

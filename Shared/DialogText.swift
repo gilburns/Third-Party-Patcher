@@ -7,9 +7,12 @@
 //  user's language. Code also compares these values, never displayed text.
 //
 //  Translations live in PatcherNotifier's "Dialogs" table. Apps that show the same text
-//  (Available Software's live status) read it from PatcherNotifier.app; patcher reads its
-//  own bundle, which has no table, so its copy — logs and the legacy English session
-//  fields — stays English.
+//  (Available Software's live status) read it from PatcherNotifier.app; patcher reads the
+//  app's English table, so the legacy English session fields stay English. patcher's logs
+//  are written separately and never localized.
+//
+//  Keys with a count are written in their plural form ("There are **%lld updates**
+//  waiting."); the catalog's English plural variations supply the singular.
 //
 //  Sessions carry both: the typed value (`@Lenient`, so a value from a newer patcher that
 //  this build can't decode is dropped rather than failing the whole file) and the English
@@ -19,23 +22,388 @@
 import Foundation
 
 /// A message for the user. Cases carry values, not words; `text` words them.
+///
+/// A message is one whole sentence (or label), or a list of whole sentences joined by
+/// `sentences` / `paragraphs`: never pieces of one sentence, which a translator couldn't
+/// reorder. Strings with Markdown keep it; PatcherNotifier renders it.
 indirect enum DialogText: Codable, Equatable {
-    /// Shown as-is: app names, admin-supplied text, and text not yet converted.
+
+    // MARK: Building blocks
+
+    /// Shown as-is: app names and admin-supplied text.
     case verbatim(String)
     /// Progress of the step now running.
     case progress(ProgressDetail)
     /// Why an item was skipped (or paused).
     case skipped(SkipReason)
-    /// Whole sentences or paragraphs, separated by blank lines.
+    /// Whole paragraphs, separated by blank lines.
     case paragraphs([DialogText])
+    /// Whole sentences in one paragraph, separated by spaces.
+    case sentences([DialogText])
+    /// "Update 2 of 5 · Installing 45%": a step and its detail.
+    case withDetail(DialogText, DialogText)
+    /// "1 hour, 30 minutes".
+    case duration(minutes: Int)
+    /// "1 hr, 30 min": for tight spots such as the deferral menu.
+    case shortDuration(minutes: Int)
+    /// A date and time, in the reader's format.
+    case date(Date)
+
+    // MARK: Apply window
+
+    /// "There are **3 updates** waiting."
+    case updatesWaiting(count: Int)
+    case updatesBeingAttempted
+    /// "Zoom and Slack are deferred for 2 hours."
+    case appsDeferred(names: [String], minutes: Int)
+    case preparing
+    /// The disabled button while installing.
+    case updating
+    /// "Update 2 of 5"
+    case updateOfTotal(current: Int, total: Int)
+    /// "Update 2 of 5 - Installing: Zoom…"
+    case updateOfTotalInstalling(current: Int, total: Int, app: String)
+    /// "Installing: Zoom → 6.1…"
+    case installingApp(app: String, version: String?)
+    case updated
+    case failed
+    /// "✅ Updated: Zoom → 6.1"
+    case updatedApp(app: String, version: String?)
+    /// "❌ Failed: Zoom → 6.1"
+    case failedApp(app: String, version: String?)
+    /// "⚠️ Zoom — App running"
+    case skippedApp(app: String, reason: SkipReason)
+    /// "Complete — 3 updated · 1 skipped"
+    case completeSummary(applied: Int, skipped: Int, failed: Int)
+    case allUpdatesApplied
+    case updatesJustAttempted
+    case done
+    /// "Waiting for user — Zoom"
+    case waitingForUserApp(String)
+    /// "Shutdown — stopping after 2 items"
+    case shutdownStopping(applied: Int)
+
+    // MARK: Choosing (the deferral prompt)
+
+    /// "You have **3 software updates** ready to install."
+    case readyToInstall(count: Int)
+    case uncheckToPutOff
+    /// "They have been pending for **4 days**."
+    case pendingForDays(count: Int, days: Int)
+    case installationRequired
+    /// The side panel's deferral counts.
+    case deferralStatus(daysPending: Int, userDeferrals: Int, autoDeferrals: Int)
+    case openWillAskToQuit
+    case ready
+    case installNow
+    case installAllNow
+    /// "Defer (2 hours)": the button when there is no "Defer for" menu.
+    case deferForDuration(minutes: Int)
+    case deferOne
+    case deferAll
+    /// The "Defer for" menu's title.
+    case deferForMenu
+    /// "Deferred · 2 hours": a row the user deferred.
+    case deferredFor(minutes: Int)
+    case waiting
+
+    // MARK: Help
+
+    case phone, email, website, computerName, serialNumber, started
+
+    // MARK: Progress window (scan / check / download)
+
+    /// "2 of 5"
+    case countOfTotal(current: Int, total: Int)
+    case processCompleted
+    case complete
+    case scanningApps(count: Int)
+    /// "Scanning zoom…" (an Installomator label)
+    case scanningLabel(String)
+    case checkingApps(count: Int)
+    /// "Checking: **Zoom** for updates…"
+    case checkingApp(String)
+    case downloadingUpdates(count: Int)
+    /// "Downloading: **Zoom**…"
+    case downloadingApp(String)
+    case labelsUnavailable
+    case noUpdatesAvailable
+    case updatesAvailableToDownload(count: Int)
+    case updatesReadyToInstall(count: Int)
+    case updatesStillWaitingToDownload(count: Int)
+    case noMoreToDownload
+
+    // MARK: Blocking-app notice and prompt
+
+    /// "Update Pending: Zoom"
+    case updatePendingTitle(app: String)
+    case quitWhenConvenient(app: String)
+    case ok
+    /// "Zoom Update Paused"
+    case updatePausedTitle(app: String)
+    case needsUpdateButRunning(app: String, process: String)
+    case saveAndQuitOrSkip(process: String)
+    case skipUpdate
+    /// "Quit Zoom"
+    case quitApp(process: String)
+    case reopenAfterUpdate(app: String)
 
     /// The message in the reader's language.
     var text: String {
+        let b = Bundle.dialogStrings
         switch self {
+
         case .verbatim(let string):     return string
         case .progress(let detail):     return detail.text
         case .skipped(let reason):      return reason.text
-        case .paragraphs(let parts):    return parts.map(\.text).joined(separator: "\n\n")
+        case .paragraphs(let parts):    return parts.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        case .sentences(let parts):     return parts.map(\.text).filter { !$0.isEmpty }.joined(separator: " ")
+        case .withDetail(let step, let detail):
+            let stepText = step.text, detailText = detail.text
+            return String(localized: "\(stepText) · \(detailText)", table: "Dialogs", bundle: b,
+                          comment: "A progress step and its detail, e.g. “Update 2 of 5 · Installing 45%”")
+        case .duration(let minutes):
+            return Duration.seconds(max(minutes, 0) * 60)
+                .formatted(.units(allowed: [.hours, .minutes], width: .wide))
+        case .shortDuration(let minutes):
+            return Duration.seconds(max(minutes, 0) * 60)
+                .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+        case .date(let date):
+            return date.formatted(date: .abbreviated, time: .shortened)
+
+        // Apply window
+        case .updatesWaiting(let count):
+            return String(localized: "There are **\(count) updates** waiting.", table: "Dialogs", bundle: b,
+                          comment: "Apply window: how many updates will be installed")
+        case .updatesBeingAttempted:
+            return String(localized: "These updates are being attempted.", table: "Dialogs", bundle: b,
+                          comment: "Apply window side panel while installing")
+        case .appsDeferred(let names, let minutes):
+            let list = names.formatted(.list(type: .and))
+            let duration = DialogText.duration(minutes: minutes).text
+            if names.count == 1 {
+                return String(localized: "\(list) is deferred for \(duration).", table: "Dialogs", bundle: b,
+                              comment: "Apply window side panel: one app the user deferred, and for how long")
+            }
+            return String(localized: "\(list) are deferred for \(duration).", table: "Dialogs", bundle: b,
+                          comment: "Apply window side panel: a list of apps the user deferred (“Zoom and Slack”), and for how long")
+        case .preparing:
+            return String(localized: "Preparing…", table: "Dialogs", bundle: b,
+                          comment: "Apply window caption before the first install starts")
+        case .updating:
+            return String(localized: "Updating…", table: "Dialogs", bundle: b,
+                          comment: "Apply window: the disabled button while updates install")
+        case .updateOfTotal(let current, let total):
+            return String(localized: "Update \(current) of \(total)", table: "Dialogs", bundle: b,
+                          comment: "Compact apply window caption: which update is installing")
+        case .updateOfTotalInstalling(let current, let total, let app):
+            return String(localized: "Update \(current) of \(total) - Installing: \(app)…", table: "Dialogs", bundle: b,
+                          comment: "Apply window caption: which update is installing, and the app")
+        case .installingApp(let app, let version):
+            if let version, !version.isEmpty {
+                return String(localized: "Installing: \(app) → \(version)…", table: "Dialogs", bundle: b,
+                              comment: "Compact apply window: the app installing and its new version")
+            }
+            return String(localized: "Installing: \(app)…", table: "Dialogs", bundle: b,
+                          comment: "Compact apply window: the app installing")
+        case .updated:
+            return String(localized: "Updated", table: "Dialogs", bundle: b,
+                          comment: "Apply window row: the update installed")
+        case .failed:
+            return String(localized: "Failed", table: "Dialogs", bundle: b,
+                          comment: "Apply window row: the update failed to install")
+        case .updatedApp(let app, let version):
+            if let version, !version.isEmpty {
+                return String(localized: "✅ Updated: \(app) → \(version)", table: "Dialogs", bundle: b,
+                              comment: "Compact apply window: the app updated, and its new version")
+            }
+            return String(localized: "✅ Updated: \(app)", table: "Dialogs", bundle: b,
+                          comment: "Compact apply window: the app updated")
+        case .failedApp(let app, let version):
+            if let version, !version.isEmpty {
+                return String(localized: "❌ Failed: \(app) → \(version)", table: "Dialogs", bundle: b,
+                              comment: "Compact apply window: the app's update failed, and the version it tried")
+            }
+            return String(localized: "❌ Failed: \(app)", table: "Dialogs", bundle: b,
+                          comment: "Compact apply window: the app's update failed")
+        case .skippedApp(let app, let reason):
+            let reasonText = reason.text
+            return String(localized: "⚠️ \(app) — \(reasonText)", table: "Dialogs", bundle: b,
+                          comment: "Compact apply window: the app was skipped, and why")
+        case .completeSummary(let applied, let skipped, let failed):
+            let summary: String
+            if failed > 0 {
+                summary = String(localized: "\(applied) updated · \(skipped) skipped · \(failed) failed", table: "Dialogs", bundle: b,
+                                 comment: "Apply window result counts")
+            } else if skipped > 0 {
+                summary = String(localized: "\(applied) updated · \(skipped) skipped", table: "Dialogs", bundle: b,
+                                 comment: "Apply window result counts")
+            } else {
+                summary = String(localized: "\(applied) updates applied successfully", table: "Dialogs", bundle: b,
+                                 comment: "Apply window result: every update installed")
+            }
+            return String(localized: "Complete — \(summary)", table: "Dialogs", bundle: b,
+                          comment: "Apply window caption when finished, followed by the result counts")
+        case .allUpdatesApplied:
+            return String(localized: "**All possible updates have been applied.**", table: "Dialogs", bundle: b,
+                          comment: "Apply window when finished")
+        case .updatesJustAttempted:
+            return String(localized: "These updates were just attempted.", table: "Dialogs", bundle: b,
+                          comment: "Apply window side panel when finished")
+        case .done:
+            return String(localized: "Done", table: "Dialogs", bundle: b,
+                          comment: "Apply window: the button that closes it when finished")
+        case .waitingForUserApp(let app):
+            return String(localized: "Waiting for user — \(app)", table: "Dialogs", bundle: b,
+                          comment: "Apply window caption while a prompt asks the user to quit the app")
+        case .shutdownStopping(let applied):
+            return String(localized: "Shutdown — stopping after \(applied) items", table: "Dialogs", bundle: b,
+                          comment: "Apply window caption: the Mac is shutting down; how many items were installed")
+
+        // Choosing
+        case .readyToInstall(let count):
+            return String(localized: "You have **\(count) software updates** ready to install.", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt: how many updates are ready")
+        case .uncheckToPutOff:
+            return String(localized: "Uncheck any you’d like to put off.", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt: each app has an “install now” checkbox")
+        case .pendingForDays(let count, let days):
+            if count == 1 {
+                return String(localized: "It has been pending for **\(days) days**.", table: "Dialogs", bundle: b,
+                              comment: "Deferral prompt: how long one update has waited")
+            }
+            return String(localized: "They have been pending for **\(days) days**.", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt: how long the updates have waited")
+        case .installationRequired:
+            return String(localized: "**Installation is required** — the maximum deferral deadline has been reached.",
+                          table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt: the user can no longer defer")
+        case .deferralStatus(let days, let user, let auto):
+            return String(localized: "**Deferral Status**\nDays pending: \(days)\nUser deferrals: \(user)\nAuto deferrals: \(auto)",
+                          table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt side panel: a heading, then three counts on their own lines")
+        case .openWillAskToQuit:
+            return String(localized: "Open — will ask to quit", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt row: the app is running and will be asked to quit before updating")
+        case .ready:
+            return String(localized: "Ready", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt row: ready to install")
+        case .installNow:
+            return String(localized: "Install Now", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt button")
+        case .installAllNow:
+            return String(localized: "Install All Now", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt button")
+        case .deferForDuration(let minutes):
+            let duration = DialogText.duration(minutes: minutes).text
+            return String(localized: "Defer (\(duration))", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt button, with how long it defers")
+        case .deferOne:
+            return String(localized: "Defer", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt button (one update)")
+        case .deferAll:
+            return String(localized: "Defer All", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt button (several updates)")
+        case .deferForMenu:
+            return String(localized: "Defer for", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt: label of the menu of deferral lengths")
+        case .deferredFor(let minutes):
+            let duration = DialogText.duration(minutes: minutes).text
+            return String(localized: "Deferred · \(duration)", table: "Dialogs", bundle: b,
+                          comment: "Apply window row: the user deferred this app, and for how long")
+        case .waiting:
+            return String(localized: "Waiting", table: "Dialogs", bundle: b,
+                          comment: "Apply window row: not started yet")
+
+        // Help
+        case .phone:
+            return String(localized: "Phone", table: "Dialogs", bundle: b, comment: "Help popover: support phone number label")
+        case .email:
+            return String(localized: "Email", table: "Dialogs", bundle: b, comment: "Help popover: support email label")
+        case .website:
+            return String(localized: "Website", table: "Dialogs", bundle: b, comment: "Help popover: support website label")
+        case .computerName:
+            return String(localized: "Computer Name", table: "Dialogs", bundle: b, comment: "Help popover label")
+        case .serialNumber:
+            return String(localized: "Serial Number", table: "Dialogs", bundle: b, comment: "Help popover label")
+        case .started:
+            return String(localized: "Started", table: "Dialogs", bundle: b, comment: "Help popover: when the update run started")
+
+        // Progress window
+        case .countOfTotal(let current, let total):
+            return String(localized: "\(current) of \(total)", table: "Dialogs", bundle: b,
+                          comment: "Progress window caption: items done of the total")
+        case .processCompleted:
+            return String(localized: "Process completed", table: "Dialogs", bundle: b,
+                          comment: "Progress window, just before it closes")
+        case .complete:
+            return String(localized: "Complete", table: "Dialogs", bundle: b,
+                          comment: "Progress window caption when finished")
+        case .scanningApps(let count):
+            return String(localized: "Scanning \(count) applications for available updates…", table: "Dialogs", bundle: b,
+                          comment: "Progress window: a scan started from PatcherMenu")
+        case .scanningLabel(let label):
+            return String(localized: "Scanning \(label)…", table: "Dialogs", bundle: b,
+                          comment: "Progress window: the item being scanned (an Installomator label name)")
+        case .checkingApps(let count):
+            return String(localized: "Checking \(count) applications for available updates…", table: "Dialogs", bundle: b,
+                          comment: "Progress window: an update check started from PatcherMenu")
+        case .checkingApp(let app):
+            return String(localized: "Checking: **\(app)** for updates…", table: "Dialogs", bundle: b,
+                          comment: "Progress window: the app being checked")
+        case .downloadingUpdates(let count):
+            return String(localized: "Downloading \(count) updates…", table: "Dialogs", bundle: b,
+                          comment: "Progress window: downloads started from PatcherMenu")
+        case .downloadingApp(let app):
+            return String(localized: "Downloading: **\(app)**…", table: "Dialogs", bundle: b,
+                          comment: "Progress window: the app being downloaded")
+        case .labelsUnavailable:
+            return String(localized: "Unable to scan — application labels could not be downloaded. The scan will retry automatically.",
+                          table: "Dialogs", bundle: b, comment: "Progress window: the scan could not run")
+        case .noUpdatesAvailable:
+            return String(localized: "No updates available.", table: "Dialogs", bundle: b,
+                          comment: "Progress window result")
+        case .updatesAvailableToDownload(let count):
+            return String(localized: "\(count) updates available to download.", table: "Dialogs", bundle: b,
+                          comment: "Progress window result")
+        case .updatesReadyToInstall(let count):
+            return String(localized: "\(count) updates ready to install.", table: "Dialogs", bundle: b,
+                          comment: "Progress window result after downloading")
+        case .updatesStillWaitingToDownload(let count):
+            return String(localized: "\(count) updates still waiting to download.", table: "Dialogs", bundle: b,
+                          comment: "Progress window result after downloading")
+        case .noMoreToDownload:
+            return String(localized: "No more items to download.", table: "Dialogs", bundle: b,
+                          comment: "Progress window result after downloading")
+
+        // Blocking-app notice and prompt
+        case .updatePendingTitle(let app):
+            return String(localized: "Update Pending: \(app)", table: "Dialogs", bundle: b,
+                          comment: "Notice title: the app must be quit before it can update")
+        case .quitWhenConvenient(let app):
+            return String(localized: "\(app) needs to be quit to apply an update. Please close it when convenient.",
+                          table: "Dialogs", bundle: b, comment: "Notice message")
+        case .ok:
+            return String(localized: "OK", table: "Dialogs", bundle: b, comment: "Notice button")
+        case .updatePausedTitle(let app):
+            return String(localized: "\(app) Update Paused", table: "Dialogs", bundle: b,
+                          comment: "Prompt title: the app is running, so its update is waiting")
+        case .needsUpdateButRunning(let app, let process):
+            return String(localized: "\(app) needs to be updated, but **\(process)** is currently running.",
+                          table: "Dialogs", bundle: b,
+                          comment: "Prompt message: the app to update, then the running process blocking it")
+        case .saveAndQuitOrSkip(let process):
+            return String(localized: "Please save your work and quit \(process) before the timer expires, or click **Skip Update** to postpone this update.",
+                          table: "Dialogs", bundle: b,
+                          comment: "Prompt message; “Skip Update” is the button's title")
+        case .skipUpdate:
+            return String(localized: "Skip Update", table: "Dialogs", bundle: b, comment: "Prompt button")
+        case .quitApp(let process):
+            return String(localized: "Quit \(process)", table: "Dialogs", bundle: b,
+                          comment: "Prompt button: force-quits the running app")
+        case .reopenAfterUpdate(let app):
+            return String(localized: "Reopen \(app) after the update", table: "Dialogs", bundle: b,
+                          comment: "Prompt checkbox")
         }
     }
 }
@@ -178,13 +546,18 @@ enum ProgressDetail: Codable, Equatable {
 
 extension Bundle {
     /// Where the "Dialogs" table lives: PatcherNotifier itself, or PatcherNotifier.app for
-    /// the other apps. Command-line tools (patcher) use their own bundle, which has no
-    /// table, so they get the English the strings are written in.
+    /// the other apps. Command-line tools (patcher, running as root) read the app's English
+    /// table directly, so the English they write — legacy session fields — gets its plurals
+    /// right; with no PatcherNotifier installed, they use the keys as written.
     static let dialogStrings: Bundle = {
         let main = Bundle.main
-        guard main.bundleURL.pathExtension == "app" else { return main }
-        if main.bundleURL.lastPathComponent == AppConstants.patcherNotifierAppURL.lastPathComponent { return main }
-        return Bundle(url: AppConstants.patcherNotifierAppURL) ?? main
+        let notifierURL = AppConstants.patcherNotifierAppURL
+        guard main.bundleURL.pathExtension == "app" else {
+            let english = notifierURL.appendingPathComponent("Contents/Resources/en.lproj")
+            return Bundle(url: english) ?? main
+        }
+        if main.bundleURL.lastPathComponent == notifierURL.lastPathComponent { return main }
+        return Bundle(url: notifierURL) ?? main
     }()
 }
 

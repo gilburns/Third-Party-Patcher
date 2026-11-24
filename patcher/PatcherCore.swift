@@ -1717,7 +1717,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             // the only safe point to honour a SIGTERM without risking a half-applied pkg.
             if shutdownRequested {
                 Logger.log("⚠️ Shutdown requested — stopping apply before '\(label)'. Already applied: \(appliedCount).")
-                dialog?.setProgressText("Shutdown — stopping after \(appliedCount) item\(appliedCount == 1 ? "" : "s")")
+                dialog?.setProgressText(.shutdownStopping(applied: appliedCount))
                 break
             }
 

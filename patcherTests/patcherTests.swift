@@ -640,6 +640,117 @@ struct DialogTextTests {
         #expect(unknownReason.statusDetail == nil)
     }
 
+    /// Messages whose English doesn't depend on a plural (the catalog's singular forms
+    /// come from PatcherNotifier.app, which tests can't rely on being installed).
+    @Test func messagesEnglish() {
+        #expect(DialogText.updateOfTotal(current: 2, total: 5).text == "Update 2 of 5")
+        #expect(DialogText.withDetail(.updateOfTotal(current: 2, total: 5), .progress(.installing(fraction: 0.45))).text
+                == "Update 2 of 5 · Installing 45%")
+        #expect(DialogText.installingApp(app: "Zoom", version: "6.1").text == "Installing: Zoom → 6.1…")
+        #expect(DialogText.installingApp(app: "Zoom", version: "").text == "Installing: Zoom…")
+        #expect(DialogText.updatedApp(app: "Zoom", version: nil).text == "✅ Updated: Zoom")
+        #expect(DialogText.skippedApp(app: "Zoom", reason: .appRunning).text == "⚠️ Zoom — App running")
+        #expect(DialogText.completeSummary(applied: 3, skipped: 1, failed: 0).text == "Complete — 3 updated · 1 skipped")
+        #expect(DialogText.completeSummary(applied: 3, skipped: 1, failed: 2).text
+                == "Complete — 3 updated · 1 skipped · 2 failed")
+        #expect(DialogText.quitApp(process: "zoom.us").text == "Quit zoom.us")
+        #expect(DialogText.updatePausedTitle(app: "Zoom").text == "Zoom Update Paused")
+        #expect(DialogText.deferralStatus(daysPending: 4, userDeferrals: 2, autoDeferrals: 1).text
+                == "**Deferral Status**\nDays pending: 4\nUser deferrals: 2\nAuto deferrals: 1")
+    }
+
+    @Test func listsAndDurations() {
+        #expect(DialogText.duration(minutes: 120).text == "2 hours")
+        #expect(DialogText.duration(minutes: 90).text.hasPrefix("1 hour"))
+        #expect(DialogText.shortDuration(minutes: 90).text.count < DialogText.duration(minutes: 90).text.count)
+        #expect(DialogText.appsDeferred(names: ["Zoom"], minutes: 60).text == "Zoom is deferred for 1 hour.")
+        #expect(DialogText.appsDeferred(names: ["Zoom", "Slack"], minutes: 120).text
+                == "Zoom and Slack are deferred for 2 hours.")
+        #expect(DialogText.deferredFor(minutes: 30).text == "Deferred · 30 minutes")
+    }
+
+    @Test func sentencesAndParagraphsSkipEmptyParts() {
+        #expect(DialogText.sentences([.uncheckToPutOff, .verbatim(""), .installationRequired]).text
+                == "Uncheck any you’d like to put off. **Installation is required** — the maximum deferral deadline has been reached.")
+        #expect(DialogText.paragraphs([.updatesBeingAttempted, .verbatim("")]).text == "These updates are being attempted.")
+    }
+
+    private func session() -> DialogSession {
+        DialogSessionWriter.makeSession(kind: .applyList, uid: 501, prefs: Preferences(), position: "center",
+                                        title: .verbatim("Acme Updates"), message: .updatesBeingAttempted, total: 2)
+    }
+
+    /// patcher fills the English beside every typed field before writing.
+    @Test func authoritativeResolveFillsEnglish() {
+        var s = session()
+        s.sidePanelText    = .updatesJustAttempted
+        s.progress.caption = .updateOfTotal(current: 1, total: 2)
+        s.button           = DialogSession.Button(.done, enabled: true)
+        s.checkbox         = DialogSession.Checkbox(label: .reopenAfterUpdate(app: "Zoom"), checked: true)
+        s.items            = [DialogSession.Item(id: "zoom", title: "Zoom", subtitle: nil, icon: nil,
+                                                 status: .pending, statusText: "", statusDetail: .waiting)]
+        s.resolveText(authoritative: true)
+        #expect(s.title == "Acme Updates")
+        #expect(s.message == "These updates are being attempted.")
+        #expect(s.sidePanel == "These updates were just attempted.")
+        #expect(s.progress.text == "Update 1 of 2")
+        #expect(s.button?.title == "Done")
+        #expect(s.checkbox?.label == "Reopen Zoom after the update")
+        #expect(s.items.first?.statusText == "Waiting")
+
+        // Clearing a typed field clears the text beside it.
+        s.messageText = nil
+        s.sidePanelText = nil
+        s.resolveText(authoritative: true)
+        #expect(s.message == "")
+        #expect(s.sidePanel == nil)
+    }
+
+    /// PatcherNotifier keeps an older patcher's English where nothing is typed.
+    @Test func displayResolveKeepsUntypedEnglish() {
+        var s = session()
+        s.messageText = nil
+        s.message     = "Older patcher message"
+        s.sidePanel   = "Older side panel"
+        let shown = s.resolved()
+        #expect(shown.message == "Older patcher message")
+        #expect(shown.sidePanel == "Older side panel")
+        #expect(shown.title == "Acme Updates")
+    }
+
+    @Test func sessionRoundTripsTypedText() throws {
+        var s = session()
+        s.sidePanelText = .paragraphs([.updatesWaiting(count: 3), .appsDeferred(names: ["Zoom"], minutes: 60)])
+        s.menu = DialogSession.Menu(title: "Defer for", titleText: .deferForMenu,
+                                    options: [.init(value: "60", label: .duration(minutes: 60))], selected: "60")
+        s.help = makeHelp(prefs: Preferences(), started: Date(timeIntervalSince1970: 1_800_000_000))
+        s.resolveText(authoritative: true)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(DialogSession.self, from: encoder.encode(s))
+        // (Dates lose fractional seconds in ISO 8601, so compare the text, not the whole session.)
+        #expect(decoded.sidePanelText == s.sidePanelText)
+        #expect(decoded.sidePanel == s.sidePanel)
+        #expect(decoded.menu == s.menu)
+        #expect(decoded.help == s.help)
+        #expect(decoded.menu?.options.first?.labelText == .duration(minutes: 60))
+        #expect(decoded.help?.computer.last?.valueText == .date(Date(timeIntervalSince1970: 1_800_000_000)))
+    }
+
+    /// A newer patcher's message this build doesn't know leaves the English in place.
+    @Test func sessionWithUnknownTypedTextDecodes() throws {
+        var s = session()
+        s.resolveText(authoritative: true)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var object = try JSONSerialization.jsonObject(with: encoder.encode(s)) as! [String: Any]
+        object["messageText"] = ["someFutureMessage": ["count": 2]]
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(DialogSession.self, from: data)
+        #expect(decoded.messageText == nil)
+        #expect(decoded.resolved().message == "These updates are being attempted.")
+    }
+
     @Test func itemPrefersTypedStatus() {
         var row = item(detail: .progress(.installing(fraction: 0.3)))
         row.statusText = "stale"
