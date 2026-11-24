@@ -33,7 +33,7 @@ final class NotifierAppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     /// which needs .customDismissAction for the dismissal to reach the delegate.
     private func registerCategories() {
         let quit = UNNotificationAction(identifier: NotificationResponseAction.quitAndUpdate.rawValue,
-                                        title: "Quit & Update", options: [])
+                                        title: String(localized: "Quit & Update", comment: "Notification button: quits the running app and installs its update"), options: [])
         let prompt = UNNotificationCategory(identifier: PatcherNotificationEvent.blockingPromptCategory,
                                             actions: [quit], intentIdentifiers: [],
                                             options: [.customDismissAction])

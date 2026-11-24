@@ -14,7 +14,7 @@ import Foundation
 protocol ApplyPresenter {
     /// Called once with every item about to be applied, before the first install.
     mutating func launchProgressDialog(items: [ApplyItem])
-    func setProgressText(_ text: String)
+    func setProgressText(_ text: DialogText)
     func setInProgress(item: ApplyItem, current: Int, total: Int)
     /// Progress of the item now installing, such as installing at 45% (`detail.fraction`
     /// is nil when it can't be measured). Called often, already throttled.
@@ -52,12 +52,12 @@ typealias ApplyWindowPresenter = ApplyPresenter & DeferralPresenter
 
 /// The small "please wait" window for user-initiated scan / check / stage runs.
 protocol ProgressWindowPresenter {
-    func update(message: String)
-    func updateProgress(_ text: String)
-    func setProgress(_ current: Int, of total: Int, label: String, icon: String?)
+    func update(message: DialogText)
+    func updateProgress(_ text: DialogText)
+    func setProgress(_ current: Int, of total: Int, label: DialogText, icon: String?)
     /// Starts a long item (e.g. a download): shows its label and icon, and switches the
     /// bar to indeterminate.
-    func beginItem(current: Int, of total: Int, label: String, icon: String?)
+    func beginItem(current: Int, of total: Int, label: DialogText, icon: String?)
     /// Progress within the long item started by `beginItem`, such as downloading at 45%
     /// of 98 MB (`detail.fraction` nil spins the bar).
     func setItemProgress(_ detail: ProgressDetail)
@@ -84,8 +84,8 @@ enum Presenters {
     }
 
     /// Opens a progress window for a user-initiated run, or returns nil when none can be shown.
-    static func makeProgressWindow(title: String, message: String, total: Int = 0) -> (any ProgressWindowPresenter)? {
+    static func makeProgressWindow(title: String, message: DialogText, total: Int = 0) -> (any ProgressWindowPresenter)? {
         guard let uid = PatcherNotifierAgent.windowTargetUID() else { return nil }
-        return NativeProgressWindow(uid: uid, title: title, message: message, total: total)
+        return NativeProgressWindow(uid: uid, title: .verbatim(title), message: message, total: total)
     }
 }

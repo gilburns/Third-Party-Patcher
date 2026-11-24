@@ -49,7 +49,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
     // MARK: - ApplyPresenter
 
     func launchProgressDialog(items: [ApplyItem]) {}
-    func setProgressText(_ text: String) {}
+    func setProgressText(_ text: DialogText) {}
     func waitForDialog(timeout: TimeInterval?) {}
     func dismiss() {}
 

@@ -176,7 +176,10 @@ struct ApplyListView: View {
     private var primaryTitle: String {
         guard let button = session.button else { return "" }
         guard choosing, !session.selectableIDs.isEmpty else { return button.title }
-        return installCount == session.items.count ? "Install All Now" : "Install \(installCount) Now"
+        return installCount == session.items.count
+            ? DialogText.installAllNow.text
+            : String(localized: "Install \(installCount) Now",
+                     comment: "Deferral prompt button: installs the apps still checked")
     }
 
     var body: some View {
@@ -230,30 +233,25 @@ struct ApplyListView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
 
-                HStack(spacing: 10) {
-                    if choosing, let menu = session.menu {
-                        Picker(menu.title, selection: $menuChoice) {
-                            ForEach(menu.options, id: \.value) { option in
-                                Text(option.label).tag(option.value)
-                            }
-                        }
-                        .fixedSize()
-                        .onChange(of: menuChoice) { _, value in model.selection = value }
-                    } else if !choosing, let help = session.help {
-                        HelpButton(help: help)
+                // One row when it fits; longer translations move the menu (or help button)
+                // onto its own row above the buttons, both right-aligned, then stack the buttons,
+                // rather than squeezing them.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        footerLeading
+                        Spacer(minLength: 10)
+                        footerButtons
                     }
-                    Spacer()
-                    if choosing, let secondary = session.secondaryButton {
-                        Button(secondary.title) { model.onAction(.secondary) }
-                            .controlSize(.large)
-                            .disabled(!secondary.enabled)
+                    VStack(alignment: .trailing, spacing: 12) {
+                        footerLeading
+                        HStack(spacing: 10) { footerButtons }
                     }
-                    if let button = session.button {
-                        Button(primaryTitle) { model.onAction(.primary) }
-                            .keyboardShortcut(.defaultAction)
-                            .controlSize(.large)
-                            .disabled(!button.enabled || (choosing && installCount == 0))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    VStack(alignment: .trailing, spacing: 12) {
+                        footerLeading
+                        footerButtons
                     }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(20)
             }
@@ -261,6 +259,37 @@ struct ApplyListView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .onAppear { menuChoice = model.selection ?? session.menu?.selected ?? "" }
+    }
+
+    /// The deferral-length menu while choosing; the help button after.
+    @ViewBuilder private var footerLeading: some View {
+        if choosing, let menu = session.menu {
+            Picker(menu.title, selection: $menuChoice) {
+                ForEach(menu.options, id: \.value) { option in
+                    Text(option.label).tag(option.value)
+                }
+            }
+            .fixedSize()
+            .onChange(of: menuChoice) { _, value in model.selection = value }
+        } else if !choosing, let help = session.help {
+            HelpButton(help: help)
+        }
+    }
+
+    @ViewBuilder private var footerButtons: some View {
+        if choosing, let secondary = session.secondaryButton {
+            Button(secondary.title) { model.onAction(.secondary) }
+                .controlSize(.large)
+                .disabled(!secondary.enabled)
+                .fixedSize()
+        }
+        if let button = session.button {
+            Button(primaryTitle) { model.onAction(.primary) }
+                .keyboardShortcut(.defaultAction)
+                .controlSize(.large)
+                .disabled(!button.enabled || (choosing && installCount == 0))
+                .fixedSize()
+        }
     }
 
     /// The row's "install now" checkbox while choosing; nil when it has none.
@@ -399,7 +428,7 @@ private struct HelpView: View {
     }
 
     @ViewBuilder
-    private func section(_ title: String?, _ rows: [DialogSession.Help.Row]) -> some View {
+    private func section(_ title: LocalizedStringKey?, _ rows: [DialogSession.Help.Row]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if let title {
                 Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)

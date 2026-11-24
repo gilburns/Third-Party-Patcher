@@ -1,0 +1,35 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Computer": {
+      "extractionState": "manual"
+    },
+    "For assistance with this update, contact **%@**.": {
+      "extractionState": "manual"
+    },
+    "Help": {
+      "extractionState": "manual"
+    },
+    "Install %@ now": {
+      "extractionState": "manual"
+    },
+    "Install %lld Now": {
+      "comment": "Deferral prompt button: installs the apps still checked",
+      "extractionState": "manual"
+    },
+    "Quit & Update": {
+      "comment": "Notification button: quits the running app and installs its update",
+      "extractionState": "manual"
+    },
+    "Software": {
+      "extractionState": "manual"
+    },
+    "Support and computer information": {
+      "extractionState": "manual"
+    },
+    "Time remaining: %@": {
+      "extractionState": "manual"
+    }
+  },
+  "version": "1.0"
+}

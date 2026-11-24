@@ -47,12 +47,12 @@ final class NativeBlockingPrompt {
         let prefs = Preferences()
         var session = DialogSessionWriter.makeSession(
             kind: .blockingNotice, uid: uid, prefs: prefs, position: "center",
-            title: "Update Pending: \(item.displayName)",
-            message: "\(item.displayName) needs to be quit to apply an update. Please close it when convenient.",
+            title: .updatePendingTitle(app: item.displayName),
+            message: .quitWhenConvenient(app: item.displayName),
             total: 0)
         session.icon        = "caution"
         session.overlayIcon = item.iconPath ?? packageIconPath
-        session.button      = DialogSession.Button(title: "OK", enabled: true)
+        session.button      = DialogSession.Button(.ok, enabled: true)
         let writer = DialogSessionWriter(session: session)
         let id     = session.id
         DialogSessionStore.removeResponses(id: id)
@@ -96,16 +96,15 @@ final class NativeBlockingPrompt {
         let prefs = Preferences()
         var session = DialogSessionWriter.makeSession(
             kind: .blockingPrompt, uid: uid, prefs: prefs, position: "center",
-            title: "\(item.displayName) Update Paused",
-            message: "\(item.displayName) needs to be updated, but **\(processName)** is currently running.\n\n"
-                   + "Please save your work and quit \(processName) before the timer expires, "
-                   + "or click **Skip Update** to postpone this update.",
+            title: .updatePausedTitle(app: item.displayName),
+            message: .paragraphs([.needsUpdateButRunning(app: item.displayName, process: processName),
+                                  .saveAndQuitOrSkip(process: processName)]),
             total: 0)
         session.icon            = "caution"
         session.overlayIcon     = item.iconPath ?? packageIconPath
-        session.button          = DialogSession.Button(title: "Skip Update", enabled: true)
-        session.secondaryButton = DialogSession.Button(title: "Quit \(processName)", enabled: true)
-        session.checkbox        = DialogSession.Checkbox(label: "Reopen \(item.displayName) after the update",
+        session.button          = DialogSession.Button(.skipUpdate, enabled: true)
+        session.secondaryButton = DialogSession.Button(.quitApp(process: processName), enabled: true)
+        session.checkbox        = DialogSession.Checkbox(label: .reopenAfterUpdate(app: item.displayName),
                                                          checked: true)
         let writer = DialogSessionWriter(session: session)
         let id     = session.id

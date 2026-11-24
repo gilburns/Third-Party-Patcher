@@ -1,0 +1,610 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%@ are deferred for %@.": {
+      "comment": "Apply window side panel: a list of apps the user deferred (“Zoom and Slack”), and for how long",
+      "extractionState": "manual"
+    },
+    "%@ is deferred for %@.": {
+      "comment": "Apply window side panel: one app the user deferred, and for how long",
+      "extractionState": "manual"
+    },
+    "%@ needs to be quit to apply an update. Please close it when convenient.": {
+      "comment": "Notice message",
+      "extractionState": "manual"
+    },
+    "%@ needs to be updated, but **%@** is currently running.": {
+      "comment": "Prompt message: the app to update, then the running process blocking it",
+      "extractionState": "manual"
+    },
+    "%@ Update Paused": {
+      "comment": "Prompt title: the app is running, so its update is waiting",
+      "extractionState": "manual"
+    },
+    "%@ · %@": {
+      "comment": "A progress step and its detail, e.g. “Update 2 of 5 · Installing 45%”",
+      "extractionState": "manual"
+    },
+    "%lld of %lld": {
+      "comment": "Progress window caption: items done of the total",
+      "extractionState": "manual"
+    },
+    "%lld updated · %lld skipped": {
+      "comment": "Apply window result counts",
+      "extractionState": "manual"
+    },
+    "%lld updated · %lld skipped · %lld failed": {
+      "comment": "Apply window result counts",
+      "extractionState": "manual"
+    },
+    "%lld updates applied successfully": {
+      "comment": "Apply window result: every update installed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld update applied successfully"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld updates applied successfully"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld updates available to download.": {
+      "comment": "Progress window result",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld update available to download."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld updates available to download."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld updates ready to install.": {
+      "comment": "Progress window result after downloading",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld update ready to install."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld updates ready to install."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld updates still waiting to download.": {
+      "comment": "Progress window result after downloading",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld update still waiting to download."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld updates still waiting to download."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "**All possible updates have been applied.**": {
+      "comment": "Apply window when finished",
+      "extractionState": "manual"
+    },
+    "**Deferral Status**\nDays pending: %lld\nUser deferrals: %lld\nAuto deferrals: %lld": {
+      "comment": "Deferral prompt side panel: a heading, then three counts on their own lines",
+      "extractionState": "manual"
+    },
+    "**Installation is required** — the maximum deferral deadline has been reached.": {
+      "comment": "Deferral prompt: the user can no longer defer",
+      "extractionState": "manual"
+    },
+    "App removed": {
+      "comment": "Apply window row: skipped, the app was deleted since the scan",
+      "extractionState": "manual"
+    },
+    "App running": {
+      "comment": "Apply window row: skipped, the app is open and can't be updated",
+      "extractionState": "manual"
+    },
+    "Checking %lld applications for available updates…": {
+      "comment": "Progress window: an update check started from PatcherMenu",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Checking %lld application for available updates…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Checking %lld applications for available updates…"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Checking: **%@** for updates…": {
+      "comment": "Progress window: the app being checked",
+      "extractionState": "manual"
+    },
+    "Complete": {
+      "comment": "Progress window caption when finished",
+      "extractionState": "manual"
+    },
+    "Complete — %@": {
+      "comment": "Apply window caption when finished, followed by the result counts",
+      "extractionState": "manual"
+    },
+    "Computer Name": {
+      "comment": "Help popover label",
+      "extractionState": "manual"
+    },
+    "Copying %@": {
+      "comment": "Progress copying an app into place: percent done",
+      "extractionState": "manual"
+    },
+    "Copying…": {
+      "comment": "Progress copying an app into place, not measured",
+      "extractionState": "manual"
+    },
+    "Defer": {
+      "comment": "Deferral prompt button (one update)",
+      "extractionState": "manual"
+    },
+    "Defer (%@)": {
+      "comment": "Deferral prompt button, with how long it defers",
+      "extractionState": "manual"
+    },
+    "Defer All": {
+      "comment": "Deferral prompt button (several updates)",
+      "extractionState": "manual"
+    },
+    "Defer for": {
+      "comment": "Deferral prompt: label of the menu of deferral lengths",
+      "extractionState": "manual"
+    },
+    "Deferred · %@": {
+      "comment": "Apply window row: the user deferred this app, and for how long",
+      "extractionState": "manual"
+    },
+    "Done": {
+      "comment": "Apply window: the button that closes it when finished",
+      "extractionState": "manual"
+    },
+    "Downloading %@": {
+      "comment": "Download progress: percent done",
+      "extractionState": "manual"
+    },
+    "Downloading %@ · %@ of %@": {
+      "comment": "Download progress: percent, then bytes received of the total size",
+      "extractionState": "manual"
+    },
+    "Downloading %lld updates…": {
+      "comment": "Progress window: downloads started from PatcherMenu",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Downloading %lld update…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Downloading %lld updates…"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Downloading · %@": {
+      "comment": "Download progress when the total size is unknown: bytes received so far",
+      "extractionState": "manual"
+    },
+    "Downloading: **%@**…": {
+      "comment": "Progress window: the app being downloaded",
+      "extractionState": "manual"
+    },
+    "Downloading…": {
+      "comment": "Download progress before anything has been received",
+      "extractionState": "manual"
+    },
+    "Email": {
+      "comment": "Help popover: support email label",
+      "extractionState": "manual"
+    },
+    "Extracting…": {
+      "comment": "Install step: unpacking the downloaded archive",
+      "extractionState": "manual"
+    },
+    "Failed": {
+      "comment": "Apply window row: the update failed to install",
+      "extractionState": "manual"
+    },
+    "Install All Now": {
+      "comment": "Deferral prompt button",
+      "extractionState": "manual"
+    },
+    "Install Now": {
+      "comment": "Deferral prompt button",
+      "extractionState": "manual"
+    },
+    "Installing %@": {
+      "comment": "Install progress: percent done",
+      "extractionState": "manual"
+    },
+    "Installing: %@ → %@…": {
+      "comment": "Compact apply window: the app installing and its new version",
+      "extractionState": "manual"
+    },
+    "Installing: %@…": {
+      "comment": "Compact apply window: the app installing",
+      "extractionState": "manual"
+    },
+    "Installing…": {
+      "comment": "Install progress that can't be measured",
+      "extractionState": "manual"
+    },
+    "It has been pending for **%lld days**.": {
+      "comment": "Deferral prompt: how long one update has waited",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "It has been pending for **%lld day**."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "It has been pending for **%lld days**."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "No install target": {
+      "comment": "Apply window row: skipped, nowhere to install the app",
+      "extractionState": "manual"
+    },
+    "No more items to download.": {
+      "comment": "Progress window result after downloading",
+      "extractionState": "manual"
+    },
+    "No plist": {
+      "comment": "Apply window row: skipped, the app's update details are missing",
+      "extractionState": "manual"
+    },
+    "No type": {
+      "comment": "Apply window row: skipped, the update's install type is unknown",
+      "extractionState": "manual"
+    },
+    "No updates available.": {
+      "comment": "Progress window result",
+      "extractionState": "manual"
+    },
+    "OK": {
+      "comment": "Notice button",
+      "extractionState": "manual"
+    },
+    "Open — will ask to quit": {
+      "comment": "Deferral prompt row: the app is running and will be asked to quit before updating",
+      "extractionState": "manual"
+    },
+    "Opening disk image…": {
+      "comment": "Install step: mounting the downloaded disk image",
+      "extractionState": "manual"
+    },
+    "Phone": {
+      "comment": "Help popover: support phone number label",
+      "extractionState": "manual"
+    },
+    "Please save your work and quit %@ before the timer expires, or click **Skip Update** to postpone this update.": {
+      "comment": "Prompt message; “Skip Update” is the button's title",
+      "extractionState": "manual"
+    },
+    "Preparing…": {
+      "comment": "Apply window caption before the first install starts",
+      "extractionState": "manual"
+    },
+    "Process completed": {
+      "comment": "Progress window, just before it closes",
+      "extractionState": "manual"
+    },
+    "Quit %@": {
+      "comment": "Prompt button: force-quits the running app",
+      "extractionState": "manual"
+    },
+    "Ready": {
+      "comment": "Deferral prompt row: ready to install",
+      "extractionState": "manual"
+    },
+    "Reopen %@ after the update": {
+      "comment": "Prompt checkbox",
+      "extractionState": "manual"
+    },
+    "Scanning %@…": {
+      "comment": "Progress window: the item being scanned (an Installomator label name)",
+      "extractionState": "manual"
+    },
+    "Scanning %lld applications for available updates…": {
+      "comment": "Progress window: a scan started from PatcherMenu",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Scanning %lld application for available updates…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Scanning %lld applications for available updates…"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Screen locked": {
+      "comment": "Apply window row: skipped, the screen locked while waiting to quit the app",
+      "extractionState": "manual"
+    },
+    "Serial Number": {
+      "comment": "Help popover label",
+      "extractionState": "manual"
+    },
+    "Shutdown — stopping after %lld items": {
+      "comment": "Apply window caption: the Mac is shutting down; how many items were installed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Shutdown — stopping after %lld item"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Shutdown — stopping after %lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Skip Update": {
+      "comment": "Prompt button",
+      "extractionState": "manual"
+    },
+    "Started": {
+      "comment": "Help popover: when the update run started",
+      "extractionState": "manual"
+    },
+    "There are **%lld updates** waiting.": {
+      "comment": "Apply window: how many updates will be installed",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "There is **%lld update** waiting."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "There are **%lld updates** waiting."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "These updates are being attempted.": {
+      "comment": "Apply window side panel while installing",
+      "extractionState": "manual"
+    },
+    "These updates were just attempted.": {
+      "comment": "Apply window side panel when finished",
+      "extractionState": "manual"
+    },
+    "They have been pending for **%lld days**.": {
+      "comment": "Deferral prompt: how long the updates have waited",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "They have been pending for **%lld day**."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "They have been pending for **%lld days**."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Unable to scan — application labels could not be downloaded. The scan will retry automatically.": {
+      "comment": "Progress window: the scan could not run",
+      "extractionState": "manual"
+    },
+    "Unavailable Drive": {
+      "comment": "Apply window row: skipped, the app is on a drive that isn't available",
+      "extractionState": "manual"
+    },
+    "Uncheck any you’d like to put off.": {
+      "comment": "Deferral prompt: each app has an “install now” checkbox",
+      "extractionState": "manual"
+    },
+    "Update %lld of %lld": {
+      "comment": "Compact apply window caption: which update is installing",
+      "extractionState": "manual"
+    },
+    "Update %lld of %lld - Installing: %@…": {
+      "comment": "Apply window caption: which update is installing, and the app",
+      "extractionState": "manual"
+    },
+    "Update Pending: %@": {
+      "comment": "Notice title: the app must be quit before it can update",
+      "extractionState": "manual"
+    },
+    "Updated": {
+      "comment": "Apply window row: the update installed",
+      "extractionState": "manual"
+    },
+    "Updating…": {
+      "comment": "Apply window: the disabled button while updates install",
+      "extractionState": "manual"
+    },
+    "Waiting": {
+      "comment": "Apply window row: not started yet",
+      "extractionState": "manual"
+    },
+    "Waiting for user — %@": {
+      "comment": "Apply window caption while a prompt asks the user to quit the app",
+      "extractionState": "manual"
+    },
+    "Waiting for user…": {
+      "comment": "Apply window row: paused while a prompt asks the user to quit the app",
+      "extractionState": "manual"
+    },
+    "Website": {
+      "comment": "Help popover: support website label",
+      "extractionState": "manual"
+    },
+    "You have **%lld software updates** ready to install.": {
+      "comment": "Deferral prompt: how many updates are ready",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "You have **%lld software update** ready to install."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "You have **%lld software updates** ready to install."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "⚠️ %@ — %@": {
+      "comment": "Compact apply window: the app was skipped, and why",
+      "extractionState": "manual"
+    },
+    "✅ Updated: %@": {
+      "comment": "Compact apply window: the app updated",
+      "extractionState": "manual"
+    },
+    "✅ Updated: %@ → %@": {
+      "comment": "Compact apply window: the app updated, and its new version",
+      "extractionState": "manual"
+    },
+    "❌ Failed: %@": {
+      "comment": "Compact apply window: the app's update failed",
+      "extractionState": "manual"
+    },
+    "❌ Failed: %@ → %@": {
+      "comment": "Compact apply window: the app's update failed, and the version it tried",
+      "extractionState": "manual"
+    }
+  },
+  "version": "1.0"
+}

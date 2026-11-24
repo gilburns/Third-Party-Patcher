@@ -53,6 +53,23 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1BAFE1D32F96F24400E18CFB /* Exceptions for "patcherscheduler" folder in "patcherschedulerTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				FocusDetector.swift,
+				PatcherScheduler.swift,
+				SchedulerState.swift,
+				StatusReporter.swift,
+			);
+			target = 1B319C062F90650200860CB7 /* patcherschedulerTests */;
+		};
+		1BAFE20A2F99928600E18CFB /* Exceptions for "PatcherMenu" folder in "PatcherMenu" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1BAFE1DA2F98ED4E00E18CFB /* PatcherMenu */;
+		};
 		1BD1A0012FE0000000A1B2C3 /* Exceptions for "patcher" folder in "patcherTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -73,23 +90,6 @@
 				ZshScriptRunner.swift,
 			);
 			target = 1B319C342F925CD300860CB7 /* patcherTests */;
-		};
-		1BAFE1D32F96F24400E18CFB /* Exceptions for "patcherscheduler" folder in "patcherschedulerTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				FocusDetector.swift,
-				PatcherScheduler.swift,
-				SchedulerState.swift,
-				StatusReporter.swift,
-			);
-			target = 1B319C062F90650200860CB7 /* patcherschedulerTests */;
-		};
-		1BAFE20A2F99928600E18CFB /* Exceptions for "PatcherMenu" folder in "PatcherMenu" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 1BAFE1DA2F98ED4E00E18CFB /* PatcherMenu */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -875,7 +875,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.PatcherNotifier;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -908,7 +908,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.gilburns.PatcherNotifier;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;

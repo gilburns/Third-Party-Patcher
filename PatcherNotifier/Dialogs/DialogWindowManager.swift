@@ -32,7 +32,8 @@ final class DialogWindowManager {
 
     func reconcile() {
         let uid      = getuid()
-        let sessions = DialogSessionStore.activeSessions().filter { $0.consoleUID == uid }
+        // Typed text is worded here, in the user's language; an older patcher's English stays.
+        let sessions = DialogSessionStore.activeSessions().filter { $0.consoleUID == uid }.map { $0.resolved() }
         let now      = Date()
 
         var live: [String: DialogSession] = [:]
