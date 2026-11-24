@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@:": {
+      "comment": "Notification title: the organization's name for its updates, leading the update's own title",
+      "extractionState": "manual"
+    },
     "Computer": {
       "extractionState": "manual"
     },

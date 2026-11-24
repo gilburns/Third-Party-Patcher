@@ -61,8 +61,8 @@ final class NotificationApplyPresenter: ApplyPresenter {
         guard promptedLabels.contains(item.label) else { return }
         UserNotificationQueue.enqueue(PatcherNotificationEvent(
             kind:      .applyInProgress,
-            title:     "Updating \(item.displayName)",
-            body:      "\(item.displayName) is being updated…",
+            title:     .updatingAppTitle(app: item.displayName),
+            body:      .appBeingUpdated(app: item.displayName),
             threadID:  Self.threadID,
             iconPath:  item.iconPath,
             label:     item.label,
@@ -83,8 +83,8 @@ final class NotificationApplyPresenter: ApplyPresenter {
     func setFailed(item: ApplyItem) {
         UserNotificationQueue.enqueue(PatcherNotificationEvent(
             kind:      .applyFailed,
-            title:     "\(item.displayName) Couldn't Be Updated",
-            body:      "The update for \(item.displayName) will be tried again later.",
+            title:     .appUpdateFailedTitle(app: item.displayName),
+            body:      .updateWillBeRetried(app: item.displayName),
             threadID:  Self.threadID,
             iconPath:  item.iconPath,
             label:     item.label,
@@ -125,8 +125,8 @@ final class NotificationApplyPresenter: ApplyPresenter {
             Logger.log("ℹ️ BlockingProcessAction=notify — posting notification for '\(processName)'")
             UserNotificationQueue.enqueue(PatcherNotificationEvent(
                 kind:      .blockingNotify,
-                title:     "Update Pending: \(item.displayName)",
-                body:      "\(item.displayName) needs to be quit to apply an update. Please close it when convenient.",
+                title:     .updatePendingTitle(app: item.displayName),
+                body:      .quitWhenConvenient(app: item.displayName),
                 threadID:  Self.threadID,
                 playSound: true,
                 iconPath:  item.iconPath,
@@ -152,9 +152,8 @@ final class NotificationApplyPresenter: ApplyPresenter {
 
         let event = PatcherNotificationEvent(
             kind:      .blockingPrompt,
-            title:     "\(item.displayName) Update Ready",
-            body:      "Save your work and click Quit & Update, or quit \(processName) yourself. "
-                     + "It will quit automatically in \(formatCountdown(countdownSeconds)). Close this notification to defer the update.",
+            title:     .appUpdateReadyTitle(app: item.displayName),
+            body:      .quitAndUpdatePrompt(process: processName, seconds: countdownSeconds),
             threadID:  Self.threadID,
             playSound: true,
             iconPath:  item.iconPath,
@@ -217,14 +216,6 @@ final class NotificationApplyPresenter: ApplyPresenter {
         return .proceed
     }
 
-    private func formatCountdown(_ seconds: Int) -> String {
-        if seconds >= 60, seconds % 60 == 0 {
-            let minutes = seconds / 60
-            return "\(minutes) minute\(minutes == 1 ? "" : "s")"
-        }
-        return "\(seconds) seconds"
-    }
-
     private func forceQuitProcess(named processName: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
@@ -240,13 +231,11 @@ final class NotificationApplyPresenter: ApplyPresenter {
 private func installedEvent(item: ApplyItem, version: String,
                             kind: PatcherNotificationEvent.Kind, background: Bool,
                             replaceID: String? = nil, threadID: String = "apply") -> PatcherNotificationEvent {
-    let suffix = background ? " in the background." : "."
-    return PatcherNotificationEvent(
+    PatcherNotificationEvent(
         kind:      kind,
-        title:     "\(item.displayName) Updated",
-        body:      version.isEmpty
-            ? "\(item.displayName) was updated\(suffix)"
-            : "\(item.displayName) was updated to version \(version)\(suffix)",
+        title:     .appUpdatedTitle(app: item.displayName),
+        body:      .appWasUpdated(app: item.displayName, version: version.isEmpty ? nil : version,
+                                  background: background),
         threadID:  threadID,
         iconPath:  item.iconPath,
         label:     item.label,
@@ -269,8 +258,8 @@ func queueInstalledNotifications(_ installed: [(item: ApplyItem, version: String
         let lines = installed.map { $0.version.isEmpty ? $0.item.displayName : "\($0.item.displayName) \($0.version)" }
         UserNotificationQueue.enqueue(PatcherNotificationEvent(
             kind:     kind,
-            title:    "\(installed.count) Apps Updated",
-            body:     lines.joined(separator: ", "),
+            title:    .appsUpdatedTitle(count: installed.count),
+            body:     .appList(lines),
             threadID: threadID
         ))
     }

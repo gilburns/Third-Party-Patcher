@@ -5,6 +5,14 @@
       "comment": "Apply window side panel: a list of apps the user deferred (“Zoom and Slack”), and for how long",
       "extractionState": "manual"
     },
+    "%@ Couldn't Be Updated": {
+      "comment": "Notification title",
+      "extractionState": "manual"
+    },
+    "%@ is being updated…": {
+      "comment": "Notification body",
+      "extractionState": "manual"
+    },
     "%@ is deferred for %@.": {
       "comment": "Apply window side panel: one app the user deferred, and for how long",
       "extractionState": "manual"
@@ -21,9 +29,57 @@
       "comment": "Prompt title: the app is running, so its update is waiting",
       "extractionState": "manual"
     },
+    "%@ Update Ready": {
+      "comment": "Notification title: the app must quit for its update",
+      "extractionState": "manual"
+    },
+    "%@ Updated": {
+      "comment": "Notification title",
+      "extractionState": "manual"
+    },
+    "%@ was updated in the background.": {
+      "comment": "Notification body: installed while the app wasn't in use",
+      "extractionState": "manual"
+    },
+    "%@ was updated to version %@ in the background.": {
+      "comment": "Notification body: the app and its new version, installed while it wasn't in use",
+      "extractionState": "manual"
+    },
+    "%@ was updated to version %@.": {
+      "comment": "Notification body: the app and its new version",
+      "extractionState": "manual"
+    },
+    "%@ was updated.": {
+      "comment": "Notification body",
+      "extractionState": "manual"
+    },
     "%@ · %@": {
       "comment": "A progress step and its detail, e.g. “Update 2 of 5 · Installing 45%”",
       "extractionState": "manual"
+    },
+    "%lld Apps Updated": {
+      "comment": "Notification title summarizing several updates",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld App Updated"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld Apps Updated"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld of %lld": {
       "comment": "Progress window caption: items done of the total",
@@ -389,6 +445,10 @@
       "comment": "Prompt checkbox",
       "extractionState": "manual"
     },
+    "Save your work and click Quit & Update, or quit %@ yourself. It will quit automatically in %@. Close this notification to defer the update.": {
+      "comment": "Notification body: the running app, then how long until it is quit. “Quit & Update” is the notification's button; translate it the same way.",
+      "extractionState": "manual"
+    },
     "Scanning %@…": {
       "comment": "Progress window: the item being scanned (an Installomator label name)",
       "extractionState": "manual"
@@ -455,6 +515,10 @@
     },
     "Started": {
       "comment": "Help popover: when the update run started",
+      "extractionState": "manual"
+    },
+    "The update for %@ will be tried again later.": {
+      "comment": "Notification body after a failed update",
       "extractionState": "manual"
     },
     "There are **%lld updates** waiting.": {
@@ -539,6 +603,10 @@
     },
     "Updated": {
       "comment": "Apply window row: the update installed",
+      "extractionState": "manual"
+    },
+    "Updating %@": {
+      "comment": "Notification title: the app is being updated now",
       "extractionState": "manual"
     },
     "Updating…": {

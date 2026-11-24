@@ -148,6 +148,27 @@ indirect enum DialogText: Codable, Equatable {
     case quitApp(process: String)
     case reopenAfterUpdate(app: String)
 
+    // MARK: Notifications (ApplyDialogSize = notifications, and quiet installs)
+
+    /// "Updating Zoom"
+    case updatingAppTitle(app: String)
+    case appBeingUpdated(app: String)
+    /// "Zoom Couldn't Be Updated"
+    case appUpdateFailedTitle(app: String)
+    case updateWillBeRetried(app: String)
+    /// "Zoom Update Ready"
+    case appUpdateReadyTitle(app: String)
+    /// The Quit & Update notification's body, with the seconds until the app is quit.
+    case quitAndUpdatePrompt(process: String, seconds: Int)
+    /// "Zoom Updated"
+    case appUpdatedTitle(app: String)
+    /// "Zoom was updated to version 1.2 in the background." `version` nil when unknown.
+    case appWasUpdated(app: String, version: String?, background: Bool)
+    /// "3 Apps Updated"
+    case appsUpdatedTitle(count: Int)
+    /// "Zoom 6.1, Slack 4.4, and Firefox".
+    case appList([String])
+
     /// The message in the reader's language.
     var text: String {
         let b = Bundle.dialogStrings
@@ -404,6 +425,52 @@ indirect enum DialogText: Codable, Equatable {
         case .reopenAfterUpdate(let app):
             return String(localized: "Reopen \(app) after the update", table: "Dialogs", bundle: b,
                           comment: "Prompt checkbox")
+
+        // Notifications
+        case .updatingAppTitle(let app):
+            return String(localized: "Updating \(app)", table: "Dialogs", bundle: b,
+                          comment: "Notification title: the app is being updated now")
+        case .appBeingUpdated(let app):
+            return String(localized: "\(app) is being updated…", table: "Dialogs", bundle: b,
+                          comment: "Notification body")
+        case .appUpdateFailedTitle(let app):
+            return String(localized: "\(app) Couldn't Be Updated", table: "Dialogs", bundle: b,
+                          comment: "Notification title")
+        case .updateWillBeRetried(let app):
+            return String(localized: "The update for \(app) will be tried again later.", table: "Dialogs", bundle: b,
+                          comment: "Notification body after a failed update")
+        case .appUpdateReadyTitle(let app):
+            return String(localized: "\(app) Update Ready", table: "Dialogs", bundle: b,
+                          comment: "Notification title: the app must quit for its update")
+        case .quitAndUpdatePrompt(let process, let seconds):
+            let wait = Duration.seconds(max(seconds, 0))
+                .formatted(.units(allowed: [.minutes, .seconds], width: .wide))
+            return String(localized: "Save your work and click Quit & Update, or quit \(process) yourself. It will quit automatically in \(wait). Close this notification to defer the update.",
+                          table: "Dialogs", bundle: b,
+                          comment: "Notification body: the running app, then how long until it is quit. “Quit & Update” is the notification's button; translate it the same way.")
+        case .appUpdatedTitle(let app):
+            return String(localized: "\(app) Updated", table: "Dialogs", bundle: b,
+                          comment: "Notification title")
+        case .appWasUpdated(let app, let version, let background):
+            switch (version, background) {
+            case (let version?, false):
+                return String(localized: "\(app) was updated to version \(version).", table: "Dialogs", bundle: b,
+                              comment: "Notification body: the app and its new version")
+            case (let version?, true):
+                return String(localized: "\(app) was updated to version \(version) in the background.", table: "Dialogs", bundle: b,
+                              comment: "Notification body: the app and its new version, installed while it wasn't in use")
+            case (nil, false):
+                return String(localized: "\(app) was updated.", table: "Dialogs", bundle: b,
+                              comment: "Notification body")
+            case (nil, true):
+                return String(localized: "\(app) was updated in the background.", table: "Dialogs", bundle: b,
+                              comment: "Notification body: installed while the app wasn't in use")
+            }
+        case .appsUpdatedTitle(let count):
+            return String(localized: "\(count) Apps Updated", table: "Dialogs", bundle: b,
+                          comment: "Notification title summarizing several updates")
+        case .appList(let names):
+            return names.formatted(.list(type: .and))
         }
     }
 }
