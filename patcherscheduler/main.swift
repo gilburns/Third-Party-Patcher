@@ -11,11 +11,9 @@ import Foundation
 
 // MARK: - SIGTERM handling
 //
-// activeChildProcess holds the patcher subcommand Process currently being waited
-// on.  The SIGTERM handler forwards the signal to it so patcher can finish its
-// current installation before exiting, then exits the scheduler itself.
-// Written only on the work queue; read on the GCD signal-handler thread.
-var activeChildProcess: Process?
+// The SIGTERM handler forwards the signal to activeChildProcess
+// (PatcherScheduler.swift) so patcher can finish its current installation before
+// exiting, then exits the scheduler itself.
 
 private func installSigtermHandler() {
     signal(SIGTERM, SIG_IGN)   // suppress default termination; we handle it below

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1B3193B62F80799D00860CB7 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = 1B3193B52F80799D00860CB7 /* ArgumentParser */; };
+		1BD1A0032FE0000000A1B2C3 /* ArgumentParser in Frameworks */ = {isa = PBXBuildFile; productRef = 1BD1A0022FE0000000A1B2C3 /* ArgumentParser */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -52,6 +53,27 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1BD1A0012FE0000000A1B2C3 /* Exceptions for "patcher" folder in "patcherTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ApplyPresenter.swift,
+				DialogAppearance.swift,
+				DialogDemo.swift,
+				InstallomatorLabels.swift,
+				LabelTracker.swift,
+				LiveProgress.swift,
+				MetadataSyncer.swift,
+				NativeBlockingPrompt.swift,
+				NativeDialogs.swift,
+				NotificationApplyPresenter.swift,
+				Patcher.swift,
+				PatcherCore.swift,
+				PresenterTypes.swift,
+				SignatureInspector.swift,
+				ZshScriptRunner.swift,
+			);
+			target = 1B319C342F925CD300860CB7 /* patcherTests */;
+		};
 		1BAFE1D32F96F24400E18CFB /* Exceptions for "patcherscheduler" folder in "patcherschedulerTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -74,6 +96,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1B3193A42F7F478400860CB7 /* patcher */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1BD1A0012FE0000000A1B2C3 /* Exceptions for "patcher" folder in "patcherTests" target */,
+			);
 			path = patcher;
 			sourceTree = "<group>";
 		};
@@ -152,6 +177,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1BD1A0032FE0000000A1B2C3 /* ArgumentParser in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -308,6 +334,7 @@
 			);
 			name = patcherTests;
 			packageProductDependencies = (
+				1BD1A0022FE0000000A1B2C3 /* ArgumentParser */,
 			);
 			productName = patcherTests;
 			productReference = 1B319C352F925CD300860CB7 /* patcherTests.xctest */;
@@ -1149,6 +1176,11 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		1B3193B52F80799D00860CB7 /* ArgumentParser */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1B3193B42F80799D00860CB7 /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
+			productName = ArgumentParser;
+		};
+		1BD1A0022FE0000000A1B2C3 /* ArgumentParser */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 1B3193B42F80799D00860CB7 /* XCRemoteSwiftPackageReference "swift-argument-parser" */;
 			productName = ArgumentParser;

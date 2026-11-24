@@ -10,11 +10,8 @@ import ArgumentParser
 
 // MARK: - SIGTERM handling
 //
-// shutdownRequested is set by the SIGTERM handler and checked between
-// installations in the apply loop.  Written once on the GCD signal-handler
-// thread; read periodically on the main thread — the benign race is
-// intentional: at worst we start one extra item before seeing the flag.
-var shutdownRequested = false
+// shutdownRequested (PatcherCore.swift) is set here and checked between
+// installations in the apply loop.
 
 private func installSigtermHandler() {
     signal(SIGTERM, SIG_IGN)   // suppress default termination; we handle it below

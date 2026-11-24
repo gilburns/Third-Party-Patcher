@@ -22,7 +22,7 @@
                BlueprintIdentifier = "1B319C062F90650200860CB7"
                BuildableName = "patcherschedulerTests.xctest"
                BlueprintName = "patcherschedulerTests"
-               ReferencedContainer = "container:patcher.xcodeproj">
+               ReferencedContainer = "container:Third Party Patcher.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
