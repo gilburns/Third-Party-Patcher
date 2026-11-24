@@ -225,40 +225,42 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
         writer?.update { s in
             s.progress.text = "Update \(current) of \(total) - Installing: \(item.displayName)…"
-            setRow(item, status: .working, text: "Installing…", in: &s)
+            setRow(item, status: .working, text: .verbatim("Installing…"), in: &s)
         }
     }
 
-    func setItemProgress(item: ApplyItem, fraction: Double?, detail: String) {
+    func setItemProgress(item: ApplyItem, detail: ProgressDetail) {
+        let fraction = detail.fraction
         if size == .compact {
             writer?.update { s in
                 s.progress.fraction = fraction
-                s.progress.text     = "\(compactStepText) · \(detail)"
+                s.progress.text     = "\(compactStepText) · \(detail.text)"
             }
             return
         }
         writer?.update { s in
             guard let index = s.items.firstIndex(where: { $0.id == item.label }),
                   s.items[index].status == .working else { return }
-            s.items[index].statusText = detail
-            s.items[index].progress   = fraction
-            s.progress.fraction       = fraction
+            s.items[index].statusText   = detail.text
+            s.items[index].statusDetail = .progress(detail)
+            s.items[index].progress     = fraction
+            s.progress.fraction         = fraction
         }
     }
 
     func setSuccess(item: ApplyItem, toVersion: String) {
-        finish(item, status: .success, rowText: "Updated",
+        finish(item, status: .success, rowText: .verbatim("Updated"),
                compactMessage: "✅ Updated: \(item.displayName)\(versionSuffix(toVersion))")
     }
 
     func setFailed(item: ApplyItem) {
-        finish(item, status: .failed, rowText: "Failed",
+        finish(item, status: .failed, rowText: .verbatim("Failed"),
                compactMessage: "❌ Failed: \(item.displayName)\(versionSuffix(item.newVersion))")
     }
 
-    func setSkipped(item: ApplyItem, reason: String) {
-        finish(item, status: .skipped, rowText: reason,
-               compactMessage: "⚠️ \(item.displayName) — \(reason)")
+    func setSkipped(item: ApplyItem, reason: SkipReason) {
+        finish(item, status: .skipped, rowText: .skipped(reason),
+               compactMessage: "⚠️ \(item.displayName) — \(reason.text)")
     }
 
     func complete(applied: Int, skipped: Int, failed: Int) {
@@ -328,7 +330,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         case .prompt:
             // Show the pause in this window while the prompt waits.
             setProgressText("Waiting for user — \(item.displayName)")
-            setSkipped(item: item, reason: "Waiting for user…")
+            setSkipped(item: item, reason: .waitingForUser)
             return NativeBlockingPrompt(uid: uid).prompt(processName: processName, item: item,
                                                          countdownSeconds: countdownSeconds,
                                                          deferIfScreenLocks: deferIfScreenLocks)
@@ -570,7 +572,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     // MARK: Helpers
 
-    private func finish(_ item: ApplyItem, status: DialogSession.Item.Status, rowText: String, compactMessage: String) {
+    private func finish(_ item: ApplyItem, status: DialogSession.Item.Status, rowText: DialogText, compactMessage: String) {
         if size == .compact {
             writer?.update { s in
                 showItemIcon(item, in: &s)
@@ -596,28 +598,31 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
     }
 
-    /// "Waiting for user…" is a pause, not a result.
-    private func isFinalResult(status: DialogSession.Item.Status, rowText: String) -> Bool {
-        !(status == .skipped && rowText == "Waiting for user…")
+    /// Waiting for the user is a pause, not a result.
+    private func isFinalResult(status: DialogSession.Item.Status, rowText: DialogText) -> Bool {
+        !(status == .skipped && rowText == .skipped(.waitingForUser))
     }
 
     private static func isFinal(_ row: DialogSession.Item) -> Bool {
         switch row.status {
         case .success, .failed: return true
-        case .skipped:          return row.statusText != "Waiting for user…"
+        case .skipped:          return row.statusDetail != .skipped(.waitingForUser)
         case .pending, .working, .ready, .blocked, .deferred: return false
         }
     }
 
-    private func setRow(_ item: ApplyItem, status: DialogSession.Item.Status, text: String, in s: inout DialogSession) {
+    /// Sets the row's status, typed and in English for older PatcherNotifier builds.
+    private func setRow(_ item: ApplyItem, status: DialogSession.Item.Status, text: DialogText, in s: inout DialogSession) {
         if let index = s.items.firstIndex(where: { $0.id == item.label }) {
-            s.items[index].status     = status
-            s.items[index].statusText = text
-            s.items[index].progress   = nil
+            s.items[index].status       = status
+            s.items[index].statusText   = text.text
+            s.items[index].statusDetail = text
+            s.items[index].progress     = nil
         } else {
             var row = Self.row(item)
-            row.status     = status
-            row.statusText = text
+            row.status       = status
+            row.statusText   = text.text
+            row.statusDetail = text
             s.items.append(row)
         }
     }
@@ -736,11 +741,12 @@ final class NativeProgressWindow: ProgressWindowPresenter {
         itemStepText = "\(current) of \(total)"
     }
 
-    func setItemProgress(_ fraction: Double?, detail: String) {
+    func setItemProgress(_ detail: ProgressDetail) {
+        let fraction = detail.fraction
         writer.update { s in
             s.progress.indeterminate = fraction == nil
             s.progress.fraction      = fraction
-            s.progress.text          = itemStepText.isEmpty ? detail : "\(itemStepText) · \(detail)"
+            s.progress.text          = itemStepText.isEmpty ? detail.text : "\(itemStepText) · \(detail.text)"
         }
     }
 

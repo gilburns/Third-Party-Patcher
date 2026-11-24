@@ -18,15 +18,14 @@ import Foundation
 
 enum LiveProgress {
 
-    /// `fraction` is 0…1, or nil when the step can't measure itself (a spinner is shown).
-    /// `detail` is a short status such as "Downloading 45%" or "Verifying disk image…".
-    typealias Handler = (_ fraction: Double?, _ detail: String) -> Void
+    /// The step now running and how far along it is; `detail.fraction` is nil when the
+    /// step can't measure itself (a spinner is shown).
+    typealias Handler = (_ detail: ProgressDetail) -> Void
 
     private static let lock = NSLock()
     private static var handler: Handler?
     private static var lastSent = Date.distantPast
-    private static var lastFraction: Double?
-    private static var lastDetail = ""
+    private static var last: ProgressDetail?
 
     private static let minInterval: TimeInterval = 0.5
     private static let minStep = 0.01
@@ -50,49 +49,34 @@ enum LiveProgress {
     }
 
     private static func resetThrottle() {
-        lastSent     = .distantPast
-        lastFraction = nil
-        lastDetail   = ""
+        lastSent = .distantPast
+        last     = nil
     }
 
     /// Reports progress; safe from any thread. Throttled, and dropped when nobody listens.
-    static func report(_ fraction: Double?, _ detail: String) {
+    static func report(_ detail: ProgressDetail) {
         lock.lock(); defer { lock.unlock() }
         guard let handler else { return }
-        let fraction = fraction.map { min(max($0, 0), 1) }
+        let fraction     = detail.fraction
+        let lastFraction = last?.fraction
         let now = Date()
 
-        // A new step ("Downloading" → "Installing", or measured ↔ unmeasured) goes out at
+        // A new step (downloading → installing, or measured ↔ unmeasured) goes out at
         // once; within a step, only when it has moved and half a second has passed.
-        let newStep    = firstWord(detail) != firstWord(lastDetail) || (fraction == nil) != (lastFraction == nil)
+        let newStep    = detail.step != last?.step || (fraction == nil) != (lastFraction == nil)
         let reachedEnd = fraction == 1 && lastFraction != 1
         let moved: Bool
         if let fraction, let lastFraction {
             moved = abs(fraction - lastFraction) >= minStep
         } else {
-            moved = detail != lastDetail
+            moved = detail != last
         }
         let due = now.timeIntervalSince(lastSent) >= minInterval
         guard newStep || reachedEnd || (moved && due) else { return }
 
-        lastSent     = now
-        lastFraction = fraction
-        lastDetail   = detail
-        handler(fraction, detail)
-    }
-
-    private static func firstWord(_ text: String) -> Substring {
-        text.prefix { $0 != " " && $0 != "…" }
-    }
-
-    /// "45%" for a fraction.
-    static func percent(_ fraction: Double) -> String {
-        "\(Int((min(max(fraction, 0), 1) * 100).rounded(.down)))%"
-    }
-
-    /// "12.3 MB" for a byte count.
-    static func bytes(_ count: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+        lastSent = now
+        last     = detail
+        handler(detail)
     }
 }
 

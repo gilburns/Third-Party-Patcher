@@ -567,3 +567,82 @@ struct DeferralStatePersistenceTests {
         }
     }
 }
+
+// MARK: - DialogText
+
+struct DialogTextTests {
+
+    /// patcher has no Dialogs table, so the typed values word themselves as the English
+    /// the windows showed before.
+    @Test func progressDetailEnglish() {
+        #expect(ProgressDetail.downloading(fraction: 0.456, received: nil, total: nil).text == "Downloading 45%")
+        #expect(ProgressDetail.downloading(fraction: nil, received: nil, total: nil).text == "Downloading…")
+        #expect(ProgressDetail.downloading(fraction: nil, received: 0, total: nil).text == "Downloading…")
+        #expect(ProgressDetail.downloading(fraction: nil, received: 5_000_000, total: nil).text.hasPrefix("Downloading · "))
+        let full = ProgressDetail.downloading(fraction: 0.5, received: 49_000_000, total: 98_000_000).text
+        #expect(full.hasPrefix("Downloading 50% · ") && full.contains(" of "))
+        #expect(ProgressDetail.installing(fraction: 0.999).text == "Installing 99%")
+        #expect(ProgressDetail.installing(fraction: 1).text == "Installing 100%")
+        #expect(ProgressDetail.copying(fraction: 0).text == "Copying 0%")
+        #expect(ProgressDetail.openingDiskImage.text == "Opening disk image…")
+        #expect(ProgressDetail.extracting.text == "Extracting…")
+    }
+
+    @Test func progressFractionIsClamped() {
+        #expect(ProgressDetail.downloading(fraction: 1.2, received: nil, total: nil).fraction == 1)
+        #expect(ProgressDetail.installing(fraction: -0.1).fraction == 0)
+        #expect(ProgressDetail.extracting.fraction == nil)
+    }
+
+    @Test func skipReasonEnglish() {
+        #expect(SkipReason.appRunning.text == "App running")
+        #expect(SkipReason.unavailableDrive.text == "Unavailable Drive")
+        #expect(SkipReason.waitingForUser.text == "Waiting for user…")
+    }
+
+    @Test func paragraphsJoinWithBlankLines() {
+        let text = DialogText.paragraphs([.verbatim("One."), .skipped(.screenLocked)]).text
+        #expect(text == "One.\n\nScreen locked")
+    }
+
+    private func item(detail: DialogText?) -> DialogSession.Item {
+        DialogSession.Item(id: "zoom", title: "Zoom", subtitle: nil, icon: nil,
+                           status: .skipped, statusText: "Waiting for user…", statusDetail: detail)
+    }
+
+    @Test func itemRoundTripsTypedStatus() throws {
+        let original = item(detail: .skipped(.waitingForUser))
+        let decoded = try JSONDecoder().decode(DialogSession.Item.self, from: JSONEncoder().encode(original))
+        #expect(decoded == original)
+        #expect(decoded.statusDetail == .skipped(.waitingForUser))
+    }
+
+    @Test func itemWithoutTypedStatusLeavesKeyOut() throws {
+        let json = String(decoding: try JSONEncoder().encode(item(detail: nil)), as: UTF8.self)
+        #expect(!json.contains("statusDetail"))
+    }
+
+    /// A session from an older patcher has no typed status; one from a newer patcher may
+    /// carry a case this build doesn't know. Both still decode, falling back to the English.
+    @Test func itemDecodesMissingOrUnknownTypedStatus() throws {
+        let base = #""id":"zoom","title":"Zoom","status":"skipped","statusText":"App running""#
+        let old = try JSONDecoder().decode(DialogSession.Item.self, from: Data("{\(base)}".utf8))
+        #expect(old.statusDetail == nil)
+        #expect(old.displayStatus == "App running")
+
+        let newer = try JSONDecoder().decode(DialogSession.Item.self,
+            from: Data(#"{\#(base),"statusDetail":{"someFutureCase":{"count":3}}}"#.utf8))
+        #expect(newer.statusDetail == nil)
+        #expect(newer.displayStatus == "App running")
+
+        let unknownReason = try JSONDecoder().decode(DialogSession.Item.self,
+            from: Data(#"{\#(base),"statusDetail":{"skipped":{"_0":"someFutureReason"}}}"#.utf8))
+        #expect(unknownReason.statusDetail == nil)
+    }
+
+    @Test func itemPrefersTypedStatus() {
+        var row = item(detail: .progress(.installing(fraction: 0.3)))
+        row.statusText = "stale"
+        #expect(row.displayStatus == "Installing 30%")
+    }
+}

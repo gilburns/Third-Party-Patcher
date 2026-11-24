@@ -64,6 +64,7 @@ struct DialogSession: Codable, Equatable {
         var subtitle: String?
         var icon: String?
         var status: Status
+        /// English, for PatcherNotifier builds that predate `statusDetail`.
         var statusText: String
         /// 0…1 while a working item reports how far along it is (download or install).
         /// nil shows a spinner.
@@ -71,6 +72,12 @@ struct DialogSession: Codable, Equatable {
         /// Choosing: whether the row's "install now" checkbox starts checked. nil: no
         /// checkbox (per-app deferral off, or the hard deadline).
         var selected: Bool? = nil
+        /// The status as a typed value, worded by PatcherNotifier in the user's language.
+        /// patcher also reads it back (`.skipped(.waitingForUser)` is a pause, not a result).
+        @Lenient var statusDetail: DialogText? = nil
+
+        /// The status line to draw: the typed value when this build can read it.
+        var displayStatus: String { statusDetail?.text ?? statusText }
     }
 
     struct Progress: Codable, Equatable {
