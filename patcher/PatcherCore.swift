@@ -4340,17 +4340,21 @@ func recordDeferralOutcome(labels: [String], result: DeferralPromptResult, date:
 
 // MARK: - Ensure status
 
-/// Updates the `status` field in `active_phase.json` during a `patcher ensure` run.
+/// Updates the status in `active_phase.json` during a `patcher ensure` run.
 /// The scheduler writes the file before launching patcher and removes it after; this
 /// function updates it in-place so the UI can show granular progress.
-func writeEnsureStatus(_ status: String, fraction: Double? = nil) {
+///
+/// `statusDetail` is the typed value Available Software words in the user's language;
+/// `status` is the English for older builds.
+func writeEnsureStatus(_ status: DialogText, fraction: Double? = nil) {
     let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("active_phase.json")
     var dict: [String: Any] = [:]
     if let data = try? Data(contentsOf: url),
        let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
         dict = existing
     }
-    dict["status"] = status
+    dict["status"] = status.text
+    dict["statusDetail"] = status.jsonObject
     // 0…1 while a download or install reports progress; absent otherwise.
     dict["fraction"] = fraction
     if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {

@@ -642,7 +642,7 @@ extension Patcher {
 
             Logger.log("🔧 Ensuring '\(label)' is current…")
 
-            writeEnsureStatus("Scanning…")
+            writeEnsureStatus(.scanning)
             // Self-service request — install the current version now, ignoring UpdateDelayDays.
             guard scanSingleLabel(label, bypassUpdateDelay: true) else {
                 Logger.log("❌ ensure: scan failed for '\(label)' — aborting.")
@@ -651,12 +651,12 @@ extension Patcher {
             }
 
             // Download and install progress shows in Available Software's status line.
-            LiveProgress.push { detail in writeEnsureStatus(detail.text, fraction: detail.fraction) }
+            LiveProgress.push { detail in writeEnsureStatus(.progress(detail), fraction: detail.fraction) }
             defer { LiveProgress.pop(restoring: nil) }
 
-            writeEnsureStatus("Downloading…")
+            writeEnsureStatus(.progress(.downloading(fraction: nil, received: nil, total: nil)))
             downloadAndStageUpdates(bypassBandwidthLimit: true, bypassIgnoreHomeFolder: true, bypassUpdateDelay: true, labelFilter: label)
-            writeEnsureStatus("Installing…")
+            writeEnsureStatus(.progress(.installing(fraction: nil)))
             applyUpdates(labelFilter: label, suppressDialog: true, bypassIgnoreHomeFolder: true)
 
             cleanupAfterRun()

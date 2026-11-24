@@ -804,6 +804,14 @@ struct DialogTextTests {
         #expect(decoded.displayTitle == "Old Title")
     }
 
+    @Test func liveStatusRoundTripsThroughJSONObject() {
+        let status = DialogText.progress(.installing(fraction: 0.3))
+        #expect(DialogText(jsonObject: status.jsonObject) == status)
+        #expect(DialogText(jsonObject: DialogText.scanning.jsonObject)?.text == "Scanning…")
+        #expect(DialogText(jsonObject: nil) == nil)
+        #expect(DialogText(jsonObject: ["someFutureStatus": [:]]) == nil)
+    }
+
     @Test func notificationEventWithUnknownTypedTextDecodes() throws {
         var object = try encodedEvent()
         object["bodyText"] = ["someFutureMessage": ["count": 2]]

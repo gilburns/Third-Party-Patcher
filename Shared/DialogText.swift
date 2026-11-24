@@ -120,6 +120,8 @@ indirect enum DialogText: Codable, Equatable {
     case scanningApps(count: Int)
     /// "Scanning zoom…" (an Installomator label)
     case scanningLabel(String)
+    /// "Scanning…": Available Software's status line while a self-service install scans.
+    case scanning
     case checkingApps(count: Int)
     /// "Checking: **Zoom** for updates…"
     case checkingApp(String)
@@ -366,6 +368,9 @@ indirect enum DialogText: Codable, Equatable {
         case .scanningLabel(let label):
             return String(localized: "Scanning \(label)…", table: "Dialogs", bundle: b,
                           comment: "Progress window: the item being scanned (an Installomator label name)")
+        case .scanning:
+            return String(localized: "Scanning…", table: "Dialogs", bundle: b,
+                          comment: "Available Software status line: checking the app before installing it")
         case .checkingApps(let count):
             return String(localized: "Checking \(count) applications for available updates…", table: "Dialogs", bundle: b,
                           comment: "Progress window: an update check started from PatcherMenu")
@@ -610,6 +615,27 @@ enum ProgressDetail: Codable, Equatable {
 }
 
 // MARK: - Bundle
+
+// MARK: - JSON values
+
+extension DialogText {
+    /// The value as a JSON object, for files written with JSONSerialization
+    /// (`active_phase.json`).
+    var jsonObject: Any? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    /// Reads a value written by `jsonObject`; nil when absent or from a newer patcher
+    /// this build can't read.
+    init?(jsonObject: Any?) {
+        guard let jsonObject, JSONSerialization.isValidJSONObject(jsonObject),
+              let data = try? JSONSerialization.data(withJSONObject: jsonObject),
+              let value = try? JSONDecoder().decode(DialogText.self, from: data)
+        else { return nil }
+        self = value
+    }
+}
 
 extension Bundle {
     /// Where the "Dialogs" table lives: PatcherNotifier itself, or PatcherNotifier.app for

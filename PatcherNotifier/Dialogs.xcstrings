@@ -477,6 +477,10 @@
         }
       }
     },
+    "Scanning…": {
+      "comment": "Available Software status line: checking the app before installing it",
+      "extractionState": "manual"
+    },
     "Screen locked": {
       "comment": "Apply window row: skipped, the screen locked while waiting to quit the app",
       "extractionState": "manual"
