@@ -7,6 +7,11 @@
 
 import Foundation
 
+/// The patcher subcommand Process currently being waited on, for the SIGTERM handler
+/// (main.swift) to forward the signal to. Written only on the work queue; read on the
+/// GCD signal-handler thread.
+nonisolated(unsafe) var activeChildProcess: Process?
+
 // MARK: - Scheduler
 
 struct PatcherScheduler {

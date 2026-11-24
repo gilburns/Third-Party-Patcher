@@ -9,6 +9,12 @@ import Foundation
 import ArgumentParser
 import IOKit.pwr_mgt
 
+/// Set by the SIGTERM handler (main.swift) and checked between installations in the
+/// apply loop. Written once on the GCD signal-handler thread; read periodically on the
+/// main thread — the benign race is intentional: at worst one extra item starts before
+/// the flag is seen.
+nonisolated(unsafe) var shutdownRequested = false
+
 // MARK: - Idle Sleep Prevention
 
 /// Holds a PreventUserIdleSystemSleep power assertion until released.
