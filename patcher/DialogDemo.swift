@@ -15,16 +15,16 @@ extension Patcher {
         static let configuration = CommandConfiguration(
             commandName: "dialog-demo",
             abstract: "Show a window with sample data, without installing anything.",
-            discussion: "Kinds: large, compact, progress, notice, prompt, deferral. Run with sudo; PatcherNotifier must be loaded for the console user. The prompts report what patcher would do but never quit an app or record a deferral. 'deferral' opens the apply window to choose, then installs the chosen apps in the same window (add --compact to see it shrink)."
+            discussion: "Kinds: large, compact, progress, notice, prompt, deferral, notifications. Run with sudo; PatcherNotifier must be loaded for the console user. The prompts report what patcher would do but never quit an app or record a deferral. 'deferral' opens the apply window to choose, then installs the chosen apps in the same window (add --compact to see it shrink). 'notifications' posts each notification ApplyDialogSize = notifications sends, ending with the Quit & Update prompt."
         )
 
-        @Argument(help: "Which window to show: large, compact, progress, notice, prompt or deferral.")
+        @Argument(help: "Which window to show: large, compact, progress, notice, prompt, deferral or notifications.")
         var kind: String = "large"
 
         @Option(name: .long, help: "Seconds each step stays on screen.")
         var step: Double = 1.5
 
-        @Option(name: .long, help: "Seconds on the blocking-app prompt's countdown.")
+        @Option(name: .long, help: "Seconds on the blocking-app prompt's countdown (and the Quit & Update notification's).")
         var countdown: Int = 60
 
         @Flag(name: .long, help: "Show the deferral prompt as it looks once the hard deadline is reached.")
@@ -34,8 +34,8 @@ extension Patcher {
         var compact = false
 
         func validate() throws {
-            guard ["large", "compact", "progress", "notice", "prompt", "deferral"].contains(kind.lowercased()) else {
-                throw ValidationError("Unknown kind '\(kind)'. Use large, compact, progress, notice, prompt or deferral.")
+            guard ["large", "compact", "progress", "notice", "prompt", "deferral", "notifications"].contains(kind.lowercased()) else {
+                throw ValidationError("Unknown kind '\(kind)'. Use large, compact, progress, notice, prompt, deferral or notifications.")
             }
             guard getuid() == 0 else {
                 throw ValidationError("dialog-demo needs root: run it with sudo.")
@@ -48,6 +48,7 @@ extension Patcher {
             }
             switch kind.lowercased() {
             case "progress": runProgress(uid: uid)
+            case "notifications": runNotifications()
             case "compact":  runApply(uid: uid, size: .compact)
             case "notice":
                 NativeBlockingPrompt(uid: uid, dryRun: true)
@@ -144,6 +145,68 @@ extension Patcher {
                 report(Double(i) / Double(steps))
                 Thread.sleep(forTimeInterval: seconds / Double(steps))
             }
+        }
+
+        /// Queues each notification-mode event in turn. PatcherNotifier holds a replacement
+        /// until the notification it replaces has been up a few seconds. Quit & Update and
+        /// closing the prompt are reported, never acted on.
+        private func runNotifications() {
+            let items = Self.sampleItems
+            func post(_ kind: PatcherNotificationEvent.Kind, _ title: DialogText, _ body: DialogText,
+                      item: ApplyItem? = nil, id: String? = nil, sound: Bool = false,
+                      category: String? = nil, lifetime: TimeInterval = 60 * 60) -> PatcherNotificationEvent {
+                let event = PatcherNotificationEvent(kind: kind, title: title, body: body, threadID: "demo",
+                                                     playSound: sound, iconPath: item?.iconPath, label: item?.label,
+                                                     replaceID: id.map { "demo.\($0)" }, category: category,
+                                                     lifetime: lifetime)
+                UserNotificationQueue.enqueue(event)
+                return event
+            }
+            func pause(_ factor: Double = 1) { Thread.sleep(forTimeInterval: step * factor) }
+
+            let safari = items[0]
+            _ = post(.applyInProgress, .updatingAppTitle(app: safari.displayName),
+                     .appBeingUpdated(app: safari.displayName), item: safari, id: safari.label)
+            pause(2)
+            _ = post(.applyInstalled, .appUpdatedTitle(app: safari.displayName),
+                     .appWasUpdated(app: safari.displayName, version: safari.newVersion, background: false),
+                     item: safari, id: safari.label)
+            pause()
+            let textEdit = items[1]
+            _ = post(.applyFailed, .appUpdateFailedTitle(app: textEdit.displayName),
+                     .updateWillBeRetried(app: textEdit.displayName), item: textEdit, id: textEdit.label)
+            pause()
+            let calculator = items[2]
+            _ = post(.blockingNotify, .updatePendingTitle(app: calculator.displayName),
+                     .quitWhenConvenient(app: calculator.displayName), item: calculator, id: calculator.label,
+                     sound: true)
+            pause()
+            _ = post(.quietApplyInstalled, .appUpdatedTitle(app: items[3].displayName),
+                     .appWasUpdated(app: items[3].displayName, version: nil, background: true), item: items[3])
+            pause()
+            _ = post(.quietApplyInstalled, .appsUpdatedTitle(count: 3),
+                     .appList(["Safari 18.2", "Calculator 11.1", "Chess"]))
+            pause()
+
+            let chess = items[3]
+            let prompt = post(.blockingPrompt, .appUpdateReadyTitle(app: chess.displayName),
+                              .quitAndUpdatePrompt(process: chess.displayName, seconds: countdown),
+                              item: chess, id: chess.label, sound: true,
+                              category: PatcherNotificationEvent.blockingPromptCategory,
+                              lifetime: TimeInterval(countdown) + 60)
+            print("Waiting up to \(countdown)s for the Quit & Update notification…")
+            let deadline = Date().addingTimeInterval(TimeInterval(countdown))
+            var response: NotificationResponseAction?
+            while response == nil, Date() < deadline {
+                response = UserNotificationQueue.takeResponse(eventID: prompt.id)
+                if response == nil { Thread.sleep(forTimeInterval: 1) }
+            }
+            switch response {
+            case .quitAndUpdate: print("Result: Quit & Update. Nothing was quit.")
+            case .skip:          print("Result: notification closed — skip the update.")
+            case nil:            print("Result: no response — patcher would quit Chess and install. Nothing was quit.")
+            }
+            _ = post(.withdraw, .verbatim(""), .verbatim(""), id: chess.label, lifetime: 60 * 60)
         }
 
         private func runProgress(uid: uid_t) {

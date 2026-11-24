@@ -102,12 +102,13 @@ final class NotificationDelivery {
         let content = UNMutableNotificationContent()
         if let brandTitle = event.brandTitle {
             // Branded: "Acme Mac Updates:" leads, the event title drops to the subtitle line.
-            content.title        = "\(brandTitle):"
-            content.subtitle     = event.title
+            content.title        = String(localized: "\(brandTitle):",
+                                          comment: "Notification title: the organization's name for its updates, leading the update's own title")
+            content.subtitle     = event.displayTitle
         } else {
-            content.title        = event.title
+            content.title        = event.displayTitle
         }
-        content.body             = event.body
+        content.body             = event.displayBody
         content.threadIdentifier = event.threadID
         content.sound            = event.playSound ? .default : nil
         content.userInfo         = ["eventID": event.id, "kind": event.kind.rawValue, "label": event.label ?? ""]

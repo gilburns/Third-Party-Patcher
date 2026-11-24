@@ -756,4 +756,59 @@ struct DialogTextTests {
         row.statusText = "stale"
         #expect(row.displayStatus == "Installing 30%")
     }
+
+    // MARK: Notifications
+
+    @Test func notificationMessagesEnglish() {
+        #expect(DialogText.appWasUpdated(app: "Zoom", version: "6.1", background: false).text
+                == "Zoom was updated to version 6.1.")
+        #expect(DialogText.appWasUpdated(app: "Zoom", version: nil, background: true).text
+                == "Zoom was updated in the background.")
+        #expect(DialogText.appList(["Zoom 6.1", "Slack", "Firefox 140"]).text
+                == "Zoom 6.1, Slack, and Firefox 140")
+        let prompt = DialogText.quitAndUpdatePrompt(process: "zoom.us", seconds: 300).text
+        #expect(prompt.contains("quit zoom.us yourself"))
+        #expect(prompt.contains("in 5 minutes."))
+    }
+
+    private func encodedEvent() throws -> [String: Any] {
+        let event = PatcherNotificationEvent(kind: .applyInstalled, title: .appUpdatedTitle(app: "Zoom"),
+                                             body: .appWasUpdated(app: "Zoom", version: "6.1", background: false),
+                                             threadID: "apply")
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        return try JSONSerialization.jsonObject(with: encoder.encode(event)) as! [String: Any]
+    }
+
+    private func decodeEvent(_ object: [String: Any]) throws -> PatcherNotificationEvent {
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(PatcherNotificationEvent.self,
+                                  from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    @Test func notificationEventCarriesTypedTextAndEnglish() throws {
+        let object = try encodedEvent()
+        #expect(object["title"] as? String == "Zoom Updated")
+        #expect(object["body"] as? String == "Zoom was updated to version 6.1.")
+        let decoded = try decodeEvent(object)
+        #expect(decoded.titleText == .appUpdatedTitle(app: "Zoom"))
+        #expect(decoded.displayBody == "Zoom was updated to version 6.1.")
+    }
+
+    @Test func notificationEventFromOlderPatcherUsesEnglish() throws {
+        var object = try encodedEvent()
+        object["titleText"] = nil
+        object["bodyText"] = nil
+        object["title"] = "Old Title"
+        let decoded = try decodeEvent(object)
+        #expect(decoded.titleText == nil)
+        #expect(decoded.displayTitle == "Old Title")
+    }
+
+    @Test func notificationEventWithUnknownTypedTextDecodes() throws {
+        var object = try encodedEvent()
+        object["bodyText"] = ["someFutureMessage": ["count": 2]]
+        let decoded = try decodeEvent(object)
+        #expect(decoded.bodyText == nil)
+        #expect(decoded.displayBody == "Zoom was updated to version 6.1.")
+    }
 }

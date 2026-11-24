@@ -37,11 +37,16 @@ struct PatcherNotificationEvent: Codable {
     let kind: Kind
     let created: Date
     let expires: Date
+    /// English, for logs and for PatcherNotifier builds that predate `titleText`.
     let title: String
     /// The admin's AppTitle, shown as the notification's title with `title` moved
     /// to the subtitle line. nil when AppTitle is left at its default.
     let brandTitle: String?
+    /// English, for logs and for PatcherNotifier builds that predate `bodyText`.
     let body: String
+    /// The title and body as typed values, worded by PatcherNotifier in the user's language.
+    @Lenient var titleText: DialogText? = nil
+    @Lenient var bodyText: DialogText? = nil
     /// Notification Center groups notifications sharing a thread ID.
     let threadID: String
     let playSound: Bool
@@ -54,7 +59,7 @@ struct PatcherNotificationEvent: Codable {
     /// Notification category, for events that carry action buttons.
     let category: String?
 
-    init(kind: Kind, title: String, body: String, threadID: String,
+    init(kind: Kind, title: DialogText, body: DialogText, threadID: String,
          playSound: Bool = false, iconPath: String? = nil, label: String? = nil,
          replaceID: String? = nil, category: String? = nil,
          lifetime: TimeInterval = 24 * 60 * 60) {
@@ -63,9 +68,11 @@ struct PatcherNotificationEvent: Codable {
         self.kind      = kind
         self.created   = now
         self.expires   = now.addingTimeInterval(lifetime)
-        self.title     = title
+        self.title     = title.text
         self.brandTitle = kind == .withdraw ? nil : Self.customAppTitle()
-        self.body      = body
+        self.body      = body.text
+        self.titleText = title
+        self.bodyText  = body
         self.threadID  = threadID
         self.playSound = playSound
         self.iconPath  = iconPath
@@ -76,7 +83,7 @@ struct PatcherNotificationEvent: Codable {
 
     /// A withdraw event removing the delivered notification with the given identifier.
     static func withdraw(replaceID: String) -> PatcherNotificationEvent {
-        PatcherNotificationEvent(kind: .withdraw, title: "", body: "", threadID: "",
+        PatcherNotificationEvent(kind: .withdraw, title: .verbatim(""), body: .verbatim(""), threadID: "",
                                  replaceID: replaceID, lifetime: 60 * 60)
     }
 
@@ -87,6 +94,10 @@ struct PatcherNotificationEvent: Codable {
         guard !appTitle.isEmpty, appTitle != Preferences.defaultAppTitle else { return nil }
         return appTitle
     }
+
+    /// The title and body to show: the typed values when this build can read them.
+    var displayTitle: String { titleText?.text ?? title }
+    var displayBody: String { bodyText?.text ?? body }
 
     /// The identifier used for the Notification Center request.
     var notificationID: String { replaceID ?? id }
