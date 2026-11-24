@@ -54,7 +54,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
     func dismiss() {}
 
     /// Notifications don't show progress within an install.
-    func setItemProgress(item: ApplyItem, fraction: Double?, detail: String) {}
+    func setItemProgress(item: ApplyItem, detail: ProgressDetail) {}
 
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
         // Only the prompted app's user is waiting on this; everything else installs quietly.
@@ -92,7 +92,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
         ))
     }
 
-    func setSkipped(item: ApplyItem, reason: String) {
+    func setSkipped(item: ApplyItem, reason: SkipReason) {
         // Clear a prompt that is still showing (e.g. the user skipped, or the run ended).
         // Informational "please quit" notices stay up — they're the only record of why.
         if promptedLabels.contains(item.label) {

@@ -16,12 +16,12 @@ protocol ApplyPresenter {
     mutating func launchProgressDialog(items: [ApplyItem])
     func setProgressText(_ text: String)
     func setInProgress(item: ApplyItem, current: Int, total: Int)
-    /// Progress of the item now installing: `fraction` 0…1 (nil when it can't be measured)
-    /// and a short status such as "Installing 45%". Called often, already throttled.
-    func setItemProgress(item: ApplyItem, fraction: Double?, detail: String)
+    /// Progress of the item now installing, such as installing at 45% (`detail.fraction`
+    /// is nil when it can't be measured). Called often, already throttled.
+    func setItemProgress(item: ApplyItem, detail: ProgressDetail)
     func setSuccess(item: ApplyItem, toVersion: String)
     func setFailed(item: ApplyItem)
-    func setSkipped(item: ApplyItem, reason: String)
+    func setSkipped(item: ApplyItem, reason: SkipReason)
     /// Resolves a running blocking process for `item`; may block while waiting for the user.
     /// When `deferIfScreenLocks` is true, a prompt that is still waiting when the screen
     /// locks is withdrawn and the item skipped, rather than timing out and force-quitting
@@ -58,9 +58,9 @@ protocol ProgressWindowPresenter {
     /// Starts a long item (e.g. a download): shows its label and icon, and switches the
     /// bar to indeterminate.
     func beginItem(current: Int, of total: Int, label: String, icon: String?)
-    /// Progress within the long item started by `beginItem`: `fraction` 0…1, or nil to
-    /// spin, and a short status such as "Downloading 45% · 12 MB of 98 MB".
-    func setItemProgress(_ fraction: Double?, detail: String)
+    /// Progress within the long item started by `beginItem`, such as downloading at 45%
+    /// of 98 MB (`detail.fraction` nil spins the bar).
+    func setItemProgress(_ detail: ProgressDetail)
     /// Ends a long item: restores the determinate bar advanced to `current`.
     func completeItem(current: Int, of total: Int)
     /// Restores the icons shown when the window first opened.

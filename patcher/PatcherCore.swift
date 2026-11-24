@@ -1737,14 +1737,14 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             guard let plistData = try? Data(contentsOf: plistURL),
                   let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] else {
                 Logger.log("⚠️ \(label) — could not read discovered plist, skipping")
-                dialog?.setSkipped(item: dialogItem, reason: "No plist")
+                dialog?.setSkipped(item: dialogItem, reason: .noPlist)
                 skippedCount += 1
                 continue
             }
 
             guard let type = plist["type"] as? String, !type.isEmpty else {
                 Logger.log("⚠️ \(label) — missing type in discovered plist, skipping")
-                dialog?.setSkipped(item: dialogItem, reason: "No type")
+                dialog?.setSkipped(item: dialogItem, reason: .noType)
                 skippedCount += 1
                 continue
             }
@@ -1774,7 +1774,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                             guard let v = parts.first, !v.isEmpty else { return nil }
                             return "/Volumes/\(v)"
                         })).sorted().joined(separator: ", ")
-                        dialog?.setSkipped(item: dialogItem, reason: "Unavailable Drive")
+                        dialog?.setSkipped(item: dialogItem, reason: .unavailableDrive)
                         Logger.log("⏭️ \(label) — skipping, volume not mounted: \(volumes)")
                         skippedCount += 1
                         continue
@@ -1782,7 +1782,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     Logger.log("⏭️ \(label) — no recorded install paths exist (app was removed) — discarding staged update")
                     removeStagedInstallFileIfPresent(label: label)
                     removeDiscoveredPlistIfPresent(label: label)
-                    dialog?.setSkipped(item: dialogItem, reason: "App removed")
+                    dialog?.setSkipped(item: dialogItem, reason: .appRemoved)
                     skippedCount += 1
                     continue
                 }
@@ -1812,7 +1812,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 )
                 guard !targets.isEmpty else {
                     Logger.log("⏭️ \(label) — no install targets after applying preferences")
-                    dialog?.setSkipped(item: dialogItem, reason: "No install target")
+                    dialog?.setSkipped(item: dialogItem, reason: .noInstallTarget)
                     skippedCount += 1
                     continue
                 }
@@ -1829,7 +1829,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 }
                 if !unmountedVolumes.isEmpty {
                     let names = Array(Set(unmountedVolumes)).sorted().joined(separator: ", ")
-                    dialog?.setSkipped(item: dialogItem, reason: "Unavailable Drive")
+                    dialog?.setSkipped(item: dialogItem, reason: .unavailableDrive)
                     Logger.log("⏭️ \(label) — skipping, volume not mounted: \(names)")
                     skippedCount += 1
                     continue
@@ -1876,7 +1876,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     recordBlockingProcessEvent(label: label,
                                                type: LabelHistoryEvent.EventType.blockingProcessScreenLocked,
                                                processName: runningBlocker, date: Date())
-                    dialog?.setSkipped(item: dialogItem, reason: "Screen locked")
+                    dialog?.setSkipped(item: dialogItem, reason: .screenLocked)
                     skippedCount += 1
                     blockedSkipOccurred = true
                     continue
@@ -1904,7 +1904,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 }()
 
                 if response == .skip {
-                    dialog?.setSkipped(item: dialogItem, reason: "App running")
+                    dialog?.setSkipped(item: dialogItem, reason: .appRunning)
                     skippedCount += 1
                     blockedSkipOccurred = true
                     continue
@@ -1918,8 +1918,8 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
             // Install progress reports go to this item's row until the install ends. nil when
             // there's no window; otherwise the handler pushed over (itself nil when none was).
             let previousProgress = dialog.map { dialog in
-                LiveProgress.push { fraction, detail in
-                    dialog.setItemProgress(item: dialogItem, fraction: fraction, detail: detail)
+                LiveProgress.push { detail in
+                    dialog.setItemProgress(item: dialogItem, detail: detail)
                 }
             }
             Logger.log("📦 Installing: \(label) v\(appNewVersion) (\(type))")
@@ -2463,11 +2463,11 @@ private func copyApp(from sourceApp: String, to targetPath: String, label: Strin
     process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
     process.arguments = ["-V", sourceApp, targetPath]
     do {
-        LiveProgress.report(0, "Copying 0%")
+        LiveProgress.report(.copying(fraction: 0))
         _ = try runStreaming(process, onStderr: { line in
             if let path = dittoCopiedPath(line) {
                 let fraction = copyProgress.starting(path)
-                LiveProgress.report(fraction, "Copying \(LiveProgress.percent(fraction))")
+                LiveProgress.report(.copying(fraction: fraction))
             } else if !line.hasPrefix(">>> ") && !line.hasPrefix("hardlinked ") && !line.hasPrefix("linked ") {
                 errors.append(line)
             }
@@ -2481,7 +2481,7 @@ private func copyApp(from sourceApp: String, to targetPath: String, label: Strin
         Logger.log("❌ ditto failed for \(label): \(msg.trimmingCharacters(in: .whitespacesAndNewlines))")
         return false
     }
-    LiveProgress.report(1, "Copying 100%")
+    LiveProgress.report(.copying(fraction: 1))
     return fileManager.fileExists(atPath: targetPath)
 }
 
@@ -2540,10 +2540,10 @@ private func runInstaller(pkgPath: String, label: String) -> Bool {
     let messages = LockedLines()
     let output: StreamedOutput
     do {
-        LiveProgress.report(0, "Installing 0%")
+        LiveProgress.report(.installing(fraction: 0))
         output = try runStreaming(process, onStdout: { line in
             switch parseInstallerLine(line) {
-            case .percent(let fraction): LiveProgress.report(fraction, "Installing \(LiveProgress.percent(fraction))")
+            case .percent(let fraction): LiveProgress.report(.installing(fraction: fraction))
             case .phase:                 break      // the percentage says more than the phase name
             case .message(let text):     messages.append(text)
             }
@@ -3170,10 +3170,9 @@ private func downloadFile(from requestedURL: URL, to destination: URL, bandwidth
 private func reportDownload(received: Int64, expected: Int64) {
     if expected > 0 {
         let fraction = Double(received) / Double(expected)
-        LiveProgress.report(fraction, "Downloading \(LiveProgress.percent(fraction)) · "
-                                    + "\(LiveProgress.bytes(received)) of \(LiveProgress.bytes(expected))")
+        LiveProgress.report(.downloading(fraction: fraction, received: received, total: expected))
     } else {
-        LiveProgress.report(nil, received > 0 ? "Downloading · \(LiveProgress.bytes(received))" : "Downloading…")
+        LiveProgress.report(.downloading(fraction: nil, received: received, total: nil))
     }
 }
 
@@ -3204,10 +3203,10 @@ private func downloadFileWithCurl(from url: URL, to destination: URL, limitRate:
     let errors = LockedLines()
     let output: StreamedOutput
     do {
-        LiveProgress.report(nil, "Downloading…")
+        LiveProgress.report(.downloading(fraction: nil, received: nil, total: nil))
         output = try runStreaming(process, onStderr: { line in
             if let fraction = curlProgressFraction(line) {
-                LiveProgress.report(fraction, "Downloading \(LiveProgress.percent(fraction))")
+                LiveProgress.report(.downloading(fraction: fraction, received: nil, total: nil))
             } else if !line.allSatisfy({ "#=O-  ".contains($0) }) {
                 errors.append(line)     // not progress-bar drawing
             }
@@ -3608,7 +3607,7 @@ func detachStalePatcherMounts() -> Int {
 /// Mounts a DMG at a temporary mount point, runs the closure, then detaches.
 /// Automatically handles SLA-protected DMGs by converting them before mounting.
 private func withMountedDMG<T>(at filePath: String, body: (String) -> T?) -> T? {
-    LiveProgress.report(nil, "Opening disk image…")
+    LiveProgress.report(.openingDiskImage)
     // Preflight: detect and remove SLA before mounting
     if dmgHasSLA(at: filePath) {
         Logger.log("⚠️ DMG contains an SLA — converting before mount...")
@@ -3656,7 +3655,7 @@ private func withMountedDMG<T>(at filePath: String, body: (String) -> T?) -> T? 
 
 /// Unzips a file to a directory, runs the closure, returns its result (or nil on failure).
 private func unzipped<T>(filePath: String, to directory: String, body: () -> T?) -> T? {
-    LiveProgress.report(nil, "Extracting…")
+    LiveProgress.report(.extracting)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
     process.arguments = ["-xk", filePath, directory]
@@ -3673,7 +3672,7 @@ private func unzipped<T>(filePath: String, to directory: String, body: () -> T?)
 
 /// Untars a .tbz file to a directory, runs the closure, returns its result (or nil on failure).
 private func untarred<T>(filePath: String, to directory: String, body: () -> T?) -> T? {
-    LiveProgress.report(nil, "Extracting…")
+    LiveProgress.report(.extracting)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
     process.arguments = ["-xjf", filePath, "-C", directory]

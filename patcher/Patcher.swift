@@ -232,7 +232,7 @@ extension Patcher {
 
             // Download progress shows in the window, within each item.
             if let dialog {
-                LiveProgress.push { fraction, detail in dialog.setItemProgress(fraction, detail: detail) }
+                LiveProgress.push { detail in dialog.setItemProgress(detail) }
             }
             defer { if dialog != nil { LiveProgress.pop(restoring: nil) } }
 
@@ -655,7 +655,7 @@ extension Patcher {
             }
 
             // Download and install progress shows in Available Software's status line.
-            LiveProgress.push { fraction, detail in writeEnsureStatus(detail, fraction: fraction) }
+            LiveProgress.push { detail in writeEnsureStatus(detail.text, fraction: detail.fraction) }
             defer { LiveProgress.pop(restoring: nil) }
 
             writeEnsureStatus("Downloading…")

@@ -313,7 +313,7 @@ private struct ItemRow: View {
                 }
             }
             Spacer(minLength: 12)
-            Text(item.statusText)
+            Text(verbatim: item.displayStatus)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

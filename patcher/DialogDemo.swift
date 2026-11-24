@@ -118,16 +118,16 @@ extension Patcher {
                 window.setInProgress(item: item, current: index + 1, total: items.count)
                 // Simulated install progress: a package for the first, a copy for the second.
                 switch index {
-                case 0:  Self.simulate(step) { window.setItemProgress(item: item, fraction: $0, detail: "Installing \(LiveProgress.percent($0))") }
+                case 0:  Self.simulate(step) { window.setItemProgress(item: item, detail: .installing(fraction: $0)) }
                 case 1:
-                    window.setItemProgress(item: item, fraction: nil, detail: "Opening disk image…")
+                    window.setItemProgress(item: item, detail: .openingDiskImage)
                     Thread.sleep(forTimeInterval: step / 2)
-                    Self.simulate(step) { window.setItemProgress(item: item, fraction: $0, detail: "Copying \(LiveProgress.percent($0))") }
+                    Self.simulate(step) { window.setItemProgress(item: item, detail: .copying(fraction: $0)) }
                 default: Thread.sleep(forTimeInterval: step)
                 }
                 switch index {
                 case 2:  window.setFailed(item: item); failed += 1
-                case 3:  window.setSkipped(item: item, reason: "App running"); skipped += 1
+                case 3:  window.setSkipped(item: item, reason: .appRunning); skipped += 1
                 default: window.setSuccess(item: item, toVersion: item.newVersion ?? ""); applied += 1
                 }
                 Thread.sleep(forTimeInterval: step / 2)
@@ -161,8 +161,8 @@ extension Patcher {
                              icon: items[0].iconPath)
             let size: Int64 = 98_400_000
             Self.simulate(step * 2) { fraction in
-                window.setItemProgress(fraction, detail: "Downloading \(LiveProgress.percent(fraction)) · "
-                    + "\(LiveProgress.bytes(Int64(Double(size) * fraction))) of \(LiveProgress.bytes(size))")
+                window.setItemProgress(.downloading(fraction: fraction,
+                                                    received: Int64(Double(size) * fraction), total: size))
             }
             window.completeItem(current: items.count, of: items.count)
             window.resetIcons()
