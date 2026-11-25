@@ -246,13 +246,62 @@ struct CatalogView: View {
 //            Image(systemName: "play.circle")
             Text("Run Now…")
                 .foregroundColor(vm.preferences.brandFontColor)
-
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .border(vm.preferences.brandFontColor, width: 2)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .background(vm.preferences.brandBackgroundColor)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(vm.preferences.brandFontColor, lineWidth: 1.5)
+        )
         .help("Available Run Actions…")
         .padding(.horizontal, 6)
+    }
+
+    // MARK: - Header toolbar
+
+    /// Title, help and Run Now share the title bar row of the detail column, so the
+    /// header is a single band instead of an empty title bar above a second bar.
+    /// Real toolbar items keep clicks and window dragging native, and `.navigation`
+    /// placement moves the title clear of the sidebar toggle when the sidebar collapses.
+    @ToolbarContentBuilder
+    private func headerToolbar(bgColor: Color, fontColor: Color) -> some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            HStack(spacing: 8) {
+                ToolbarTitleLabel(text: String(localized: "Available Software",
+                                               comment: "Window title. Name of the app listing optional software the user can install."),
+                                  color: fontColor, background: bgColor)
+
+                if vm.preferences.showHelpButton {
+                    Button { showingHelp.toggle() } label: {
+                        ColoredSymbol(systemName: "questionmark.circle", color: fontColor)
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Help Info…")
+                    .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
+                        SupportInfoView(preferences: vm.preferences)
+                    }
+                }
+            }
+            .padding(.leading, 6)
+        }
+        .hidingSharedBackground()
+
+        // macOS 26 packs toolbar items together; a flexible spacer pushes Run Now to
+        // the trailing edge. Earlier systems already place .primaryAction trailing.
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.flexible)
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            runNowMenu
+                .fixedSize()
+        }
+        .hidingSharedBackground()
     }
 
     // MARK: - Body
@@ -265,48 +314,33 @@ struct CatalogView: View {
             sidebarContent
                 .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 270)
         } detail: {
-            if catalog.items.isEmpty && isInCatalogMode {
-                emptyState
-            } else {
-                mainContent
-            }
-        }
-        .navigationTitle(Text(verbatim: ""))
-        .frame(minWidth: 850, minHeight: 680)
-        .toolbar {
-            ToolbarItemGroup(placement: .accessoryBar(id: "header")) {
-                ToolbarTitleLabel(text: String(localized: "Available Software",
-                                               comment: "Window title. Name of the app listing optional software the user can install."),
-                                  color: fontColor, background: bgColor)
-                    .layoutPriority(1)   // gets its width before the Spacer takes the rest
-                
-                if vm.preferences.showHelpButton {
-                    Button { showingHelp.toggle() } label: {
-                        ColoredSymbol(systemName: "questionmark.circle", color: fontColor)
-                            .frame(width: 16, height: 16)
-
-                    }
-                    .foregroundStyle(fontColor)
-                    .buttonStyle(.plain)
-                    .help("Help Info…")
-                    .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
-                        SupportInfoView(preferences: vm.preferences)
-
+            GeometryReader { geo in
+                let barHeight = geo.safeAreaInsets.top
+                VStack(spacing: 0) {
+                    Divider()
+                    if catalog.items.isEmpty && isInCatalogMode {
+                        emptyState
+                    } else {
+                        mainContent
                     }
                 }
-                Spacer()
-                    .frame(maxWidth: .infinity)
-
-                runNowMenu
-                    .buttonStyle(.bordered)
-                    .fixedSize()
-
+                // Brand band: painted into the title bar region of the detail column
+                // only (the top safe-area inset), so the sidebar keeps its own
+                // material all the way to the top of the window.
+                .background(alignment: .top) {
+                    bgColor
+                        .frame(height: barHeight)
+                        .offset(y: -barHeight)
+                }
             }
+            .toolbar { headerToolbar(bgColor: bgColor, fontColor: fontColor) }
         }
-        .toolbarBackground(bgColor, for: .windowToolbar)
-        .toolbarBackground(bgColor, for: .accessoryBar(id: "header"))
-        .toolbarBackground(.visible, for: .windowToolbar)
-        .toolbarBackground(.visible, for: .accessoryBar(id: "header"))
+        .navigationTitle(Text(verbatim: ""))
+        .removingToolbarTitleOnModernOS()
+        // Transparent window toolbar: the band above shows through in the detail
+        // column, the sidebar material shows through above the sidebar.
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .frame(minWidth: 850, minHeight: 680)
         .onAppear {
             catalog.loadItems(preferences: vm.preferences)
             if vm.preferences.optionalLabels.isEmpty {
@@ -334,8 +368,10 @@ struct CatalogView: View {
     private var sidebarContent: some View {
         VStack(spacing: 0) {
             VStack(alignment: .center, spacing: 8) {
+                // The sidebar now runs up under the title bar, so the safe area already
+                // clears the window buttons; only a small gap is needed above the logo.
                 CatalogHeaderIcon(preferences: vm.preferences, size: 80)
-                    .padding(.top, 30)
+                    .padding(.top, 6)
 
                 if !vm.preferences.companyName.isEmpty {
                     Text(vm.preferences.companyName)
@@ -2210,4 +2246,33 @@ private struct PreferencesDebugSheet: View {
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+// MARK: - Toolbar helpers
+
+private extension ToolbarContent {
+    /// macOS 26 wraps toolbar items in a shared glass capsule; the header draws its
+    /// own brand styling, so drop it there. Earlier systems have no capsule.
+    @ToolbarContentBuilder
+    func hidingSharedBackground() -> some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}
+
+private extension View {
+    /// macOS 26+ drops the (empty) title so ToolbarSpacer alone controls layout. On
+    /// macOS 15 the empty title area is what pushes .primaryAction to the trailing
+    /// edge, so it stays.
+    @ViewBuilder
+    func removingToolbarTitleOnModernOS() -> some View {
+        if #available(macOS 26.0, *) {
+            toolbar(removing: .title)
+        } else {
+            self
+        }
+    }
 }
