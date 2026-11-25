@@ -314,11 +314,60 @@ struct ApplyListView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
+            if choosing, let deadline = session.deadline {
+                // Re-reads the clock each minute, so the countdown stays true while the
+                // prompt is up.
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    DeadlineBadge(deadline: deadline, now: context.date)
+                }
+                // Out to the panel's edges and onto its bottom: a status strip, not a button.
+                .padding(.horizontal, -24)
+                .padding(.bottom, -24)
+            }
         }
         .padding(24)
         .frame(width: 240, alignment: .leading)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(brandBackground)
+    }
+}
+
+/// The side panel's warning as the hard deadline nears: a full-width strip along the
+/// panel's bottom edge. Its own solid fill carries the urgency, so it reads on any brand
+/// color; nothing is drawn more than 7 days out.
+private struct DeadlineBadge: View {
+    let deadline: DialogSession.Deadline
+    let now: Date
+
+    var body: some View {
+        let urgency = deadline.urgency(now: now)
+        if urgency != .none, let text = deadline.badgeText(now: now)?.text {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: urgency == .critical ? "exclamationmark.octagon.fill"
+                                                       : "exclamationmark.triangle.fill")
+                MarkdownText(text)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 14))
+            .foregroundStyle(foreground(urgency))
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(fill(urgency))
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func fill(_ urgency: DialogSession.Deadline.Urgency) -> Color {
+        switch urgency {
+        case .critical: return .red
+        case .warning:  return .orange
+        default:        return .yellow
+        }
+    }
+
+    private func foreground(_ urgency: DialogSession.Deadline.Urgency) -> Color {
+        urgency == .critical ? .white : .black
     }
 }
 

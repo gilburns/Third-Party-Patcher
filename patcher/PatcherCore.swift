@@ -1489,6 +1489,21 @@ func daysSinceOldestStagedUpdate() -> Int {
     return max(0, Calendar.current.dateComponents([.day], from: first, to: Date()).day ?? 0)
 }
 
+/// When the pending updates first appeared, for placing the hard deadline: the
+/// scheduler's `firstPendingDate` (what PatcherMenu measures from), else the oldest
+/// staged update, as `daysSinceOldestStagedUpdate` falls back for a manual run.
+func schedulerFirstPendingDate() -> Date? {
+    struct State: Decodable { var firstPendingDate: Date? }
+    let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("scheduler_state.json")
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    if let data = try? Data(contentsOf: url),
+       let date = (try? decoder.decode(State.self, from: data))?.firstPendingDate {
+        return date
+    }
+    return StagedCache.entries().compactMap(\.stagedDate).min()
+}
+
 /// Returns the number of days since the monthly patch day this month.
 /// Day 0 = the target date itself; +1 for each subsequent day.
 /// Returns 0 if the target date has not yet arrived this month.
@@ -1663,6 +1678,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     items:                  dialogItems,
                     daysPending:            effectiveDaysPending,
                     hardDeadlineReached:    hardDeadlineReached,
+                    hardDeadline:           schedule.hardDeadlineDate(firstPendingDate: schedulerFirstPendingDate()),
                     allowedDeferralMinutes: schedule.allowedDeferralMinutes(daysPending: effectiveDaysPending),
                     prefs:                  prefs
                 )

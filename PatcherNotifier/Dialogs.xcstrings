@@ -189,16 +189,76 @@
         }
       }
     },
+    "**%lld days** left to defer": {
+      "comment": "Deferral prompt side panel badge: whole days until installation is required",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "**%lld day** left to defer"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "**%lld days** left to defer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "**%lld hours** left to defer": {
+      "comment": "Deferral prompt side panel badge: hours until installation is required (under a day)",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "**%lld hour** left to defer"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "**%lld hours** left to defer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "**All possible updates have been applied.**": {
       "comment": "Apply window when finished",
+      "extractionState": "manual"
+    },
+    "**Deferral deadline passed**": {
+      "comment": "Deferral prompt side panel badge: the user can no longer defer",
       "extractionState": "manual"
     },
     "**Deferral Status**\nDays pending: %lld\nUser deferrals: %lld\nAuto deferrals: %lld": {
       "comment": "Deferral prompt side panel: a heading, then three counts on their own lines",
       "extractionState": "manual"
     },
+    "**Deferral Status**\nDays pending: %lld\nUser deferrals: %lld\nAuto deferrals: %lld\n\n**Deadline**\n%@": {
+      "comment": "Deferral prompt side panel: a heading and three counts on their own lines; then, after a blank line, a second heading and when installation becomes required (a date and time such as “Thu, Nov 26, 9:14 AM”)",
+      "extractionState": "manual"
+    },
     "**Installation is required** — the maximum deferral deadline has been reached.": {
       "comment": "Deferral prompt: the user can no longer defer",
+      "extractionState": "manual"
+    },
+    "**Less than an hour** left to defer": {
+      "comment": "Deferral prompt side panel badge: installation is required within the hour",
       "extractionState": "manual"
     },
     "App removed": {
