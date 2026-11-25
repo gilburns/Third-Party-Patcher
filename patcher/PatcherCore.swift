@@ -4344,8 +4344,7 @@ func recordDeferralOutcome(labels: [String], result: DeferralPromptResult, date:
 /// The scheduler writes the file before launching patcher and removes it after; this
 /// function updates it in-place so the UI can show granular progress.
 ///
-/// `statusDetail` is the typed value Available Software words in the user's language;
-/// `status` is the English for older builds.
+/// `statusDetail` is a typed value Available Software words in the user's language.
 func writeEnsureStatus(_ status: DialogText, fraction: Double? = nil) {
     let url = AppConstants.patcherConfigFolderURL.appendingPathComponent("active_phase.json")
     var dict: [String: Any] = [:]
@@ -4353,7 +4352,6 @@ func writeEnsureStatus(_ status: DialogText, fraction: Double? = nil) {
        let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
         dict = existing
     }
-    dict["status"] = status.text
     dict["statusDetail"] = status.jsonObject
     // 0…1 while a download or install reports progress; absent otherwise.
     dict["fraction"] = fraction
