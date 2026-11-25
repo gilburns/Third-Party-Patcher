@@ -175,7 +175,7 @@ struct ApplyListView: View {
 
     private var primaryTitle: String {
         guard let button = session.button else { return "" }
-        guard choosing, !session.selectableIDs.isEmpty else { return button.title }
+        guard choosing, !session.selectableIDs.isEmpty else { return button.label.text }
         return installCount == session.items.count
             ? DialogText.installAllNow.text
             : String(localized: "Install \(installCount) Now",
@@ -186,14 +186,14 @@ struct ApplyListView: View {
         HStack(spacing: 0) {
             sidePanel
             VStack(alignment: .leading, spacing: 0) {
-                Text(session.title)
+                Text(session.title.text)
                     .font(.system(size: 18, weight: .semibold))
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
                     .padding(.bottom, 12)
 
-                if choosing, !session.message.isEmpty {
-                    MarkdownText(session.message)
+                if choosing, let message = session.message?.text, !message.isEmpty {
+                    MarkdownText(message)
                         .font(.system(size: 13))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 20)
@@ -222,7 +222,7 @@ struct ApplyListView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 6) {
                             SessionProgressBar(progress: session.progress)
-                            Text(session.progress.text)
+                            Text(session.progress.caption?.text ?? "")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -264,9 +264,9 @@ struct ApplyListView: View {
     /// The deferral-length menu while choosing; the help button after.
     @ViewBuilder private var footerLeading: some View {
         if choosing, let menu = session.menu {
-            Picker(menu.title, selection: $menuChoice) {
+            Picker(menu.title.text, selection: $menuChoice) {
                 ForEach(menu.options, id: \.value) { option in
-                    Text(option.label).tag(option.value)
+                    Text(option.label.text).tag(option.value)
                 }
             }
             .fixedSize()
@@ -278,7 +278,7 @@ struct ApplyListView: View {
 
     @ViewBuilder private var footerButtons: some View {
         if choosing, let secondary = session.secondaryButton {
-            Button(secondary.title) { model.onAction(.secondary) }
+            Button(secondary.label.text) { model.onAction(.secondary) }
                 .controlSize(.large)
                 .disabled(!secondary.enabled)
                 .fixedSize()
@@ -307,7 +307,7 @@ struct ApplyListView: View {
         VStack(alignment: .leading, spacing: 20) {
             DialogIconView(spec: session.icon, overlay: session.overlayIcon, size: 128)
                 .padding(.top, 12)
-            if let text = session.sidePanel {
+            if let text = session.sidePanel?.text {
                 MarkdownText(text)
                     .font(.system(size: 14))
                     .foregroundStyle(brandText)
@@ -342,7 +342,7 @@ private struct ItemRow: View {
                 }
             }
             Spacer(minLength: 12)
-            Text(verbatim: item.displayStatus)
+            Text(verbatim: item.statusDetail.text)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -436,11 +436,11 @@ private struct HelpView: View {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
-                        Text(row.label).foregroundStyle(.secondary)
+                        Text(row.label.text).foregroundStyle(.secondary)
                         if let link = row.link, let url = URL(string: link) {
-                            Link(row.value, destination: url)
+                            Link(row.value.text, destination: url)
                         } else {
-                            Text(row.value).textSelection(.enabled)
+                            Text(row.value.text).textSelection(.enabled)
                         }
                     }
                 }
@@ -471,12 +471,12 @@ struct CompactProgressView: View {
             DialogIconView(spec: session.icon, overlay: session.overlayIcon, size: 80)
             VStack(alignment: .leading, spacing: 6) {
                 // Up to two lines, truncated rather than pushing the bar out of the window.
-                MarkdownText(session.message)
+                MarkdownText(session.message?.text ?? "")
                     .font(.system(size: 13))
                     .lineLimit(2)
                 Spacer(minLength: 0)
                 SessionProgressBar(progress: session.progress)
-                Text(session.progress.text.isEmpty ? " " : session.progress.text)
+                Text(session.progress.caption.map(\.text).flatMap { $0.isEmpty ? nil : $0 } ?? " ")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -540,7 +540,7 @@ struct BlockingAppView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 DialogIconView(spec: session.branding.icon, size: 30)
-                Text(session.title)
+                Text(session.title.text)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(brandText)
                     .lineLimit(1)
@@ -551,7 +551,7 @@ struct BlockingAppView: View {
 
             HStack(alignment: .top, spacing: 16) {
                 DialogIconView(spec: session.icon, overlay: session.overlayIcon, size: 80)
-                MarkdownText(session.message)
+                MarkdownText(session.message?.text ?? "")
                     .font(.system(size: session.kind == .blockingNotice ? 15 : 13))
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -568,7 +568,7 @@ struct BlockingAppView: View {
             }
 
             if let checkbox = session.checkbox {
-                Toggle(checkbox.label, isOn: $checked)
+                Toggle(checkbox.label.text, isOn: $checked)
                     .toggleStyle(.checkbox)
                     .onChange(of: checked) { _, value in
                         model.checked = value
@@ -581,12 +581,12 @@ struct BlockingAppView: View {
             HStack(spacing: 10) {
                 Spacer()
                 if let secondary = session.secondaryButton {
-                    Button(secondary.title) { onAction(.secondary) }
+                    Button(secondary.label.text) { onAction(.secondary) }
                         .controlSize(.large)
                         .disabled(!secondary.enabled)
                 }
                 if let button = session.button {
-                    Button(button.title) { onAction(.primary) }
+                    Button(button.label.text) { onAction(.primary) }
                         .keyboardShortcut(.defaultAction)
                         .controlSize(.large)
                         .disabled(!button.enabled)

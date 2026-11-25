@@ -83,7 +83,7 @@ final class NotificationDelivery {
             do {
                 try await center.add(request(for: event))
                 shownAt[notificationID] = Date()
-                notifierLog.info("Delivered \(event.kind.rawValue, privacy: .public) \(event.id, privacy: .public): \(event.title, privacy: .public)")
+                notifierLog.info("Delivered \(event.kind.rawValue, privacy: .public) \(event.id, privacy: .public): \(event.title.text, privacy: .public)")
             } catch {
                 // Leave undelivered so the next launch retries until the event expires.
                 notifierLog.error("Failed to deliver \(event.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -104,11 +104,11 @@ final class NotificationDelivery {
             // Branded: "Acme Mac Updates:" leads, the event title drops to the subtitle line.
             content.title        = String(localized: "\(brandTitle):",
                                           comment: "Notification title: the organization's name for its updates, leading the update's own title")
-            content.subtitle     = event.displayTitle
+            content.subtitle     = event.title.text
         } else {
-            content.title        = event.displayTitle
+            content.title        = event.title.text
         }
-        content.body             = event.displayBody
+        content.body             = event.body.text
         content.threadIdentifier = event.threadID
         content.sound            = event.playSound ? .default : nil
         content.userInfo         = ["eventID": event.id, "kind": event.kind.rawValue, "label": event.label ?? ""]

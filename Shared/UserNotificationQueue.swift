@@ -37,16 +37,12 @@ struct PatcherNotificationEvent: Codable {
     let kind: Kind
     let created: Date
     let expires: Date
-    /// English, for logs and for PatcherNotifier builds that predate `titleText`.
-    let title: String
+    /// Worded by PatcherNotifier in the user's language; English in patcher's log.
+    let title: DialogText
     /// The admin's AppTitle, shown as the notification's title with `title` moved
     /// to the subtitle line. nil when AppTitle is left at its default.
     let brandTitle: String?
-    /// English, for logs and for PatcherNotifier builds that predate `bodyText`.
-    let body: String
-    /// The title and body as typed values, worded by PatcherNotifier in the user's language.
-    @Lenient var titleText: DialogText? = nil
-    @Lenient var bodyText: DialogText? = nil
+    let body: DialogText
     /// Notification Center groups notifications sharing a thread ID.
     let threadID: String
     let playSound: Bool
@@ -68,11 +64,9 @@ struct PatcherNotificationEvent: Codable {
         self.kind      = kind
         self.created   = now
         self.expires   = now.addingTimeInterval(lifetime)
-        self.title     = title.text
+        self.title     = title
         self.brandTitle = kind == .withdraw ? nil : Self.customAppTitle()
-        self.body      = body.text
-        self.titleText = title
-        self.bodyText  = body
+        self.body      = body
         self.threadID  = threadID
         self.playSound = playSound
         self.iconPath  = iconPath
@@ -94,10 +88,6 @@ struct PatcherNotificationEvent: Codable {
         guard !appTitle.isEmpty, appTitle != Preferences.defaultAppTitle else { return nil }
         return appTitle
     }
-
-    /// The title and body to show: the typed values when this build can read them.
-    var displayTitle: String { titleText?.text ?? title }
-    var displayBody: String { bodyText?.text ?? body }
 
     /// The identifier used for the Notification Center request.
     var notificationID: String { replaceID ?? id }
@@ -143,9 +133,9 @@ enum UserNotificationQueue {
             let url = folderURL.appendingPathComponent("\(millis)-\(event.id).json")
             try encoder.encode(event).write(to: url, options: .atomic)
             try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
-            Logger.log("🔔 Notification queued: \(event.title) — \(event.body)")
+            Logger.log("🔔 Notification queued: \(event.title.text) — \(event.body.text)")
         } catch {
-            Logger.log("⚠️ Failed to queue notification '\(event.title)': \(error)")
+            Logger.log("⚠️ Failed to queue notification '\(event.title.text)': \(error)")
         }
     }
 

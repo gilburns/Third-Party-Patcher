@@ -62,17 +62,14 @@ final class DialogSessionWriter {
     private(set) var isClosed = false
 
     init(session: DialogSession) {
-        var session = session
-        session.resolveText(authoritative: true)
         self.session = session
         DialogSessionStore.write(session)
     }
 
-    /// Applies `change`, fills the English beside each typed text, and writes the file.
+    /// Applies `change` and writes the file.
     func update(_ change: (inout DialogSession) -> Void) {
         guard !isClosed else { return }
         change(&session)
-        session.resolveText(authoritative: true)
         session.revision += 1
         session.expires = Date().addingTimeInterval(DialogSessionStore.lifetime)
         DialogSessionStore.write(session)
@@ -118,19 +115,17 @@ final class DialogSessionWriter {
             ),
             icon:        dialogIcon,
             overlayIcon: resolveOverlayIcon(prefs: prefs),
-            title:       title.text,
-            message:     message?.text ?? "",
+            title:       title,
+            message:     message,
             sidePanel:   nil,
             items:       [],
-            progress:    DialogSession.Progress(current: 0, total: max(total, 0), indeterminate: false, text: ""),
+            progress:    DialogSession.Progress(current: 0, total: max(total, 0), indeterminate: false),
             button:      nil,
             secondaryButton: nil,
             countdown:   nil,
             menu:        nil,
             help:        nil,
-            autoCloseAt: nil,
-            titleText:   title,
-            messageText: message
+            autoCloseAt: nil
         )
     }
 }
@@ -192,7 +187,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                 kind: .applyList, uid: uid, prefs: prefs, position: prefs.dialogScreenPosition,
                 title: .verbatim(prefs.appTitle), message: nil, total: count)
             applyLargeWindowOptions(to: &session, prefs: prefs)
-            session.sidePanelText    = Self.installingPanel(count: count, deferred: [], deferredMinutes: 0)
+            session.sidePanel    = Self.installingPanel(count: count, deferred: [], deferredMinutes: 0)
             session.items            = items.map(Self.row)
             session.progress.caption = .preparing
             session.button           = DialogSession.Button(.updating, enabled: false)
@@ -224,7 +219,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                 s.progress.current  = current - 1
                 s.progress.fraction = nil
                 s.progress.caption  = compactStepText
-                s.messageText       = .installingApp(app: item.displayName, version: item.newVersion)
+                s.message       = .installingApp(app: item.displayName, version: item.newVersion)
             }
             return
         }
@@ -275,7 +270,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                 s.icon             = baseIcon
                 s.overlayIcon      = baseOverlay
                 // The summary is in the caption under the bar.
-                s.messageText      = .allUpdatesApplied
+                s.message      = .allUpdatesApplied
                 s.progress.current = s.progress.total
                 s.progress.caption = summary
                 s.phase            = .complete
@@ -287,7 +282,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
 
         writer?.update { s in
-            s.sidePanelText    = .paragraphs([.allUpdatesApplied, .updatesJustAttempted])
+            s.sidePanel    = .paragraphs([.allUpdatesApplied, .updatesJustAttempted])
             s.progress.current = s.progress.total
             s.progress.indeterminate = false
             s.progress.caption = summary
@@ -371,7 +366,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         applyLargeWindowOptions(to: &session, prefs: prefs)
         session.phase = .choosing
         let state = DeferralState.load()
-        session.sidePanelText = .deferralStatus(daysPending: daysPending,
+        session.sidePanel = .deferralStatus(daysPending: daysPending,
                                                 userDeferrals: state.userDeferralCount,
                                                 autoDeferrals: state.automatedDeferralCount)
         session.items = items.map { item in
@@ -390,8 +385,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                 enabled: true)
             if !menu.isEmpty {
                 session.menu = DialogSession.Menu(
-                    title:     DialogText.deferForMenu.text,
-                    titleText: .deferForMenu,
+                    title:     .deferForMenu,
                     options:   menu.map { DialogSession.Menu.Option(value: String($0), label: .shortDuration(minutes: $0)) },
                     selected:  String(defaultMins))
             }
@@ -499,7 +493,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
             s.countdown       = nil
             s.menu            = nil
             s.secondaryButton = nil
-            s.progress        = DialogSession.Progress(current: 0, total: count, indeterminate: false, text: "",
+            s.progress        = DialogSession.Progress(current: 0, total: count, indeterminate: false,
                                                        caption: .preparing)
             switch size {
             case .compact:
@@ -511,11 +505,11 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
                 s.items             = []
                 s.button            = nil
                 s.help              = nil
-                s.sidePanelText     = nil
-                s.messageText       = .updatesWaiting(count: count)
+                s.sidePanel     = nil
+                s.message       = .updatesWaiting(count: count)
             case .large, .notifications:
-                s.messageText   = nil
-                s.sidePanelText = Self.installingPanel(count: count, deferred: deferredNames,
+                s.message   = nil
+                s.sidePanel = Self.installingPanel(count: count, deferred: deferredNames,
                                                        deferredMinutes: deferredMinutes)
                 s.items     = s.items.map { row in
                     var row = row
@@ -572,7 +566,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         if size == .compact {
             writer?.update { s in
                 showItemIcon(item, in: &s)
-                s.messageText = compactMessage
+                s.message = compactMessage
                 if isFinalResult(status: status, rowText: rowText) {
                     s.progress.current  = min(s.progress.current + 1, s.progress.total)
                     s.progress.fraction = nil
@@ -607,7 +601,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
     }
 
-    /// Sets the row's status. The writer fills the English beside it.
+    /// Sets the row's status.
     private func setRow(_ item: ApplyItem, status: DialogSession.Item.Status, text: DialogText, in s: inout DialogSession) {
         if let index = s.items.firstIndex(where: { $0.id == item.label }) {
             s.items[index].status       = status
@@ -635,7 +629,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
         return DialogSession.Item(id: item.label, title: item.displayName, subtitle: subtitle,
                                   icon: item.iconPath ?? packageIconPath,
-                                  status: .pending, statusText: DialogText.waiting.text, statusDetail: .waiting)
+                                  status: .pending, statusDetail: .waiting)
     }
 }
 
@@ -695,7 +689,7 @@ final class NativeProgressWindow: ProgressWindowPresenter {
     }
 
     func update(message: DialogText) {
-        writer.update { $0.messageText = message }
+        writer.update { $0.message = message }
     }
 
     func updateProgress(_ text: DialogText) {
@@ -708,7 +702,7 @@ final class NativeProgressWindow: ProgressWindowPresenter {
                 s.icon        = icon
                 s.overlayIcon = baseIcon
             }
-            s.messageText = label
+            s.message = label
             s.progress.current = current
             s.progress.total   = total
             s.progress.indeterminate = false
@@ -722,7 +716,7 @@ final class NativeProgressWindow: ProgressWindowPresenter {
                 s.icon        = icon
                 s.overlayIcon = baseIcon
             }
-            s.messageText = label
+            s.message = label
             s.progress.total   = total
             s.progress.indeterminate = true
             s.progress.fraction = nil
@@ -762,7 +756,7 @@ final class NativeProgressWindow: ProgressWindowPresenter {
         writer.update { s in
             s.progress.current = s.progress.total
             s.progress.indeterminate = false
-            s.messageText = .processCompleted
+            s.message = .processCompleted
             s.phase   = .complete
         }
         Thread.sleep(forTimeInterval: 3.0)

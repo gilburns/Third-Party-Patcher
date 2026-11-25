@@ -141,9 +141,8 @@ final class AvailableSoftwareViewModel: ObservableObject {
         wasActive = true
         activePhase = phase
         activeLabel = dict["label"] as? String
-        // The typed status, worded from PatcherNotifier's Dialogs table in this user's
-        // language; the English from an older patcher otherwise.
-        activeStatus = DialogText(jsonObject: dict["statusDetail"])?.text ?? dict["status"] as? String
+        // Worded from PatcherNotifier's Dialogs table in this user's language.
+        activeStatus = DialogText(jsonObject: dict["statusDetail"])?.text
         activeFraction = (dict["fraction"] as? NSNumber)?.doubleValue
         // Transition: label moved from queued → actively running
         if let activeLabel, activeLabel == queuedLabel {

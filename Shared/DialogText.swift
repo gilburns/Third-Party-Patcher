@@ -8,15 +8,10 @@
 //
 //  Translations live in PatcherNotifier's "Dialogs" table. Apps that show the same text
 //  (Available Software's live status) read it from PatcherNotifier.app; patcher reads the
-//  app's English table, so the legacy English session fields stay English. patcher's logs
-//  are written separately and never localized.
+//  app's English table, so the text it logs is English.
 //
 //  Keys with a count are written in their plural form ("There are **%lld updates**
 //  waiting."); the catalog's English plural variations supply the singular.
-//
-//  Sessions carry both: the typed value (`@Lenient`, so a value from a newer patcher that
-//  this build can't decode is dropped rather than failing the whole file) and the English
-//  string older PatcherNotifier builds draw.
 //
 
 import Foundation
@@ -640,8 +635,8 @@ extension DialogText {
 extension Bundle {
     /// Where the "Dialogs" table lives: PatcherNotifier itself, or PatcherNotifier.app for
     /// the other apps. Command-line tools (patcher, running as root) read the app's English
-    /// table directly, so the English they write — legacy session fields — gets its plurals
-    /// right; with no PatcherNotifier installed, they use the keys as written.
+    /// table directly, so the English they log gets its plurals right; with no
+    /// PatcherNotifier installed, they use the keys as written.
     static let dialogStrings: Bundle = {
         let main = Bundle.main
         let notifierURL = AppConstants.patcherNotifierAppURL
@@ -652,38 +647,4 @@ extension Bundle {
         if main.bundleURL.lastPathComponent == notifierURL.lastPathComponent { return main }
         return Bundle(url: notifierURL) ?? main
     }()
-}
-
-// MARK: - Lenient decoding
-
-/// An optional field whose value is dropped, rather than failing the whole decode, when
-/// it can't be read: a typed value from a newer patcher that this build doesn't know.
-/// The legacy English field beside it still shows.
-@propertyWrapper
-struct Lenient<Value: Codable & Equatable>: Codable, Equatable {
-    var wrappedValue: Value?
-
-    init(wrappedValue: Value?) { self.wrappedValue = wrappedValue }
-
-    init(from decoder: Decoder) throws {
-        wrappedValue = try? Value(from: decoder)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        try wrappedValue.encode(to: encoder)
-    }
-}
-
-extension KeyedDecodingContainer {
-    /// A missing key, or one that won't decode, is nil.
-    func decode<Value>(_ type: Lenient<Value>.Type, forKey key: Key) throws -> Lenient<Value> {
-        (try? decodeIfPresent(type, forKey: key)) ?? Lenient(wrappedValue: nil)
-    }
-}
-
-extension KeyedEncodingContainer {
-    /// nil is left out of the file, as for plain optionals.
-    mutating func encode<Value>(_ value: Lenient<Value>, forKey key: Key) throws {
-        if let wrapped = value.wrappedValue { try encode(wrapped, forKey: key) }
-    }
 }
