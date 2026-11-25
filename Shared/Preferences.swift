@@ -188,6 +188,24 @@ struct Preferences {
         prefs["PreferPkgLabels"] as? Bool ?? true
     }
 
+    /// When true (the default), labels that manage the same app (e.g. the six
+    /// "microsoftonedrive" labels) are collapsed to one label per app, using the hosted list
+    /// at `DuplicateLabelsURL`: each group's preferred label is kept and the other members
+    /// are ignored. Adding a non-preferred member to RequiredLabels keeps it instead of the
+    /// preferred label. Set to false to manage duplicate labels yourself via IgnoredLabels.
+    var ignoreDuplicateLabels: Bool {
+        prefs["IgnoreDuplicateLabels"] as? Bool ?? true
+    }
+
+    static let defaultDuplicateLabelsURL =
+        "https://raw.githubusercontent.com/gilburns/Third-Party-Patcher/main/LabelLists/duplicate-labels.json"
+
+    /// URL of the duplicate label list used by IgnoreDuplicateLabels. Override to use a
+    /// fork or an internal mirror. Must be https.
+    var duplicateLabelsURL: String {
+        pref("DuplicateLabelsURL", default: Preferences.defaultDuplicateLabelsURL)
+    }
+
     /// Space-separated list of label name patterns that are required.
     /// Does NOT Support `*` and `?` wildcards (e.g. `"google* microsoft*"`).
     var requiredLabels: [String] {

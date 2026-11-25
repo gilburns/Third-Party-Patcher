@@ -74,8 +74,11 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				ApplyPresenter.swift,
+				CachedDownload.swift,
 				DialogAppearance.swift,
 				DialogDemo.swift,
+				DuplicateLabels.swift,
+				DuplicateLabelsSnapshot.swift,
 				InstallomatorLabels.swift,
 				LabelTracker.swift,
 				LiveProgress.swift,

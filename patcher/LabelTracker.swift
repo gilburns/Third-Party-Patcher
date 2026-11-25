@@ -51,10 +51,11 @@ enum LabelTracker {
     /// A cached copy is used when the tracker can't be reached, if fetched within this window.
     private static let maxCacheAge: TimeInterval = 24 * 3600
 
-    private static let cacheURL = AppConstants.patcherConfigFolderURL
-        .appendingPathComponent("label_tracker.json")
-    private static let cacheMetaURL = AppConstants.patcherConfigFolderURL
-        .appendingPathComponent("label_tracker_meta.plist")
+    private static let download = CachedDownload(
+        what: "Installomator-Tracker data",
+        cacheURL: AppConstants.patcherConfigFolderURL.appendingPathComponent("label_tracker.json"),
+        cacheMetaURL: AppConstants.patcherConfigFolderURL.appendingPathComponent("label_tracker_meta.plist"),
+        maxCacheAge: maxCacheAge)
 
     /// Entries keyed by label, loaded on first use (once per process). Nil when the
     /// fallback is disabled or no usable tracker data could be loaded.
@@ -186,7 +187,10 @@ enum LabelTracker {
             return nil
         }
 
-        guard let data = fetch(url: url) else { return nil }
+        guard let data = download.fetch(url: url) else {
+            Logger.log("⚠️ Installomator-Tracker fallback unavailable for this run")
+            return nil
+        }
         guard let entries = parse(data) else {
             Logger.log("⚠️ Installomator-Tracker data could not be parsed — fallback disabled for this run")
             return nil
@@ -194,58 +198,6 @@ enum LabelTracker {
         let resolvedCount = entries.values.filter(\.resolved).count
         Logger.log("🛰️ Installomator-Tracker data loaded: \(entries.count) labels, \(resolvedCount) resolved")
         return entries
-    }
-
-    /// Downloads the tracker file, revalidating a cached copy with its ETag. Falls back
-    /// to the cached copy (if recent) when the tracker can't be reached.
-    private static func fetch(url: URL) -> Data? {
-        let meta = (NSDictionary(contentsOf: cacheMetaURL) as? [String: Any]) ?? [:]
-        let cachedData = (meta["url"] as? String == url.absoluteString) ? try? Data(contentsOf: cacheURL) : nil
-        let fetchedAt = meta["fetchedAt"] as? Date
-
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        if cachedData != nil, let etag = meta["etag"] as? String {
-            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
-        }
-
-        var responseData: Data?
-        var status = 0
-        var failure: String?
-        var etag: String?
-        let semaphore = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            defer { semaphore.signal() }
-            if let error { failure = error.localizedDescription; return }
-            guard let http = response as? HTTPURLResponse else { failure = "no response"; return }
-            status = http.statusCode
-            etag = http.value(forHTTPHeaderField: "ETag")
-            responseData = data
-        }.resume()
-        if semaphore.wait(timeout: .now() + 30) == .timedOut { failure = "timed out" }
-
-        if failure == nil && status == 304, let cachedData {
-            saveMeta(url: url, etag: etag ?? meta["etag"] as? String)
-            return cachedData
-        }
-        if failure == nil && status == 200, let responseData {
-            try? responseData.write(to: cacheURL, options: .atomic)
-            saveMeta(url: url, etag: etag)
-            return responseData
-        }
-
-        let reason = failure ?? "HTTP \(status)"
-        if let cachedData, let fetchedAt, Date().timeIntervalSince(fetchedAt) < maxCacheAge {
-            Logger.log("⚠️ Could not fetch Installomator-Tracker data (\(reason)) — using cached copy from \(ISO8601DateFormatter().string(from: fetchedAt))")
-            return cachedData
-        }
-        Logger.log("⚠️ Could not fetch Installomator-Tracker data (\(reason)) — fallback unavailable for this run")
-        return nil
-    }
-
-    private static func saveMeta(url: URL, etag: String?) {
-        var meta: [String: Any] = ["url": url.absoluteString, "fetchedAt": Date()]
-        if let etag { meta["etag"] = etag }
-        (meta as NSDictionary).write(to: cacheMetaURL, atomically: true)
     }
 
     /// Accepts either a top-level array of label objects, or

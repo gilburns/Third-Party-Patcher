@@ -755,3 +755,94 @@ struct DialogTextTests {
         #expect(DialogText(jsonObject: ["someFutureStatus": [:]]) == nil)
     }
 }
+
+// MARK: - DuplicateLabels
+
+struct DuplicateLabelsTests {
+
+    private let onedrive = DuplicateLabels.Group(
+        id: "onedrive", preferred: "microsoftonedrive",
+        members: ["microsoftonedrive", "microsoftonedrive-deferred", "microsoftonedrivesuprod"])
+    private let firefox = DuplicateLabels.Group(
+        id: "firefox", preferred: "firefoxpkg",
+        members: ["firefox", "firefox_intl", "firefoxesr", "firefoxpkg"])
+
+    private func select(_ groups: [DuplicateLabels.Group], all: [String], required: [String] = [],
+                        preferPkg: Bool = true) -> DuplicateLabels.Selection {
+        DuplicateLabels.selection(groups: groups, allLabels: Set(all), required: Set(required),
+                                  preferPkgLabels: preferPkg)
+    }
+
+    @Test func keepsPreferredAndIgnoresTheRest() {
+        let result = select([onedrive], all: onedrive.members + ["zoom"])
+        #expect(Set(result.ignored) == ["microsoftonedrive-deferred", "microsoftonedrivesuprod"])
+        #expect(result.notes.isEmpty)
+    }
+
+    @Test func requiredMemberReplacesPreferred() {
+        let result = select([onedrive], all: onedrive.members, required: ["microsoftonedrivesuprod"])
+        #expect(Set(result.ignored) == ["microsoftonedrive", "microsoftonedrive-deferred"])
+        #expect(result.notes.count == 1)
+    }
+
+    @Test func requiringPreferredChangesNothing() {
+        let result = select([onedrive], all: onedrive.members, required: ["microsoftonedrive"])
+        #expect(Set(result.ignored) == ["microsoftonedrive-deferred", "microsoftonedrivesuprod"])
+        #expect(result.notes.isEmpty)
+    }
+
+    @Test func everyRequiredMemberIsKept() {
+        let result = select([onedrive], all: onedrive.members,
+                            required: ["microsoftonedrive-deferred", "microsoftonedrivesuprod"])
+        #expect(result.ignored == ["microsoftonedrive"])
+    }
+
+    @Test func preferredFollowsPreferPkgLabelsOff() {
+        let result = select([firefox], all: firefox.members, preferPkg: false)
+        #expect(Set(result.ignored) == ["firefox_intl", "firefoxesr", "firefoxpkg"])
+    }
+
+    @Test func preferredFollowsPreferPkgLabelsOn() {
+        let group = DuplicateLabels.Group(id: "bbedit", preferred: "bbedit", members: ["bbedit", "bbeditpkg", "bbeditlegacy"])
+        let result = select([group], all: group.members, preferPkg: true)
+        #expect(Set(result.ignored) == ["bbedit", "bbeditlegacy"])
+    }
+
+    @Test func onlyPresentMembersCount() {
+        let result = select([onedrive], all: ["microsoftonedrive", "microsoftonedrivesuprod"])
+        #expect(result.ignored == ["microsoftonedrivesuprod"])
+    }
+
+    @Test func groupWithOnePresentMemberIsSkipped() {
+        #expect(select([onedrive], all: ["microsoftonedrivesuprod"]).ignored.isEmpty)
+    }
+
+    @Test func missingPreferredLeavesGroupAlone() {
+        let result = select([onedrive], all: ["microsoftonedrive-deferred", "microsoftonedrivesuprod"])
+        #expect(result.ignored.isEmpty)
+        #expect(result.notes.count == 1)
+    }
+
+    @Test func parsesSchemaOneAndSkipsMalformedGroups() {
+        let json = """
+        {"schemaVersion": 1, "groups": [
+          {"id": "a", "preferred": "a1", "members": ["a1", "a2"]},
+          {"id": "b", "preferred": "zz", "members": ["b1", "b2"]},
+          {"preferred": "c1", "members": ["c1", "c2"]}
+        ]}
+        """
+        let groups = DuplicateLabels.parse(Data(json.utf8))
+        #expect(groups == [DuplicateLabels.Group(id: "a", preferred: "a1", members: ["a1", "a2"])])
+    }
+
+    @Test func rejectsOtherSchemaVersions() {
+        #expect(DuplicateLabels.parse(Data(#"{"schemaVersion": 2, "groups": []}"#.utf8)) == nil)
+        #expect(DuplicateLabels.parse(Data("not json".utf8)) == nil)
+    }
+
+    @Test func builtInSnapshotParses() {
+        let groups = DuplicateLabels.parse(Data(DuplicateLabelsSnapshot.json.utf8))
+        #expect((groups?.count ?? 0) > 0)
+        #expect(groups?.contains { $0.id == "onedrive" && $0.preferred == "microsoftonedrive" } == true)
+    }
+}
