@@ -104,9 +104,9 @@ final class PatcherMenuViewModel: ObservableObject {
 
     var deferralCountDisplay: DeferralCountDisplay {
         switch preferences.menuDeferralCountDisplay.lowercased() {
-        case "split":    return .split
+        case "combined": return .combined
         case "useronly": return .userOnly
-        default:         return .combined
+        default:         return .split
         }
     }
 

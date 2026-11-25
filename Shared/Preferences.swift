@@ -70,8 +70,9 @@ struct Preferences {
     }
 
     /// Applications discovered only on external volumes (/Volumes/*) are ignored if true.
+    /// Defaults to true.
     var ignoreAppsOnExternalVolumes: Bool {
-        prefs["IgnoreAppsOnExternalVolumes"] as? Bool ?? false
+        prefs["IgnoreAppsOnExternalVolumes"] as? Bool ?? true
     }
 
     /// When true, applications discovered in /Users/* locations are relocated to /Applications.
@@ -495,17 +496,17 @@ struct Preferences {
 
     /// When true, the scheduler runs a silent apply pass before the interactive apply phase.
     /// Items whose blocking process is not running are installed without prompting the user.
-    /// Skipped items are not counted as deferrals. Defaults to false.
+    /// Skipped items are not counted as deferrals. Defaults to true.
     var quietApplyEnabled: Bool {
-        prefs["QuietApplyEnabled"] as? Bool ?? false
+        prefs["QuietApplyEnabled"] as? Bool ?? true
     }
 
     /// When true (and QuietApplyEnabled is true), each item installed by the quiet apply pass
     /// posts a macOS notification via PatcherNotifier so the user knows it was updated.
     /// Also causes patcherscheduler to install the PatcherNotifier LaunchAgent.
-    /// Defaults to false.
+    /// Defaults to true.
     var quietApplyNotifications: Bool {
-        prefs["QuietApplyNotifications"] as? Bool ?? false
+        prefs["QuietApplyNotifications"] as? Bool ?? true
     }
 
     /// When true, patcher shows its windows (drawn by PatcherNotifier) for apply progress,
@@ -741,13 +742,13 @@ struct Preferences {
     /// Controls how the deferral count is shown in the menu bar popover.
     /// Options: combined | split | userOnly
     ///   combined — one total covering every deferral, including auto-deferrals
-    ///              (timer time-outs and blocking-process skips). Current behavior.
+    ///              (timer time-outs and blocking-process skips).
     ///   split    — two figures: deferrals the user actively chose, and auto-deferrals
     ///              (timer time-outs + blocking-process skips) combined.
     ///   userOnly — only the count of deferrals the user actively chose.
-    /// Defaults to "combined".
+    /// Defaults to "split".
     var menuDeferralCountDisplay: String {
-        pref("MenuDeferralCountDisplay", default: "combined")
+        pref("MenuDeferralCountDisplay", default: "split")
     }
 
     // MARK: - Available Software UI
