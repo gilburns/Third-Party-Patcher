@@ -340,6 +340,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     /// screen. If it never appears, the apply proceeds: running apps are still protected by
     /// the blocking-app prompt.
     func showDeferralPrompt(items: [ApplyItem], daysPending: Int, hardDeadlineReached: Bool,
+                            hardDeadline: Date?,
                             allowedDeferralMinutes: [Int], prefs: Preferences) -> DeferralPromptResult {
         let menu        = allowedDeferralMinutes
         let defaultMins = DeferralMenu.effectiveDefault(prefs.deferralTimerDefault, menu: menu)
@@ -368,7 +369,11 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         let state = DeferralState.load()
         session.sidePanel = .deferralStatus(daysPending: daysPending,
                                                 userDeferrals: state.userDeferralCount,
-                                                autoDeferrals: state.automatedDeferralCount)
+                                                autoDeferrals: state.automatedDeferralCount,
+                                                deadline: hardDeadline)
+        if hardDeadline != nil || hardDeadlineReached {
+            session.deadline = DialogSession.Deadline(date: hardDeadline, reached: hardDeadlineReached)
+        }
         session.items = items.map { item in
             var row = Self.row(item)
             row.status       = item.isBlocked ? .blocked : .ready

@@ -38,10 +38,13 @@ protocol ApplyPresenter {
 protocol DeferralPresenter {
     /// Blocks until the user answers, the countdown expires, or the prompt fails.
     /// Returns `.deadlineForced` when `hardDeadlineReached` is true, whatever the user did.
+    /// `hardDeadline` is when deferrals end (nil: no hard deadline, or not known); the
+    /// prompt shows it and warns as it nears.
     func showDeferralPrompt(
         items:                  [ApplyItem],
         daysPending:            Int,
         hardDeadlineReached:    Bool,
+        hardDeadline:           Date?,
         allowedDeferralMinutes: [Int],
         prefs:                  Preferences
     ) -> DeferralPromptResult

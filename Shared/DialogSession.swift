@@ -99,6 +99,43 @@ struct DialogSession: Codable, Equatable {
         }
     }
 
+    /// The hard deadline: when deferrals end and installation is required.
+    struct Deadline: Codable, Equatable {
+        /// nil when patcher can't place it (a manual run with no scheduler state).
+        var date: Date?
+        /// patcher has already decided the deadline is reached; wins over `date`.
+        var reached: Bool
+
+        /// How loudly the side panel says it. Thresholds match PatcherMenu's
+        /// "Hard deadline" line: 7 days or less, 3 or less, and under a day.
+        enum Urgency: Equatable { case none, notice, warning, critical }
+
+        /// Whole days left, counted the way PatcherMenu counts them.
+        func daysLeft(now: Date = Date()) -> Int? {
+            date.map { Calendar.current.dateComponents([.day], from: now, to: $0).day ?? 0 }
+        }
+
+        func urgency(now: Date = Date()) -> Urgency {
+            if reached { return .critical }
+            guard let date, let days = daysLeft(now: now) else { return .none }
+            if date <= now || days <= 0 { return .critical }
+            if days <= 3 { return .warning }
+            if days <= 7 { return .notice }
+            return .none
+        }
+
+        /// The badge's text; nil when there is no badge.
+        func badgeText(now: Date = Date()) -> DialogText? {
+            if reached { return .deadlinePassed }
+            guard let date, urgency(now: now) != .none else { return nil }
+            let remaining = date.timeIntervalSince(now)
+            if remaining <= 0 { return .deadlinePassed }
+            if let days = daysLeft(now: now), days >= 1 { return .deadlineDaysLeft(days: days) }
+            let hours = Int(remaining / 3600)
+            return hours >= 1 ? .deadlineHoursLeft(hours: hours) : .deadlineUnderAnHour
+        }
+    }
+
     /// A countdown patcher is running. Shown only: patcher acts when it ends, not the agent.
     struct Countdown: Codable, Equatable {
         var ends: Date
@@ -203,6 +240,9 @@ struct DialogSession: Codable, Equatable {
     var help: Help?
     /// When set, the agent closes the window at this time if the user hasn't.
     var autoCloseAt: Date?
+    /// Choosing: the hard deadline, shown as a badge in the large window's side panel
+    /// as it nears. nil: no hard deadline (DeadlineDaysHard is 0, or none is active yet).
+    var deadline: Deadline? = nil
 
     var isExpired: Bool { expires < Date() }
 

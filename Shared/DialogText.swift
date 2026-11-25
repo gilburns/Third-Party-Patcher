@@ -86,8 +86,14 @@ indirect enum DialogText: Codable, Equatable {
     /// "They have been pending for **4 days**."
     case pendingForDays(count: Int, days: Int)
     case installationRequired
-    /// The side panel's deferral counts.
-    case deferralStatus(daysPending: Int, userDeferrals: Int, autoDeferrals: Int)
+    /// The side panel's deferral counts, and the hard deadline when there is one.
+    case deferralStatus(daysPending: Int, userDeferrals: Int, autoDeferrals: Int, deadline: Date? = nil)
+    /// Side panel badge: "**2 days** left to defer".
+    case deadlineDaysLeft(days: Int)
+    /// Side panel badge: "**5 hours** left to defer".
+    case deadlineHoursLeft(hours: Int)
+    case deadlineUnderAnHour
+    case deadlinePassed
     case openWillAskToQuit
     case ready
     case installNow
@@ -296,10 +302,28 @@ indirect enum DialogText: Codable, Equatable {
             return String(localized: "**Installation is required** — the maximum deferral deadline has been reached.",
                           table: "Dialogs", bundle: b,
                           comment: "Deferral prompt: the user can no longer defer")
-        case .deferralStatus(let days, let user, let auto):
-            return String(localized: "**Deferral Status**\nDays pending: \(days)\nUser deferrals: \(user)\nAuto deferrals: \(auto)",
+        case .deferralStatus(let days, let user, let auto, let deadline):
+            guard let deadline else {
+                return String(localized: "**Deferral Status**\nDays pending: \(days)\nUser deferrals: \(user)\nAuto deferrals: \(auto)",
+                              table: "Dialogs", bundle: b,
+                              comment: "Deferral prompt side panel: a heading, then three counts on their own lines")
+            }
+            let when = deadline.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+            return String(localized: "**Deferral Status**\nDays pending: \(days)\nUser deferrals: \(user)\nAuto deferrals: \(auto)\n\n**Deadline**\n\(when)",
                           table: "Dialogs", bundle: b,
-                          comment: "Deferral prompt side panel: a heading, then three counts on their own lines")
+                          comment: "Deferral prompt side panel: a heading and three counts on their own lines; then, after a blank line, a second heading and when installation becomes required (a date and time such as “Thu, Nov 26, 9:14 AM”)")
+        case .deadlineDaysLeft(let days):
+            return String(localized: "**\(days) days** left to defer", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt side panel badge: whole days until installation is required")
+        case .deadlineHoursLeft(let hours):
+            return String(localized: "**\(hours) hours** left to defer", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt side panel badge: hours until installation is required (under a day)")
+        case .deadlineUnderAnHour:
+            return String(localized: "**Less than an hour** left to defer", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt side panel badge: installation is required within the hour")
+        case .deadlinePassed:
+            return String(localized: "**Deferral deadline passed**", table: "Dialogs", bundle: b,
+                          comment: "Deferral prompt side panel badge: the user can no longer defer")
         case .openWillAskToQuit:
             return String(localized: "Open — will ask to quit", table: "Dialogs", bundle: b,
                           comment: "Deferral prompt row: the app is running and will be asked to quit before updating")

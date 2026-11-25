@@ -634,6 +634,31 @@ struct DialogTextTests {
         #expect(DialogText.updatePausedTitle(app: "Zoom").text == "Zoom Update Paused")
         #expect(DialogText.deferralStatus(daysPending: 4, userDeferrals: 2, autoDeferrals: 1).text
                 == "**Deferral Status**\nDays pending: 4\nUser deferrals: 2\nAuto deferrals: 1")
+        #expect(DialogText.deferralStatus(daysPending: 4, userDeferrals: 2, autoDeferrals: 1, deadline: Date())
+                .text.hasPrefix("**Deferral Status**\nDays pending: 4\nUser deferrals: 2\nAuto deferrals: 1\n\n**Deadline**\n"))
+        #expect(DialogText.deadlineDaysLeft(days: 3).text == "**3 days** left to defer")
+        #expect(DialogText.deadlineHoursLeft(hours: 5).text == "**5 hours** left to defer")
+    }
+
+    @Test func deadlineBadgeEscalates() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func at(hours: Double) -> DialogSession.Deadline {
+            DialogSession.Deadline(date: now.addingTimeInterval(hours * 3600), reached: false)
+        }
+        #expect(at(hours: 24 * 10).urgency(now: now) == .none)
+        #expect(at(hours: 24 * 10).badgeText(now: now) == nil)
+        #expect(at(hours: 24 * 7 + 1).urgency(now: now) == .notice)
+        #expect(at(hours: 24 * 7 + 1).badgeText(now: now) == .deadlineDaysLeft(days: 7))
+        #expect(at(hours: 24 * 3 + 1).urgency(now: now) == .warning)
+        #expect(at(hours: 23).urgency(now: now) == .critical)
+        #expect(at(hours: 23).badgeText(now: now) == .deadlineHoursLeft(hours: 23))
+        #expect(at(hours: 0.5).badgeText(now: now) == .deadlineUnderAnHour)
+        #expect(at(hours: -1).badgeText(now: now) == .deadlinePassed)
+        // patcher's decision wins over the clock, and needs no date.
+        let reached = DialogSession.Deadline(date: nil, reached: true)
+        #expect(reached.urgency(now: now) == .critical)
+        #expect(reached.badgeText(now: now) == .deadlinePassed)
+        #expect(DialogSession.Deadline(date: nil, reached: false).urgency(now: now) == .none)
     }
 
     @Test func listsAndDurations() {

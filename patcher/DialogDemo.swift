@@ -30,6 +30,9 @@ extension Patcher {
         @Flag(name: .long, help: "Show the deferral prompt as it looks once the hard deadline is reached.")
         var deadline = false
 
+        @Option(name: .long, help: "With 'deferral': hours until the sample hard deadline, to preview the side panel's badge (under 192 yellow, under 96 orange, under 24 red; more shows none).")
+        var deadlineHours: Double = 48
+
         @Flag(name: .long, help: "With 'deferral': continue in the compact window after Install.")
         var compact = false
 
@@ -64,6 +67,7 @@ extension Patcher {
                 let window = NativeApplyWindow(uid: uid, size: compact ? .compact : .large)
                 let result = window.showDeferralPrompt(
                     items: items, daysPending: 3, hardDeadlineReached: deadline,
+                    hardDeadline: deadline ? Date() : Date().addingTimeInterval(deadlineHours * 3600),
                     allowedDeferralMinutes: PatchSchedule(prefs: prefs).allowedDeferralMinutes(daysPending: 3),
                     prefs: prefs)
                 switch result {
