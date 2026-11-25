@@ -1,0 +1,63 @@
+name: Duplicate label list
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"   # Mondays 13:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "LabelLists/**"
+      - ".github/workflows/duplicate-labels.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: duplicate-labels
+  cancel-in-progress: false
+
+env:
+  TRACKER_URL: https://raw.githubusercontent.com/gilburns/Installomator-Tracker/main/label_status.json
+  ISSUE_TITLE: Duplicate label list needs review
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate duplicate-labels.json
+        run: python3 LabelLists/check_duplicate_labels.py validate
+
+  review:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download tracker data
+        run: curl --fail --silent --show-error --location --retry 3 --output label_status.json "$TRACKER_URL"
+
+      - name: Compare the list with the tracker data
+        run: python3 LabelLists/check_duplicate_labels.py compare label_status.json --report report.md
+
+      # One issue tracks whatever needs review: updated while there is something to
+      # review, closed once the list covers everything again.
+      - name: Open, update or close the review issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          issue=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" \
+                    --json number,title --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" | head -1)
+          if [ -f report.md ]; then
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --body-file report.md
+              echo "Updated issue #$issue."
+            else
+              gh issue create --title "$ISSUE_TITLE" --body-file report.md
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue close "$issue" --comment "The list now covers every duplicate group in the tracker data."
+            echo "Closed issue #$issue."
+          fi
