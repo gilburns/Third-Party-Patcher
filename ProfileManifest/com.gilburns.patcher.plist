@@ -1417,7 +1417,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_app_min</key>
 			<string>1.0.0</string>
 			<key>pfm_default</key>
-			<false/>
+			<true/>
 			<key>pfm_description</key>
 			<string>When 'true', apps found only on external volumes ('/Volumes/*') are excluded from discovery and never updated. Useful in environments where external drives are transient and should not be managed.</string>
 			<key>pfm_documentation_url</key>
@@ -1745,7 +1745,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_app_min</key>
 			<string>1.0.0</string>
 			<key>pfm_default</key>
-			<string>combined</string>
+			<string>split</string>
 			<key>pfm_description</key>
 			<string>Controls how the deferral count line is shown in the popover. 'combined' — one total covering every deferral, including auto-deferrals (timer time-outs and blocking-process skips). 'split' — two figures: deferrals the user actively chose, and auto-deferrals combined. 'userOnly' — only the count of deferrals the user actively chose.</string>
 			<key>pfm_documentation_url</key>
@@ -2097,7 +2097,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_app_min</key>
 			<string>1.0.0</string>
 			<key>pfm_default</key>
-			<false/>
+			<true/>
 			<key>pfm_description</key>
 			<string>When 'true', the scheduler runs a silent apply pass before the interactive apply phase. Apps whose blocking process is not running are installed without prompting. Items skipped in the silent pass are shown in the interactive dialog as usual.</string>
 			<key>pfm_documentation_url</key>
@@ -2113,7 +2113,7 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<key>pfm_app_min</key>
 			<string>1.4.0</string>
 			<key>pfm_default</key>
-			<false/>
+			<true/>
 			<key>pfm_description</key>
 			<string>When 'true' (and Quiet Apply Enabled is 'true'), a macOS notification is posted for each app installed by the quiet apply pass, so users know it was updated in the background. Three or more updates in one pass are combined into a single notification. Notifications are delivered by PatcherNotifier; deploy a Notifications payload for com.gilburns.PatcherNotifier to pre-approve them.</string>
 			<key>pfm_documentation_url</key>
