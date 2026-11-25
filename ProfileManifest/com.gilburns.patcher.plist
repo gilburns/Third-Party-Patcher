@@ -13,7 +13,7 @@
 	<key>pfm_format_version</key>
 	<integer>1</integer>
 	<key>pfm_last_modified</key>
-	<date>2026-11-22T23:59:00Z</date>
+	<date>2026-11-25T23:59:00Z</date>
 	<key>pfm_platforms</key>
 	<array>
 		<string>macOS</string>
@@ -259,6 +259,8 @@ During a profile replacement, the system updates payloads with the same 'Payload
 					<string>IgnoreNonProductionLabels</string>
 					<string>NonProductionLabelSuffixes</string>
 					<string>PreferPkgLabels</string>
+					<string>IgnoreDuplicateLabels</string>
+					<string>DuplicateLabelsURL</string>
 					<string>QuietApplyEnabled</string>
 					<string>QuietApplyNotifications</string>
 					<string>FocusIgnoredProcesses</string>
@@ -1128,6 +1130,38 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<string>Prefer Pkg Labels</string>
 			<key>pfm_type</key>
 			<string>boolean</string>
+		</dict>
+		<dict>
+			<key>pfm_app_min</key>
+			<string>2.0.0</string>
+			<key>pfm_default</key>
+			<true/>
+			<key>pfm_description</key>
+			<string>Collapses Installomator labels that manage the same app (e.g. the six 'microsoftonedrive' labels) to one label per app, using the hosted list at 'DuplicateLabelsURL'. Each group's preferred label is kept and the other members are ignored. To use a different member of a group, add it to 'RequiredLabels': it replaces the preferred label. Set to 'false' to manage duplicate labels yourself with 'IgnoredLabels'.</string>
+			<key>pfm_documentation_url</key>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#label-filtering</string>
+			<key>pfm_name</key>
+			<string>IgnoreDuplicateLabels</string>
+			<key>pfm_title</key>
+			<string>Ignore Duplicate Labels</string>
+			<key>pfm_type</key>
+			<string>boolean</string>
+		</dict>
+		<dict>
+			<key>pfm_app_min</key>
+			<string>2.0.0</string>
+			<key>pfm_description</key>
+			<string>URL of the duplicate label list used by 'IgnoreDuplicateLabels'. Override to use a fork or an internal mirror. Must be https. If it can't be reached, the last downloaded copy is used, and failing that the copy built into patcher.</string>
+			<key>pfm_documentation_url</key>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#label-filtering</string>
+			<key>pfm_name</key>
+			<string>DuplicateLabelsURL</string>
+			<key>pfm_title</key>
+			<string>Duplicate Labels URL</string>
+			<key>pfm_type</key>
+			<string>string</string>
+			<key>pfm_value_placeholder</key>
+			<string>https://raw.githubusercontent.com/gilburns/Third-Party-Patcher/main/LabelLists/duplicate-labels.json</string>
 		</dict>
 		<dict>
 			<key>pfm_app_min</key>

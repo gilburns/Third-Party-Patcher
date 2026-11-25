@@ -38,6 +38,8 @@
 	<string>beta canary dev</string>
 	<key>PreferPkgLabels</key>
 	<true/>
+	<key>IgnoreDuplicateLabels</key>
+	<true/>
 	<key>InstallomatorGitHubAccount</key>
 	<string>Installomator</string>
 	<key>InstallomatorGitHubBranch</key>

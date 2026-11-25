@@ -333,6 +333,7 @@ func scanAppsForUpdates(progressHandler: ((Int, Int, String) -> Void)? = nil) ->
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
     appendNonProductionLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     appendPkgLabelDuplicates(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
+    appendDuplicateLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -588,6 +589,7 @@ func checkDiscoveredAppsForUpdates(progressHandler: ((Int, Int, String, String) 
     appendManagedAppLabels(to: &ignoredPatterns, preferences: preferences)
     appendNonProductionLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     appendPkgLabelDuplicates(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
+    appendDuplicateLabels(to: &ignoredPatterns, allLabels: allLabelNames, preferences: preferences)
     if !ignoredPatterns.isEmpty {
         Logger.log("⏭️ Ignored label patterns: \(ignoredPatterns.joined(separator: ", "))")
     }
@@ -881,6 +883,21 @@ private func appendPkgLabelDuplicates(to patterns: inout [String], allLabels: [S
     if !duplicateLabels.isEmpty {
         patterns.append(contentsOf: duplicateLabels)
         Logger.log("📦 Pkg/non-pkg label duplicates — appending \(duplicateLabels.count) labels to ignored list: \(duplicateLabels.sorted().joined(separator: ", "))")
+    }
+}
+
+/// Appends the non-kept members of each duplicate label group (see DuplicateLabels) to
+/// `patterns` when `IgnoreDuplicateLabels` is enabled, so each app is managed by one label.
+private func appendDuplicateLabels(to patterns: inout [String], allLabels: [String], preferences: Preferences) {
+    guard preferences.ignoreDuplicateLabels else { return }
+    let selection = DuplicateLabels.selection(groups: DuplicateLabels.groups,
+                                              allLabels: Set(allLabels),
+                                              required: Set(preferences.requiredLabels),
+                                              preferPkgLabels: preferences.preferPkgLabels)
+    selection.notes.forEach { Logger.log($0) }
+    if !selection.ignored.isEmpty {
+        patterns.append(contentsOf: selection.ignored)
+        Logger.log("🧩 Duplicate labels — appending \(selection.ignored.count) labels to ignored list: \(selection.ignored.sorted().joined(separator: ", "))")
     }
 }
 
