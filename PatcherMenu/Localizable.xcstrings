@@ -123,6 +123,12 @@
     },
     "Download and verify any available updates" : {},
     "Download new Updates" : {},
+    "Downloads and installs paused" : {
+      "comment" : "Menu notice title: updates are neither downloaded nor installed because of the Mac's power state (on battery or low battery)."
+    },
+    "Downloads paused" : {
+      "comment" : "Menu notice title: updates are not downloaded because of the Mac's power state (on battery or low battery)."
+    },
     "Focus ignored after: %@ (in %@)" : {
       "comment" : "After this date, Focus / Do Not Disturb no longer postpones update prompts. First %@ = a short date such as “Dec 3”; second = days left, such as “5d”."
     },
@@ -138,6 +144,9 @@
     },
     "Initial setup delay ends around %@" : {
       "comment" : "%@ = a date and time, already formatted."
+    },
+    "Installs paused" : {
+      "comment" : "Menu notice title: downloaded updates are not installed because of the Mac's power state (on battery or low battery)."
     },
     "Last Activity" : {},
     "Never" : {
@@ -181,6 +190,15 @@
     },
     "Stage" : {
       "comment" : "Last Activity row: the phase that downloads and verifies updates ahead of installing."
+    },
+    "The battery is low (%@). Connect to power to continue." : {
+      "comment" : "Menu notice detail. %@ = the battery charge, already formatted as a percentage such as “14%”."
+    },
+    "This Mac is on battery power. Connect to power to continue." : {
+      "comment" : "Menu notice detail: updates wait until the laptop is plugged in."
+    },
+    "This Mac is running on backup power. Updates will continue when power is restored." : {
+      "comment" : "Menu notice detail: the Mac is powered by a UPS during a power outage."
     },
     "Update checks start in about %@" : {
       "comment" : "Shown during the initial deployment delay. %@ = a short duration such as “3 hr” or “45 min”."

@@ -61,21 +61,41 @@ struct PowerStatus: Equatable {
 
     // MARK: Gating decision
 
-    /// Returns why `phase` must not run under this power state, or nil when it may run.
+    /// Why the power state blocks a phase.
+    enum Block: Equatable {
+        /// The phase isn't listed in `BatteryAllowedPhases`.
+        case notAllowedOnBattery
+        /// The phase is allowed on battery, but the charge is under `BatteryMinimumPercent`.
+        case batteryBelowMinimum(percent: Int, minimum: Int)
+    }
+
+    /// Returns what blocks `phase` under this power state, or nil when it may run.
     /// On AC power nothing is blocked. On battery, the phase must be listed in
     /// `allowedOnBattery`, and the charge must be at or above `minimumPercent`
     /// (0 disables the floor). An unreadable charge does not block.
+    func block(for phase: BatteryGatedPhase,
+               allowedOnBattery: Set<BatteryGatedPhase>,
+               minimumPercent: Int) -> Block? {
+        guard isOnBattery else { return nil }
+        guard allowedOnBattery.contains(phase) else { return .notAllowedOnBattery }
+        if minimumPercent > 0, let pct = batteryPercent, pct < minimumPercent {
+            return .batteryBelowMinimum(percent: pct, minimum: minimumPercent)
+        }
+        return nil
+    }
+
+    /// Log-friendly form of `block(for:allowedOnBattery:minimumPercent:)`.
     func blockReason(for phase: BatteryGatedPhase,
                      allowedOnBattery: Set<BatteryGatedPhase>,
                      minimumPercent: Int) -> String? {
-        guard isOnBattery else { return nil }
-        guard allowedOnBattery.contains(phase) else {
+        switch block(for: phase, allowedOnBattery: allowedOnBattery, minimumPercent: minimumPercent) {
+        case nil:
+            return nil
+        case .notAllowedOnBattery:
             return "\(summary); '\(phase.rawValue)' is not in BatteryAllowedPhases"
+        case .batteryBelowMinimum(_, let minimum):
+            return "\(summary); below BatteryMinimumPercent (\(minimum)%)"
         }
-        if minimumPercent > 0, let pct = batteryPercent, pct < minimumPercent {
-            return "\(summary); below BatteryMinimumPercent (\(minimumPercent)%)"
-        }
-        return nil
     }
 
     // MARK: Reading the current state
@@ -126,5 +146,53 @@ struct PowerStatus: Equatable {
         guard let current = description[kIOPSCurrentCapacityKey] as? Int,
               let max = description[kIOPSMaxCapacityKey] as? Int, max > 0 else { return nil }
         return Swift.min(100, Swift.max(0, Int((Double(current) / Double(max) * 100).rounded())))
+    }
+}
+
+// MARK: - Paused-updates notice
+
+/// What the current power state is holding back, for user-facing status (PatcherMenu).
+/// Only covers phases the user would notice — downloading and installing — and only
+/// when there is something for them to do.
+struct PowerPause: Equatable {
+    /// Downloads of detected updates are waiting.
+    let downloadsPaused: Bool
+    /// Installs of downloaded updates are waiting.
+    let installsPaused: Bool
+    /// Battery charge when a phase is blocked only by `BatteryMinimumPercent`; nil when
+    /// it's blocked because the phase isn't allowed on battery at all.
+    let lowBatteryPercent: Int?
+    /// Power is coming from a UPS (a power outage) rather than a laptop battery.
+    let onUPS: Bool
+
+    /// Returns the pause to show, or nil when nothing the user is waiting on is held back.
+    /// - Parameters:
+    ///   - hasUpdatesToDownload: detected updates that haven't been downloaded yet.
+    ///   - hasUpdatesToInstall: downloaded updates the scheduler would install now
+    ///     (in monthly mode, only once the patch day has arrived).
+    static func evaluate(power: PowerStatus,
+                         allowedOnBattery: Set<BatteryGatedPhase>,
+                         minimumPercent: Int,
+                         hasUpdatesToDownload: Bool,
+                         hasUpdatesToInstall: Bool) -> PowerPause? {
+        func block(_ phase: BatteryGatedPhase) -> PowerStatus.Block? {
+            power.block(for: phase, allowedOnBattery: allowedOnBattery, minimumPercent: minimumPercent)
+        }
+        let stageBlock = hasUpdatesToDownload ? block(.stage) : nil
+        let applyBlock = hasUpdatesToInstall  ? block(.apply) : nil
+        guard stageBlock != nil || applyBlock != nil else { return nil }
+
+        // Mention low battery only when that's the sole reason — when a phase isn't
+        // allowed on battery at all, charging further won't help, only plugging in.
+        let blocks = [stageBlock, applyBlock].compactMap { $0 }
+        var lowPercent: Int?
+        if blocks.allSatisfy({ if case .batteryBelowMinimum = $0 { true } else { false } }),
+           case .batteryBelowMinimum(let pct, _) = blocks[0] {
+            lowPercent = pct
+        }
+        return PowerPause(downloadsPaused: stageBlock != nil,
+                          installsPaused: applyBlock != nil,
+                          lowBatteryPercent: lowPercent,
+                          onUPS: power.source == .ups)
     }
 }

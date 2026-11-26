@@ -820,3 +820,49 @@ struct BatteryPreferenceTests {
         #expect(Preferences(testPrefs: ["BatteryMinimumPercent": -5]).batteryMinimumPercent == 0)
     }
 }
+
+struct PowerPauseTests {
+
+    private let all = Set(BatteryGatedPhase.allCases)
+    private func battery(_ pct: Int?) -> PowerStatus {
+        PowerStatus(hasInternalBattery: true, source: .battery, batteryPercent: pct)
+    }
+
+    @Test func noPauseOnAC() {
+        let ac = PowerStatus(hasInternalBattery: true, source: .ac, batteryPercent: 5)
+        #expect(PowerPause.evaluate(power: ac, allowedOnBattery: [], minimumPercent: 100,
+                                    hasUpdatesToDownload: true, hasUpdatesToInstall: true) == nil)
+    }
+
+    @Test func noPauseWhenNothingWaiting() {
+        #expect(PowerPause.evaluate(power: battery(50), allowedOnBattery: [], minimumPercent: 0,
+                                    hasUpdatesToDownload: false, hasUpdatesToInstall: false) == nil)
+    }
+
+    @Test func installsPausedWhenApplyNotAllowed() {
+        let p = PowerPause.evaluate(power: battery(80), allowedOnBattery: [.scan, .check, .stage],
+                                    minimumPercent: 20, hasUpdatesToDownload: true, hasUpdatesToInstall: true)
+        #expect(p == PowerPause(downloadsPaused: false, installsPaused: true, lowBatteryPercent: nil, onUPS: false))
+    }
+
+    @Test func lowBatteryPausesBothAndReportsCharge() {
+        let p = PowerPause.evaluate(power: battery(12), allowedOnBattery: all, minimumPercent: 20,
+                                    hasUpdatesToDownload: true, hasUpdatesToInstall: true)
+        #expect(p == PowerPause(downloadsPaused: true, installsPaused: true, lowBatteryPercent: 12, onUPS: false))
+    }
+
+    @Test func lowBatteryNotReportedWhenAPhaseIsDisallowed() {
+        // Stage is blocked by the charge, apply isn't allowed at all — charging won't help apply.
+        let p = PowerPause.evaluate(power: battery(12), allowedOnBattery: [.stage], minimumPercent: 20,
+                                    hasUpdatesToDownload: true, hasUpdatesToInstall: true)
+        #expect(p?.lowBatteryPercent == nil)
+        #expect(p?.downloadsPaused == true && p?.installsPaused == true)
+    }
+
+    @Test func upsIsFlagged() {
+        let ups = PowerStatus(hasInternalBattery: false, source: .ups, batteryPercent: 60)
+        let p = PowerPause.evaluate(power: ups, allowedOnBattery: [], minimumPercent: 0,
+                                    hasUpdatesToDownload: true, hasUpdatesToInstall: false)
+        #expect(p == PowerPause(downloadsPaused: true, installsPaused: false, lowBatteryPercent: nil, onUPS: true))
+    }
+}

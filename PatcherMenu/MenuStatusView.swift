@@ -35,6 +35,9 @@ struct MenuStatusView: View {
             actionSection
             Divider()
             VStack(alignment: .leading, spacing: 12) {
+                if let pause = vm.powerPause {
+                    PowerPauseNotice(pause: pause)
+                }
                 patchSection
                 if !vm.detectedPatches.isEmpty {
                     Divider()
@@ -326,6 +329,71 @@ struct MenuStatusView: View {
                     )
                 }
             }
+        }
+    }
+
+    // MARK: - Paused by power state
+
+    /// Explains that the scheduler is holding back downloads and/or installs because
+    /// the Mac is on battery (BatteryAllowedPhases) or its charge is low
+    /// (BatteryMinimumPercent), and what the user can do about it.
+    private struct PowerPauseNotice: View {
+        let pause: PowerPause
+
+        var body: some View {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: symbolName)
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    title
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    detail
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .combine)
+        }
+
+        private var symbolName: String {
+            if pause.onUPS { return "bolt.slash" }
+            if pause.lowBatteryPercent != nil { return "battery.25percent" }
+            return "powerplug"
+        }
+
+        private var title: Text {
+            switch (pause.downloadsPaused, pause.installsPaused) {
+            case (true, true):
+                return Text("Downloads and installs paused",
+                            comment: "Menu notice title: updates are neither downloaded nor installed because of the Mac's power state (on battery or low battery).")
+            case (false, true):
+                return Text("Installs paused",
+                            comment: "Menu notice title: downloaded updates are not installed because of the Mac's power state (on battery or low battery).")
+            default:
+                return Text("Downloads paused",
+                            comment: "Menu notice title: updates are not downloaded because of the Mac's power state (on battery or low battery).")
+            }
+        }
+
+        private var detail: Text {
+            if pause.onUPS {
+                return Text("This Mac is running on backup power. Updates will continue when power is restored.",
+                            comment: "Menu notice detail: the Mac is powered by a UPS during a power outage.")
+            }
+            if let pct = pause.lowBatteryPercent {
+                return Text("The battery is low (\(Double(pct) / 100, format: .percent)). Connect to power to continue.",
+                            comment: "Menu notice detail. %@ = the battery charge, already formatted as a percentage such as “14%”.")
+            }
+            return Text("This Mac is on battery power. Connect to power to continue.",
+                        comment: "Menu notice detail: updates wait until the laptop is plugged in.")
         }
     }
 

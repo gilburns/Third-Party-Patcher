@@ -7,6 +7,7 @@
 
 import AppKit
 import Combine
+import IOKit.ps
 
 @MainActor
 final class PatcherMenuViewModel: ObservableObject {
@@ -23,6 +24,7 @@ final class PatcherMenuViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var activePhase: String?
     @Published var activeLabel: String?
+    @Published var powerStatus = PowerStatus.current()
 
     // MARK: - Data models (local read-only copies)
 
@@ -244,6 +246,21 @@ final class PatcherMenuViewModel: ObservableObject {
         return schedule.nextPatchDay()
     }
 
+    /// Downloads or installs the scheduler is holding back because of the power state
+    /// (BatteryAllowedPhases / BatteryMinimumPercent), or nil when nothing is waiting.
+    /// In monthly mode, installs only count once this month's patch day has arrived —
+    /// before then the scheduler wouldn't install anyway.
+    var powerPause: PowerPause? {
+        let installDue = !preferences.monthlyPatchingCadenceEnabled || deadlineReference != nil
+        return PowerPause.evaluate(
+            power: powerStatus,
+            allowedOnBattery: preferences.batteryAllowedPhases,
+            minimumPercent: preferences.batteryMinimumPercent,
+            hasUpdatesToDownload: hasDetectedUpdates,
+            hasUpdatesToInstall: hasPendingPatches && installDue
+        )
+    }
+
     /// The "Refreshed …" line under the header title.
     var refreshedText: String {
         if Date().timeIntervalSince(lastRefreshed) < 60 {
@@ -261,6 +278,7 @@ final class PatcherMenuViewModel: ObservableObject {
     private var xpcConnection: NSXPCConnection?
     private var configDirWatcher: DispatchSourceFileSystemObject?
     private var configDirFD: Int32 = -1
+    private var powerSourceObserver: NSObjectProtocol?
 
     init() {
         refresh()
@@ -268,6 +286,7 @@ final class PatcherMenuViewModel: ObservableObject {
             Task { @MainActor [weak self] in self?.refresh() }
         }
         startConfigDirWatch()
+        startPowerSourceWatch()
     }
 
     deinit {
@@ -285,8 +304,30 @@ final class PatcherMenuViewModel: ObservableObject {
         stagedPatches = loadStagedPatches()
         detectedPatches = loadDetectedPatches(excluding: stagedPatches)
         hasDiscoveredApps = discoveredAppsExist()
+        powerStatus = PowerStatus.current()
         lastRefreshed = Date()
         isLoading = false
+    }
+
+    // MARK: - Power source watcher
+
+    /// Updates `powerStatus` as soon as the Mac is plugged in or unplugged (and as the
+    /// charge changes), so the paused-updates notice doesn't wait for the 60 s refresh.
+    /// The IOKit callback is a C function pointer that can't capture `self`, so it posts
+    /// a notification that this observer picks up on the main queue.
+    private func startPowerSourceWatch() {
+        guard let source = IOPSNotificationCreateRunLoopSource({ _ in
+            NotificationCenter.default.post(name: .patcherPowerSourceChanged, object: nil)
+        }, nil)?.takeRetainedValue() else { return }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+        powerSourceObserver = NotificationCenter.default.addObserver(
+            forName: .patcherPowerSourceChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                let status = PowerStatus.current()
+                if self?.powerStatus != status { self?.powerStatus = status }
+            }
+        }
     }
 
     // MARK: - Config directory watcher
@@ -546,4 +587,8 @@ final class PatcherMenuViewModel: ObservableObject {
         return NSWorkspace.shared.open(labelDir)
     }
 
+}
+
+private extension Notification.Name {
+    static let patcherPowerSourceChanged = Notification.Name("com.gilburns.patcher.powerSourceChanged")
 }
