@@ -451,6 +451,32 @@ struct Preferences {
         return value.split(separator: " ").map(String.init).filter { !$0.isEmpty }
     }
 
+    // MARK: - Battery power
+
+    /// Phases the scheduler may run while the Mac is on battery (laptop battery, or a UPS
+    /// during a power outage). Space- or comma-separated tokens, case-insensitive:
+    /// `scan` (full and light scan), `check`, `stage`, `apply`, or `all`.
+    /// An empty string means no phase runs on battery. Unrecognised tokens are ignored.
+    /// Has no effect on AC power, or on on-demand runs started from PatcherMenu.
+    /// Defaults to all phases (`"scan check stage apply"`).
+    var batteryAllowedPhases: Set<BatteryGatedPhase> {
+        let all = Set(BatteryGatedPhase.allCases)
+        guard let value = prefs["BatteryAllowedPhases"] as? String else { return all }
+        var phases = Set<BatteryGatedPhase>()
+        for token in value.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "," }) {
+            if token == "all" { return all }
+            if let phase = BatteryGatedPhase(rawValue: String(token)) { phases.insert(phase) }
+        }
+        return phases
+    }
+
+    /// Minimum battery charge (percent) required for a phase allowed by
+    /// `BatteryAllowedPhases` to run on battery. Below it, the phase waits for a later
+    /// cycle. 0 disables the check. Clamped to 0–100. Defaults to 20.
+    var batteryMinimumPercent: Int {
+        min(100, max(0, prefs["BatteryMinimumPercent"] as? Int ?? 20))
+    }
+
     // MARK: - Aggressive patch-day deferral
 
     /// When true, deferral options are progressively capped on patch day (monthly mode)

@@ -42,12 +42,17 @@ struct PatcherScheduler {
         // ── Pre-evaluate which network-dependent phases are due ───────────────
         // Computed upfront so we can perform one connectivity check before
         // touching the network, rather than failing mid-run.
+        // A phase the battery policy blocks counts as not due: its timer isn't
+        // reset, so it runs on a later cycle once the Mac is on AC or charged.
         let scanDue      = shouldRunScan(state: state, now: now)
+                           && !blockedByBattery(.scan, phaseName: "Scan")
         // Light scan is only relevant when full scan won't already cover it this cycle.
         // It needs the network only when it finds newly-installed labels (scanSingleLabel).
         let lightScanDue = !scanDue && shouldRunLightScan(state: state, now: now)
+                           && !blockedByBattery(.scan, phaseName: "Light scan")
         // Check is only relevant when scan won't already cover it this cycle.
         let checkDue     = !scanDue && shouldRunCheck(state: state, now: now)
+                           && !blockedByBattery(.check, phaseName: "Check")
         let stageDue     = shouldRunStage(state: state, now: now)
         let metadataDue  = shouldRunMetadataSync(state: state, now: now)
 
@@ -62,6 +67,7 @@ struct PatcherScheduler {
         if stageCatchUpNeeded {
             Logger.log("ℹ️ Stage: apply due next cycle with unstaged updates — staging early.")
         }
+        let stageRuns = (stageDue || stageCatchUpNeeded) && !blockedByBattery(.stage, phaseName: "Stage")
 
         // ── Internet connectivity check ───────────────────────────────────────
         // Performed once, only when at least one phase requires the network.
@@ -69,7 +75,7 @@ struct PatcherScheduler {
         // by confirming the response body from captive.apple.com says "Success".
         // apply is intentionally excluded — it runs from already-staged files.
         // lightScan is included because scanSingleLabel (called on hits) needs the network.
-        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageDue || stageCatchUpNeeded || metadataDue
+        let networkPhaseDue = scanDue || lightScanDue || checkDue || stageRuns || metadataDue
         let networkOK: Bool
         if networkPhaseDue {
             networkOK = isInternetAvailable()
@@ -146,7 +152,7 @@ struct PatcherScheduler {
         // items are still unstaged, so apply doesn't run a partial pass.
         // Check display assertions — a download can saturate bandwidth during a
         // presentation. Focus/DND alone doesn't block a silent background download.
-        if (stageDue || stageCatchUpNeeded) && networkOK {
+        if stageRuns && networkOK {
             let bypassFocus = isFocusDeadlineReached(state: state, now: now) || isHardDeadlineReached(state: state, now: now)
             if prefs.focusCheckEnabled && !bypassFocus,
                let presenter = FocusDetector.activeDisplayAssertion(ignoredProcesses: prefs.focusIgnoredProcesses) {
@@ -180,6 +186,9 @@ struct PatcherScheduler {
             } else if !applySchedule.hardDeadlineReached, !staged.isEmpty,
                       staged.isSubset(of: deferralState.deferredLabels(now: now)) {
                 Logger.log("⏸️ Apply: every pending app is deferred by the user — waiting.")
+            } else if blockedByBattery(.apply, phaseName: "Apply") {
+                // Logged by blockedByBattery. No deferral is recorded and deadlines don't
+                // override it — apply runs on the first cycle the power state allows.
             } else if prefs.focusCheckEnabled && !applySchedule.focusDeadlineReached && !applySchedule.hardDeadlineReached,
                let blocker = FocusDetector.activeBlocker(ignoredProcesses: prefs.focusIgnoredProcesses) {
                 let focusMins = prefs.deferralTimerFocus
@@ -202,7 +211,9 @@ struct PatcherScheduler {
                 // the lookahead pass may still be in flight. Catch up here so apply still runs
                 // as a full pass rather than silently skipping unstaged items.
                 if hasUnstagedPendingUpdates() {
-                    if isInternetAvailable() {
+                    if blockedByBattery(.stage, phaseName: "Pre-apply stage") {
+                        Logger.log("⚠️ Apply: unstaged updates found but staging isn't allowed on battery — proceeding with apply for what's already staged.")
+                    } else if isInternetAvailable() {
                         Logger.log("⚠️ Apply: unstaged updates found — staging before apply to avoid a partial pass.")
                         writeActivePhase("stage")
                         runSubcommand("stage")
@@ -266,6 +277,24 @@ struct PatcherScheduler {
         }
 
         if dirty { state.save() }
+    }
+
+
+    // MARK: - Battery power
+
+    /// True (and logs why) when the current power state forbids running `phase`,
+    /// per `BatteryAllowedPhases` and `BatteryMinimumPercent`. Reads the power state
+    /// fresh on each call, since a long scan or download can drain the battery
+    /// before a later phase in the same cycle. Call only when the phase is otherwise
+    /// due, so idle cycles don't log.
+    private func blockedByBattery(_ phase: BatteryGatedPhase, phaseName: String) -> Bool {
+        guard let reason = PowerStatus.current().blockReason(
+            for: phase,
+            allowedOnBattery: prefs.batteryAllowedPhases,
+            minimumPercent: prefs.batteryMinimumPercent
+        ) else { return false }
+        Logger.log("🔋 \(phaseName) skipped — \(reason). Will retry next cycle.")
+        return true
     }
 
 

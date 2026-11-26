@@ -110,18 +110,9 @@ public var osBuildVersion: String {
 }
 
 /// True when the Mac has an internal battery (i.e. is a laptop), regardless
-/// of current power source.
+/// of current power source. See `PowerStatus` for power source and charge.
 public var hasBattery: Bool {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-    p.arguments = ["-g", "batt"]
-    let pipe = Pipe()
-    p.standardOutput = pipe
-    p.standardError  = Pipe()
-    try? p.run()
-    p.waitUntilExit()
-    let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    return output.contains("InternalBattery")
+    PowerStatus.current().hasInternalBattery
 }
 
 /// Returns the hardware serial number via IOKit directly.
