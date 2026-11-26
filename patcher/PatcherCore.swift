@@ -1026,6 +1026,17 @@ func processScriptData(_ jsonDict: [String: Any], forceInstall: Bool = false, by
         } else if !packageID.isEmpty {
             Logger.log("🔍 Checking pkg receipt for: \(packageID)")
             installedVersion = getPackageVersion(packageID: packageID)
+            // The receipt is authoritative for the installed version, but also look for the
+            // app bundle so foundInstalls records where it lives (icons, relaunch, Dock path).
+            // Many pkgs install only CLI tools or non-/Applications payloads — no match is fine.
+            if installedVersion != nil {
+                let appWithExtension = !appName.isEmpty ? appName : name + ".app"
+                foundInstalls = getApplicationVersion(appWithExtension: appWithExtension, versionKey: versionKey,
+                                                      targetDir: targetDir, logNotFound: false)
+                if foundInstalls == nil {
+                    Logger.log("ℹ️ No app bundle found for pkg-installed \(label) — foundInstalls omitted")
+                }
+            }
         } else {
             let appWithExtension: String
             if !appName.isEmpty {
@@ -1311,7 +1322,7 @@ func writeScannedPlist(label: String, jsonDict: [String: Any]) {
 }
 
 
-func getApplicationVersion(appWithExtension: String, versionKey: String? = "CFBundleShortVersionString", targetDir: String? = nil) -> [FoundInstall]? {
+func getApplicationVersion(appWithExtension: String, versionKey: String? = "CFBundleShortVersionString", targetDir: String? = nil, logNotFound: Bool = true) -> [FoundInstall]? {
     let fileManager = FileManager.default
     let keyToCheck = versionKey?.isEmpty == false ? versionKey! : "CFBundleShortVersionString"
     let ignoreExternalVolumes = Preferences().ignoreAppsOnExternalVolumes
@@ -1372,7 +1383,7 @@ func getApplicationVersion(appWithExtension: String, versionKey: String? = "CFBu
     }
 
     if found.isEmpty {
-        Logger.log("❌ Application \(appWithExtension) not found via paths or mdfind")
+        if logNotFound { Logger.log("❌ Application \(appWithExtension) not found via paths or mdfind") }
         return nil
     }
 
@@ -2060,8 +2071,10 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
 
                 // For self-service installs, find the app on disk and persist its
                 // location in foundInstalls so Available Software can resolve the
-                // Dock path immediately after install completes.
-                if bypassIgnoreHomeFolder, !isPkgBased {
+                // Dock path immediately after install completes. Pkg-based labels are
+                // included: when the pkg drops an app bundle it is recorded the same way;
+                // when it only installs CLI tools or other payloads, nothing is found.
+                if bypassIgnoreHomeFolder {
                     let appWithExtension: String
                     if let an = appName, !an.isEmpty {
                         appWithExtension = an.hasSuffix(".app") ? an : "\(an).app"
@@ -2071,7 +2084,8 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                         appWithExtension = "\(label).app"
                     }
                     let versionKey = plist["versionKey"] as? String
-                    if let freshInstalls = getApplicationVersion(appWithExtension: appWithExtension, versionKey: versionKey),
+                    if let freshInstalls = getApplicationVersion(appWithExtension: appWithExtension, versionKey: versionKey,
+                                                                 logNotFound: !isPkgBased),
                        !freshInstalls.isEmpty {
                         let installDicts = freshInstalls.map {
                             ["path": $0.path, "version": $0.version, "discoveryMethod": $0.discoveryMethod]
@@ -4123,7 +4137,7 @@ private func discardSupersededStagedUpdate(label: String, installedVersion: Stri
 /// Called after a successful install when the user explicitly clicked "Quit <App>" in the
 /// blocking-process prompt. Prefers the first non-/Users/ .app path (system-level install),
 /// falling back to the first .app path if all installs are user-scoped.
-/// pkg-only labels have no .app in foundInstalls and are silently skipped.
+/// Labels with no .app in foundInstalls (e.g. pkgs that install only CLI tools) are silently skipped.
 private func relaunchApp(foundInstalls: [[String: Any]], uid: uid_t) {
     let appPaths = foundInstalls
         .compactMap { $0["path"] as? String }
