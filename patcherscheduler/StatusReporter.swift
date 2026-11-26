@@ -18,11 +18,13 @@ struct StatusReporter {
     let state: SchedulerState
     let prefs: Preferences
     let now:   Date
+    let power: PowerStatus
 
     init() {
         self.state = SchedulerState.load()
         self.prefs = Preferences()
         self.now   = Date()
+        self.power = PowerStatus.current()
     }
 
     // MARK: - Entry
@@ -141,6 +143,7 @@ struct StatusReporter {
         if let delay = deploymentDelayLine() {
             print(" \(delay)")
         }
+        print(" \(powerLine())")
         print(String(repeating: "═", count: w))
         print(" \(col("Phase", 7))  \(col("Last Run", 21))  \(col("Interval", 10))  Next Run")
         print(String(repeating: "─", count: w))
@@ -234,6 +237,18 @@ struct StatusReporter {
             out["initialDeploymentDelay"] = ["enabled": false]
         }
 
+        // Power state and which phases it currently blocks
+        var pd: [String: Any] = [
+            "formFactor":           power.formFactor,
+            "powerSource":          power.source.rawValue,
+            "onBattery":            power.isOnBattery,
+            "allowedPhasesOnBattery": prefs.batteryAllowedPhases.sorted().map(\.rawValue),
+            "batteryMinimumPercent": prefs.batteryMinimumPercent,
+            "blockedPhases":        batteryBlockedPhases().map(\.rawValue)
+        ]
+        if let pct = power.batteryPercent { pd["batteryPercent"] = pct }
+        out["power"] = pd
+
         return out
     }
 
@@ -280,6 +295,21 @@ struct StatusReporter {
         if elapsed { return "Initial deployment delay: completed" }
         let remaining = TimeInterval(d) - now.timeIntervalSince(fl)
         return "Initial deployment delay: \(relativeTime(now.addingTimeInterval(remaining))) remaining"
+    }
+
+    /// Phases the current power state would block, in phase order.
+    private func batteryBlockedPhases() -> [BatteryGatedPhase] {
+        BatteryGatedPhase.allCases.filter {
+            power.blockReason(for: $0, allowedOnBattery: prefs.batteryAllowedPhases,
+                              minimumPercent: prefs.batteryMinimumPercent) != nil
+        }
+    }
+
+    /// e.g. "Power: laptop, on battery (42%) — blocked on battery: stage, apply"
+    private func powerLine() -> String {
+        let blocked = batteryBlockedPhases()
+        guard !blocked.isEmpty else { return "Power: \(power.summary)" }
+        return "Power: \(power.summary) — blocked on battery: \(blocked.map(\.rawValue).joined(separator: ", "))"
     }
 
     private func nextMonthlyPatchDate() -> Date? {

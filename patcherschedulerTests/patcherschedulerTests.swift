@@ -712,3 +712,111 @@ struct DeferralFloorTests {
         #expect(Preferences(testPrefs: ["DeferralTimerDefault": 240]).deferralTimerDefault == 240)
     }
 }
+
+
+// MARK: - Battery power gating
+
+struct PowerStatusTests {
+
+    private let all = Set(BatteryGatedPhase.allCases)
+
+    private func status(_ source: PowerStatus.Source, _ pct: Int?) -> PowerStatus {
+        PowerStatus(hasInternalBattery: true, source: source, batteryPercent: pct)
+    }
+
+    @Test func acPowerNeverBlocks() {
+        let s = status(.ac, 5)
+        for phase in BatteryGatedPhase.allCases {
+            #expect(s.blockReason(for: phase, allowedOnBattery: [], minimumPercent: 100) == nil)
+        }
+    }
+
+    @Test func batteryBlocksPhaseNotAllowed() {
+        let s = status(.battery, 90)
+        #expect(s.blockReason(for: .apply, allowedOnBattery: [.scan, .check], minimumPercent: 0) != nil)
+        #expect(s.blockReason(for: .check, allowedOnBattery: [.scan, .check], minimumPercent: 0) == nil)
+    }
+
+    @Test func batteryBelowMinimumBlocksAllowedPhase() {
+        #expect(status(.battery, 19).blockReason(for: .scan, allowedOnBattery: all, minimumPercent: 20) != nil)
+        #expect(status(.battery, 20).blockReason(for: .scan, allowedOnBattery: all, minimumPercent: 20) == nil)
+    }
+
+    @Test func zeroMinimumDisablesFloor() {
+        #expect(status(.battery, 1).blockReason(for: .apply, allowedOnBattery: all, minimumPercent: 0) == nil)
+    }
+
+    @Test func unknownChargeDoesNotBlock() {
+        #expect(status(.battery, nil).blockReason(for: .apply, allowedOnBattery: all, minimumPercent: 50) == nil)
+    }
+
+    @Test func upsCountsAsBattery() {
+        let s = PowerStatus(hasInternalBattery: false, source: .ups, batteryPercent: 80)
+        #expect(s.isOnBattery)
+        #expect(s.blockReason(for: .apply, allowedOnBattery: [.scan], minimumPercent: 0) != nil)
+    }
+
+    @Test func parsesLaptopOnBattery() {
+        let s = PowerStatus.from(descriptions: [
+            ["Type": "InternalBattery", "Is Present": true, "Current Capacity": 42, "Max Capacity": 100]
+        ], providingType: "Battery Power")
+        #expect(s == PowerStatus(hasInternalBattery: true, source: .battery, batteryPercent: 42))
+        #expect(s.formFactor == "laptop")
+    }
+
+    @Test func parsesIntelCapacityInMilliampHours() {
+        let s = PowerStatus.from(descriptions: [
+            ["Type": "InternalBattery", "Current Capacity": 2500, "Max Capacity": 5000]
+        ], providingType: "AC Power")
+        #expect(s.source == .ac)
+        #expect(s.batteryPercent == 50)
+    }
+
+    @Test func parsesDesktop() {
+        let s = PowerStatus.from(descriptions: [], providingType: "AC Power")
+        #expect(s == PowerStatus(hasInternalBattery: false, source: .ac, batteryPercent: nil))
+        #expect(s.formFactor == "desktop")
+    }
+
+    @Test func parsesDesktopOnUPS() {
+        let s = PowerStatus.from(descriptions: [
+            ["Type": "UPS", "Is Present": true, "Current Capacity": 70, "Max Capacity": 100]
+        ], providingType: "UPS Power")
+        #expect(s == PowerStatus(hasInternalBattery: false, source: .ups, batteryPercent: 70))
+    }
+
+    @Test func absentBatteryIsIgnored() {
+        let s = PowerStatus.from(descriptions: [
+            ["Type": "InternalBattery", "Is Present": false, "Current Capacity": 0, "Max Capacity": 100]
+        ], providingType: "AC Power")
+        #expect(!s.hasInternalBattery)
+    }
+}
+
+struct BatteryPreferenceTests {
+
+    @Test func defaultsAllowAllPhasesWithTwentyPercentFloor() {
+        let p = Preferences(testPrefs: [:])
+        #expect(p.batteryAllowedPhases == Set(BatteryGatedPhase.allCases))
+        #expect(p.batteryMinimumPercent == 20)
+    }
+
+    @Test func parsesTokensCaseInsensitivelyWithCommasAndUnknowns() {
+        let p = Preferences(testPrefs: ["BatteryAllowedPhases": "Scan, CHECK bogus"])
+        #expect(p.batteryAllowedPhases == [.scan, .check])
+    }
+
+    @Test func emptyStringAllowsNothing() {
+        #expect(Preferences(testPrefs: ["BatteryAllowedPhases": ""]).batteryAllowedPhases.isEmpty)
+    }
+
+    @Test func allTokenAllowsEverything() {
+        let p = Preferences(testPrefs: ["BatteryAllowedPhases": "all"])
+        #expect(p.batteryAllowedPhases == Set(BatteryGatedPhase.allCases))
+    }
+
+    @Test func minimumPercentIsClamped() {
+        #expect(Preferences(testPrefs: ["BatteryMinimumPercent": 150]).batteryMinimumPercent == 100)
+        #expect(Preferences(testPrefs: ["BatteryMinimumPercent": -5]).batteryMinimumPercent == 0)
+    }
+}

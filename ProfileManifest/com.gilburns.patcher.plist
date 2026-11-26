@@ -223,6 +223,8 @@ During a profile replacement, the system updates payloads with the same 'Payload
 					<string>CheckIntervalHours</string>
 					<string>StageIntervalHours</string>
 					<string>ApplyIntervalHours</string>
+					<string>BatteryAllowedPhases</string>
+					<string>BatteryMinimumPercent</string>
 				</array>
 				<key>UI</key>
 				<array>
@@ -1048,6 +1050,46 @@ During a profile replacement, the system updates payloads with the same 'Payload
 			<string>integer</string>
 			<key>pfm_value_placeholder</key>
 			<string>4</string>
+		</dict>
+		<dict>
+			<key>pfm_app_min</key>
+			<string>2.0.0</string>
+			<key>pfm_default</key>
+			<string>scan check stage apply</string>
+			<key>pfm_description</key>
+			<string>Space-separated list of phases the scheduler may run while the Mac is on battery power (a laptop battery, or a UPS during a power outage). Values: 'scan' (full and light scan), 'check', 'stage', 'apply', or 'all'. An empty value means no phase runs on battery. A phase that is not allowed waits until the Mac is on AC power. Deadlines do not override this. On-demand actions from PatcherMenu are not affected. Has no effect on AC power.</string>
+			<key>pfm_documentation_url</key>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#battery-power</string>
+			<key>pfm_name</key>
+			<string>BatteryAllowedPhases</string>
+			<key>pfm_title</key>
+			<string>Battery Allowed Phases</string>
+			<key>pfm_type</key>
+			<string>string</string>
+			<key>pfm_value_placeholder</key>
+			<string>scan check</string>
+		</dict>
+		<dict>
+			<key>pfm_app_min</key>
+			<string>2.0.0</string>
+			<key>pfm_default</key>
+			<integer>20</integer>
+			<key>pfm_description</key>
+			<string>Minimum battery charge (percent) required for a phase allowed by 'BatteryAllowedPhases' to run on battery. Below this charge the phase waits for a later cycle. '0' disables the check. Deadlines do not override this.</string>
+			<key>pfm_documentation_url</key>
+			<string>https://github.com/gilburns/Third-Party-Patcher/wiki/Preference-Keys#battery-power</string>
+			<key>pfm_name</key>
+			<string>BatteryMinimumPercent</string>
+			<key>pfm_range_max</key>
+			<integer>100</integer>
+			<key>pfm_range_min</key>
+			<integer>0</integer>
+			<key>pfm_title</key>
+			<string>Battery Minimum Percent</string>
+			<key>pfm_type</key>
+			<string>integer</string>
+			<key>pfm_value_placeholder</key>
+			<string>20</string>
 		</dict>
 		<dict>
 			<key>pfm_app_min</key>
