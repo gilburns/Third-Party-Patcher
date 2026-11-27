@@ -627,6 +627,7 @@ struct DialogTextTests {
         #expect(DialogText.installingApp(app: "Zoom", version: "").text == "Installing: Zoom…")
         #expect(DialogText.updatedApp(app: "Zoom", version: nil).text == "✅ Updated: Zoom")
         #expect(DialogText.skippedApp(app: "Zoom", reason: .appRunning).text == "⚠️ Zoom — App running")
+        #expect(DialogText.skippedApp(app: "Arc", reason: .inUseByAnotherUser).text == "⚠️ Arc — In use by another user")
         #expect(DialogText.completeSummary(applied: 3, skipped: 1, failed: 0).text == "Complete — 3 updated · 1 skipped")
         #expect(DialogText.completeSummary(applied: 3, skipped: 1, failed: 2).text
                 == "Complete — 3 updated · 1 skipped · 2 failed")
@@ -844,5 +845,89 @@ struct DuplicateLabelsTests {
         let groups = DuplicateLabels.parse(Data(DuplicateLabelsSnapshot.json.utf8))
         #expect((groups?.count ?? 0) > 0)
         #expect(groups?.contains { $0.id == "onedrive" && $0.preferred == "microsoftonedrive" } == true)
+    }
+}
+
+
+// MARK: - Fast user switching: blocking-process ownership
+
+struct BlockingProcessOwnershipTests {
+
+    @Test func onlyConsoleUserRunning() {
+        let o = BlockingProcessOwnership(owners: [501], consoleUID: 501)
+        #expect(o == BlockingProcessOwnership(owners: [501], consoleUID: 501))
+        #expect(!o.otherUserRunning)
+        #expect(o.consoleUserRunning)
+    }
+
+    @Test func onlyOtherUserRunning() {
+        let o = BlockingProcessOwnership(owners: [502], consoleUID: 501)
+        #expect(o.otherUserRunning)
+        #expect(!o.consoleUserRunning)
+    }
+
+    @Test func bothUsersRunning() {
+        let o = BlockingProcessOwnership(owners: [501, 502], consoleUID: 501)
+        #expect(o.otherUserRunning)
+        #expect(o.consoleUserRunning)
+    }
+
+    @Test func loginWindowCountsEveryOwnerAsOtherUser() {
+        for console in [nil, uid_t(0)] {
+            let o = BlockingProcessOwnership(owners: [502], consoleUID: console)
+            #expect(o.otherUserRunning)
+            #expect(!o.consoleUserRunning)
+        }
+    }
+
+    @Test func noOwnersMeansNoOtherUser() {
+        #expect(!BlockingProcessOwnership(owners: [], consoleUID: 501).otherUserRunning)
+    }
+
+    @Test func rootOwnedProcessesAreIgnored() {
+        #expect(processOwnerUIDs("launchd").isEmpty)
+    }
+
+    @Test func findsOwnProcess() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        p.arguments = ["30"]
+        try p.run()
+        defer { p.terminate() }
+        Thread.sleep(forTimeInterval: 0.2)
+        #expect(processOwnerUIDs("sleep").contains(getuid()))
+    }
+}
+
+
+// MARK: - Fast user switching: notification targeting
+
+struct NotificationTargetingTests {
+
+    private func event() -> PatcherNotificationEvent {
+        PatcherNotificationEvent(kind: .applyInstalled, title: .verbatim("t"), body: .verbatim("b"), threadID: "apply")
+    }
+
+    @Test func untargetedEventReachesEveryUser() {
+        #expect(event().isDeliverable(to: 501))
+        #expect(event().isDeliverable(to: 505))
+    }
+
+    @Test func targetedEventReachesOnlyItsUser() {
+        let e = event().targeted(to: 502)
+        #expect(e.isDeliverable(to: 502))
+        #expect(!e.isDeliverable(to: 505))
+    }
+
+    @Test func targetSurvivesEncodingAndOldEventsDecodeUntargeted() throws {
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let data = try encoder.encode(event().targeted(to: 502))
+        #expect(try decoder.decode(PatcherNotificationEvent.self, from: data).targetUID == 502)
+
+        var dict = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        dict["targetUID"] = nil
+        let old = try JSONSerialization.data(withJSONObject: dict)
+        #expect(try decoder.decode(PatcherNotificationEvent.self, from: old).targetUID == nil)
     }
 }

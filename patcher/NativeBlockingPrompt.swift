@@ -168,8 +168,8 @@ final class NativeBlockingPrompt {
                 record(LabelHistoryEvent.EventType.blockingProcessQuit)
                 return proceed()
             }
-            if deferIfScreenLocks, isConsoleScreenLocked {
-                Logger.log("🔒 Screen locked while prompting for '\(processName)' — skipping \(item.label)")
+            if deferIfScreenLocks, !dryRun, isAwayFromScreen(uid: uid) {
+                Logger.log("🔒 Screen locked or user switched away while prompting for '\(processName)' — skipping \(item.label)")
                 record(LabelHistoryEvent.EventType.blockingProcessScreenLocked)
                 return .skip
             }

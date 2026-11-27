@@ -12,6 +12,9 @@ import Foundation
 
 /// The apply phase: progress for each item, blocking-process handling, completion.
 protocol ApplyPresenter {
+    /// The user this presenter shows prompts to, fixed when the run starts. nil when
+    /// prompts aren't shown to anyone.
+    var promptUID: uid_t? { get }
     /// Called once with every item about to be applied, before the first install.
     mutating func launchProgressDialog(items: [ApplyItem])
     func setProgressText(_ text: DialogText)

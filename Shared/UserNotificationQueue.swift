@@ -54,6 +54,9 @@ struct PatcherNotificationEvent: Codable {
     let replaceID: String?
     /// Notification category, for events that carry action buttons.
     let category: String?
+    /// The only user whose PatcherNotifier delivers this event, and the only one who may
+    /// answer it. nil delivers to every logged-in user.
+    var targetUID: UInt32?
 
     init(kind: Kind, title: DialogText, body: DialogText, threadID: String,
          playSound: Bool = false, iconPath: String? = nil, label: String? = nil,
@@ -76,6 +79,18 @@ struct PatcherNotificationEvent: Codable {
     }
 
     /// A withdraw event removing the delivered notification with the given identifier.
+    /// This event, delivered only to `uid` (nil leaves it for every user).
+    func targeted(to uid: uid_t?) -> PatcherNotificationEvent {
+        var copy = self
+        copy.targetUID = uid
+        return copy
+    }
+
+    /// True when the user `uid`'s PatcherNotifier should deliver this event.
+    func isDeliverable(to uid: uid_t) -> Bool {
+        targetUID.map { $0 == uid } ?? true
+    }
+
     static func withdraw(replaceID: String) -> PatcherNotificationEvent {
         PatcherNotificationEvent(kind: .withdraw, title: .verbatim(""), body: .verbatim(""), threadID: "",
                                  replaceID: replaceID, lifetime: 60 * 60)

@@ -72,6 +72,8 @@ indirect enum DialogText: Codable, Equatable {
     case completeSummary(applied: Int, skipped: Int, failed: Int)
     case allUpdatesApplied
     case updatesJustAttempted
+    /// Side-panel note when an app was skipped because another user has it open.
+    case skippedForAnotherUser
     case done
     /// "Waiting for user — Zoom"
     case waitingForUserApp(String)
@@ -274,6 +276,9 @@ indirect enum DialogText: Codable, Equatable {
         case .updatesJustAttempted:
             return String(localized: "These updates were just attempted.", table: "Dialogs", bundle: b,
                           comment: "Apply window side panel when finished")
+        case .skippedForAnotherUser:
+            return String(localized: "Apps marked “In use by another user” are open in another account on this Mac. They'll be updated after they're quit in that account.", table: "Dialogs", bundle: b,
+                          comment: "Apply window side panel when finished, shown when an app was skipped because another user on this Mac has it open")
         case .done:
             return String(localized: "Done", table: "Dialogs", bundle: b,
                           comment: "Apply window: the button that closes it when finished")
@@ -508,6 +513,9 @@ enum SkipReason: String, Codable, Equatable {
     case noInstallTarget
     case screenLocked
     case appRunning
+    /// The app is open in another logged-in user's session (fast user switching), so
+    /// the user at the screen can't see it in their Dock or quit it.
+    case inUseByAnotherUser
     /// Not a result: the item waits while the blocking prompt asks the user.
     case waitingForUser
 
@@ -535,6 +543,9 @@ enum SkipReason: String, Codable, Equatable {
         case .appRunning:
             return String(localized: "App running", table: "Dialogs", bundle: b,
                           comment: "Apply window row: skipped, the app is open and can't be updated")
+        case .inUseByAnotherUser:
+            return String(localized: "In use by another user", table: "Dialogs", bundle: b,
+                          comment: "Apply window row: skipped, the app is open in another user's account on this Mac (fast user switching)")
         case .waitingForUser:
             return String(localized: "Waiting for user…", table: "Dialogs", bundle: b,
                           comment: "Apply window row: paused while a prompt asks the user to quit the app")

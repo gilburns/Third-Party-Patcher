@@ -269,6 +269,10 @@
       "comment": "Apply window row: skipped, the app is open and can't be updated",
       "extractionState": "manual"
     },
+    "Apps marked “In use by another user” are open in another account on this Mac. They'll be updated after they're quit in that account.": {
+      "comment": "Apply window side panel when finished, shown when an app was skipped because another user on this Mac has it open",
+      "extractionState": "manual"
+    },
     "Checking %lld applications for available updates…": {
       "comment": "Progress window: an update check started from PatcherMenu",
       "extractionState": "manual",
@@ -395,6 +399,10 @@
     },
     "Failed": {
       "comment": "Apply window row: the update failed to install",
+      "extractionState": "manual"
+    },
+    "In use by another user": {
+      "comment": "Apply window row: skipped, the app is open in another user's account on this Mac (fast user switching)",
       "extractionState": "manual"
     },
     "Install All Now": {

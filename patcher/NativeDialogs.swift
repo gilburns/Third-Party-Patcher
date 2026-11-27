@@ -144,6 +144,8 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     private var size: ApplyDialogSize = .large
     /// Items whose result is final, for the large window's progress bar.
     private var finishedCount = 0
+    /// An app was skipped because another user has it open; the finished window explains it.
+    private var skippedForAnotherUser = false
     /// The compact window's "Update 2 of 5", kept so progress can be appended to it.
     private var compactStepText = DialogText.verbatim("")
     /// The compact window's own icon and overlay, restored once the run completes.
@@ -156,6 +158,8 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
 
     /// How long the compact window holds each result before the next item replaces it.
     private static let compactResultHoldSeconds: TimeInterval = 1.5
+
+    var promptUID: uid_t? { uid }
 
     init(uid: uid_t, size: ApplyDialogSize? = nil) {
         self.uid = uid
@@ -258,6 +262,7 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     }
 
     func setSkipped(item: ApplyItem, reason: SkipReason) {
+        if reason == .inUseByAnotherUser { skippedForAnotherUser = true }
         finish(item, status: .skipped, rowText: .skipped(reason),
                compactMessage: .skippedApp(app: item.displayName, reason: reason))
     }
@@ -282,7 +287,8 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
         }
 
         writer?.update { s in
-            s.sidePanel    = .paragraphs([.allUpdatesApplied, .updatesJustAttempted])
+            s.sidePanel    = .paragraphs([.allUpdatesApplied, .updatesJustAttempted]
+                                         + (skippedForAnotherUser ? [.skippedForAnotherUser] : []))
             s.progress.current = s.progress.total
             s.progress.indeterminate = false
             s.progress.caption = summary

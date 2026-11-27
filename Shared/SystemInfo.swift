@@ -47,6 +47,12 @@ public var isConsoleScreenLocked: Bool {
     return (session["CGSSessionScreenIsLocked"] as? Bool) == true
 }
 
+/// True when `uid` can't see a prompt right now: someone else is at the screen (fast user
+/// switching, or the login window), or the screen is locked.
+public func isAwayFromScreen(uid: uid_t) -> Bool {
+    consoleUserUID != uid || isConsoleScreenLocked
+}
+
 /// Returns the hardware serial number by parsing `ioreg` output.
 /// Used in the window help panel so support staff can identify the machine.
 /// Returns "Unknown" if the IOPlatformSerialNumber key is not found.

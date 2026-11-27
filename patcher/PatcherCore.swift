@@ -1917,12 +1917,51 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                       let runningBlocker = effectiveBlockers.first(where: { isProcessRunning($0) }) {
                 Logger.log("⏸️ \(label) — '\(runningBlocker)' is running (action: \(prefs.blockingProcessAction))")
 
-                // Locked screen: nobody is there to answer a prompt, and letting it time out
-                // would force-quit an app that may hold unsaved work. Skip it (counted as a
-                // blocking-process deferral) and keep installing everything else. At the hard
-                // deadline the prompt runs as normal and may force-quit.
-                if blockingAction == .prompt, !hardDeadlineReached, isConsoleScreenLocked {
-                    Logger.log("🔒 \(label) — screen is locked — skipping instead of prompting")
+                // Fast user switching: a copy is open in another logged-in user's session.
+                // Prompting the person at the screen to quit it would close someone else's
+                // app, possibly with unsaved work, so skip the update instead (counted as a
+                // blocking-process deferral). At the hard deadline, prompt as usual when the
+                // person at the screen also has it open; when only other users do, quit it
+                // without a prompt, as a timed-out prompt would. `kill`, `defer` and
+                // `ignore` already behave the same for every user.
+                var forceQuitAtDeadline = false
+                if blockingAction == .prompt || blockingAction == .notify {
+                    // Judged against the user this run prompts, fixed at the start of the run,
+                    // so a switch to another user mid-run can't redirect a prompt.
+                    let ownership = BlockingProcessOwnership(owners: processOwnerUIDs(runningBlocker),
+                                                             consoleUID: dialog?.promptUID ?? consoleUserUID)
+                    if ownership.otherUserRunning {
+                        if blockingAction == .prompt, hardDeadlineReached {
+                            if !ownership.consoleUserRunning {
+                                Logger.log("⚠️ \(label) — '\(runningBlocker)' is open only in another user's session — hard deadline reached, force-quitting without a prompt")
+                                recordBlockingProcessEvent(label: label,
+                                                           type: LabelHistoryEvent.EventType.blockingProcessTimedOut,
+                                                           processName: runningBlocker, date: Date())
+                                forceQuit(runningBlocker)
+                                forceQuitAtDeadline = true
+                            }
+                            // else: fall through to the normal prompt for the user at the screen.
+                        } else {
+                            Logger.log("👥 \(label) — '\(runningBlocker)' is open in another user's session — skipping instead of prompting")
+                            recordBlockingProcessEvent(label: label,
+                                                       type: LabelHistoryEvent.EventType.blockingProcessOtherUser,
+                                                       processName: runningBlocker, date: Date())
+                            dialog?.setSkipped(item: dialogItem, reason: .inUseByAnotherUser)
+                            skippedCount += 1
+                            blockedSkipOccurred = true
+                            continue
+                        }
+                    }
+                }
+
+                // Locked screen, or the user this run prompts has switched away: nobody is
+                // there to answer a prompt, and letting it time out would force-quit an app
+                // that may hold unsaved work. Skip it (counted as a blocking-process deferral)
+                // and keep installing everything else. At the hard deadline the prompt runs as
+                // normal and may force-quit.
+                let promptUserAway = dialog?.promptUID.map { isAwayFromScreen(uid: $0) } ?? isConsoleScreenLocked
+                if !forceQuitAtDeadline, blockingAction == .prompt, !hardDeadlineReached, promptUserAway {
+                    Logger.log("🔒 \(label) — screen is locked or the user has switched away — skipping instead of prompting")
                     recordBlockingProcessEvent(label: label,
                                                type: LabelHistoryEvent.EventType.blockingProcessScreenLocked,
                                                processName: runningBlocker, date: Date())
@@ -1932,7 +1971,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     continue
                 }
 
-                let response = dialog?.handleBlockingProcess(
+                let response = forceQuitAtDeadline ? BlockingActionResponse.proceed : dialog?.handleBlockingProcess(
                     processName:        runningBlocker,
                     item:               dialogItem,
                     action:             blockingAction,
@@ -2108,7 +2147,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 if silentApply { quietInstalled.append((dialogItem, effectiveToVersion)) }
                 applyFailedAttempts.removeValue(forKey: label)
                 applyBrokenVersions.removeValue(forKey: label)
-                if shouldRelaunchBlockedApp, let uid = consoleUserUID {
+                // Reopen for the user who was prompted (and so owned the app), even if
+                // someone else has since switched in.
+                if shouldRelaunchBlockedApp, let uid = dialog?.promptUID ?? consoleUserUID {
                     relaunchApp(foundInstalls: foundInstalls, uid: uid)
                 }
             } else {
@@ -2232,6 +2273,50 @@ private func sanitizedVersion(_ raw: String) -> String {
 
 /// Returns true if a process with the given name is currently running.
 /// Uses `pgrep -x` for an exact-name match.
+/// UIDs of the regular users (uid 500 and up) running a process with this exact name.
+/// Uses the same `pgrep -x` match as `isProcessRunning`, then reads each match's owner.
+/// System and root-owned processes are left out, so they never count as another user's app.
+func processOwnerUIDs(_ processName: String) -> Set<uid_t> {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    process.arguments = ["-x", processName]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError  = FileHandle.nullDevice
+    do { try process.run() } catch { return [] }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    let pids = String(decoding: data, as: UTF8.self)
+        .split(whereSeparator: \.isNewline)
+        .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+    return Set(pids.compactMap(ownerUID(of:)).filter { $0 >= 500 })
+}
+
+/// The real UID that owns `pid`, or nil when the process is gone.
+private func ownerUID(of pid: pid_t) -> uid_t? {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+    guard sysctl(&mib, u_int(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+    return info.kp_eproc.e_pcred.p_ruid
+}
+
+/// How a running blocking app's copies are split between the person at the screen and
+/// other logged-in users (fast user switching).
+struct BlockingProcessOwnership: Equatable {
+    /// Some copy belongs to a user who isn't at the screen. That user can't see a prompt,
+    /// and the person at the screen can't save their work.
+    let otherUserRunning: Bool
+    /// Some copy belongs to the user at the screen.
+    let consoleUserRunning: Bool
+
+    init(owners: Set<uid_t>, consoleUID: uid_t?) {
+        let console = consoleUID.flatMap { $0 > 0 ? $0 : nil }
+        otherUserRunning   = owners.contains { $0 != console }
+        consoleUserRunning = console.map(owners.contains) ?? false
+    }
+}
+
 func isProcessRunning(_ processName: String) -> Bool {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")

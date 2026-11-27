@@ -158,6 +158,12 @@ final class PatcherXPCHandler: NSObject, PatcherXPCProtocol {
             reply(false, "No pending prompt with id '\(eventID)'.")
             return
         }
+        if let target = event.targetUID, let caller = NSXPCConnection.current()?.effectiveUserIdentifier,
+           caller != target {
+            Logger.log("⛔️ XPC: notification response for \(event.id) from uid \(caller), expected \(target) — rejected.")
+            reply(false, "Notification belongs to another user.")
+            return
+        }
         let recorded = UserNotificationQueue.writeResponse(
             PatcherNotificationResponse(eventID: event.id, action: parsed, date: Date())
         )
