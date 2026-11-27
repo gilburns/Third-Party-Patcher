@@ -191,6 +191,7 @@ extension Patcher {
                 switch index {
                 case 2:  window.setFailed(item: item); failed += 1
                 case 3:  window.setSkipped(item: item, reason: .appRunning); skipped += 1
+                case 4:  window.setSkipped(item: item, reason: .inUseByAnotherUser); skipped += 1
                 default: window.setSuccess(item: item, toVersion: item.newVersion ?? ""); applied += 1
                 }
                 Thread.sleep(forTimeInterval: step / 2)

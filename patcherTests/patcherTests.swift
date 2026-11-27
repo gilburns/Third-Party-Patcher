@@ -627,6 +627,7 @@ struct DialogTextTests {
         #expect(DialogText.installingApp(app: "Zoom", version: "").text == "Installing: Zoom…")
         #expect(DialogText.updatedApp(app: "Zoom", version: nil).text == "✅ Updated: Zoom")
         #expect(DialogText.skippedApp(app: "Zoom", reason: .appRunning).text == "⚠️ Zoom — App running")
+        #expect(DialogText.skippedApp(app: "Arc", reason: .inUseByAnotherUser).text == "⚠️ Arc — In use by another user")
         #expect(DialogText.completeSummary(applied: 3, skipped: 1, failed: 0).text == "Complete — 3 updated · 1 skipped")
         #expect(DialogText.completeSummary(applied: 3, skipped: 1, failed: 2).text
                 == "Complete — 3 updated · 1 skipped · 2 failed")

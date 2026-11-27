@@ -1946,7 +1946,7 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                             recordBlockingProcessEvent(label: label,
                                                        type: LabelHistoryEvent.EventType.blockingProcessOtherUser,
                                                        processName: runningBlocker, date: Date())
-                            dialog?.setSkipped(item: dialogItem, reason: .appRunning)
+                            dialog?.setSkipped(item: dialogItem, reason: .inUseByAnotherUser)
                             skippedCount += 1
                             blockedSkipOccurred = true
                             continue
