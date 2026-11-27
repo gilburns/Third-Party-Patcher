@@ -459,15 +459,9 @@ struct Preferences {
     /// An empty string means no phase runs on battery. Unrecognised tokens are ignored.
     /// Has no effect on AC power, or on on-demand runs started from PatcherMenu.
     /// Defaults to all phases (`"scan check stage apply"`).
-    var batteryAllowedPhases: Set<BatteryGatedPhase> {
-        let all = Set(BatteryGatedPhase.allCases)
-        guard let value = prefs["BatteryAllowedPhases"] as? String else { return all }
-        var phases = Set<BatteryGatedPhase>()
-        for token in value.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "," }) {
-            if token == "all" { return all }
-            if let phase = BatteryGatedPhase(rawValue: String(token)) { phases.insert(phase) }
-        }
-        return phases
+    var batteryAllowedPhases: Set<GatedPhase> {
+        guard let value = prefs["BatteryAllowedPhases"] as? String else { return Set(GatedPhase.allCases) }
+        return GatedPhase.parseList(value)
     }
 
     /// Minimum battery charge (percent) required for a phase allowed by
@@ -475,6 +469,35 @@ struct Preferences {
     /// cycle. 0 disables the check. Clamped to 0–100. Defaults to 20.
     var batteryMinimumPercent: Int {
         min(100, max(0, prefs["BatteryMinimumPercent"] as? Int ?? 20))
+    }
+
+    // MARK: - Metered network
+
+    /// Phases the scheduler may run while the Mac is on a metered network — an iPhone or
+    /// iPad Personal Hotspot or cellular link (which macOS flags as expensive), or a network
+    /// with Low Data Mode turned on (see `meteredIncludeLowDataMode`). Same tokens as
+    /// `BatteryAllowedPhases`; `all` turns metered gating off. Has no effect on an unmetered
+    /// network, or on on-demand runs started from PatcherMenu.
+    /// Defaults to everything but stage (`"scan check apply"`) — stage is where the large
+    /// downloads happen; apply installs already-staged files.
+    var meteredAllowedPhases: Set<GatedPhase> {
+        guard let value = prefs["MeteredAllowedPhases"] as? String else { return [.scan, .check, .apply] }
+        return GatedPhase.parseList(value)
+    }
+
+    /// When true, a network with Low Data Mode turned on counts as metered. This is the
+    /// only way to catch hotspots macOS doesn't flag itself (Android phones, MiFi devices,
+    /// travel routers). Defaults to true.
+    var meteredIncludeLowDataMode: Bool {
+        prefs["MeteredIncludeLowDataMode"] as? Bool ?? true
+    }
+
+    /// Days a phase may stay blocked by `MeteredAllowedPhases` before it runs on the
+    /// metered network anyway. The count starts at the first block and resets when the Mac
+    /// is seen on an unmetered network, or after the overridden phase runs. 0 never
+    /// overrides. Clamped to 0–365. Defaults to 30.
+    var meteredMaxBlockedDays: Int {
+        min(365, max(0, prefs["MeteredMaxBlockedDays"] as? Int ?? 30))
     }
 
     // MARK: - Aggressive patch-day deferral

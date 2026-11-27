@@ -11,16 +11,27 @@
 import Foundation
 import IOKit.ps
 
-// MARK: - Battery-gated phases
+// MARK: - Gated phases
 
-/// Scheduler phases that can be restricted while running on battery power.
-/// Raw values are the tokens admins use in the `BatteryAllowedPhases` preference.
-/// `scan` covers both the full scan and the light scan.
-enum BatteryGatedPhase: String, CaseIterable, Comparable {
+/// Scheduler phases that can be restricted while on battery power or on a metered
+/// network. Raw values are the tokens admins use in the `BatteryAllowedPhases` and
+/// `MeteredAllowedPhases` preferences. `scan` covers both the full scan and the light scan.
+enum GatedPhase: String, CaseIterable, Comparable {
     case scan, check, stage, apply
 
     static func < (lhs: Self, rhs: Self) -> Bool {
         allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
+    }
+
+    /// Parses a space- or comma-separated list of phase tokens (case-insensitive).
+    /// `all` selects every phase; an empty string selects none; unknown tokens are ignored.
+    static func parseList(_ value: String) -> Set<GatedPhase> {
+        var phases = Set<GatedPhase>()
+        for token in value.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "," }) {
+            if token == "all" { return Set(allCases) }
+            if let phase = GatedPhase(rawValue: String(token)) { phases.insert(phase) }
+        }
+        return phases
     }
 }
 
@@ -73,8 +84,8 @@ struct PowerStatus: Equatable {
     /// On AC power nothing is blocked. On battery, the phase must be listed in
     /// `allowedOnBattery`, and the charge must be at or above `minimumPercent`
     /// (0 disables the floor). An unreadable charge does not block.
-    func block(for phase: BatteryGatedPhase,
-               allowedOnBattery: Set<BatteryGatedPhase>,
+    func block(for phase: GatedPhase,
+               allowedOnBattery: Set<GatedPhase>,
                minimumPercent: Int) -> Block? {
         guard isOnBattery else { return nil }
         guard allowedOnBattery.contains(phase) else { return .notAllowedOnBattery }
@@ -85,8 +96,8 @@ struct PowerStatus: Equatable {
     }
 
     /// Log-friendly form of `block(for:allowedOnBattery:minimumPercent:)`.
-    func blockReason(for phase: BatteryGatedPhase,
-                     allowedOnBattery: Set<BatteryGatedPhase>,
+    func blockReason(for phase: GatedPhase,
+                     allowedOnBattery: Set<GatedPhase>,
                      minimumPercent: Int) -> String? {
         switch block(for: phase, allowedOnBattery: allowedOnBattery, minimumPercent: minimumPercent) {
         case nil:
@@ -171,11 +182,11 @@ struct PowerPause: Equatable {
     ///   - hasUpdatesToInstall: downloaded updates the scheduler would install now
     ///     (in monthly mode, only once the patch day has arrived).
     static func evaluate(power: PowerStatus,
-                         allowedOnBattery: Set<BatteryGatedPhase>,
+                         allowedOnBattery: Set<GatedPhase>,
                          minimumPercent: Int,
                          hasUpdatesToDownload: Bool,
                          hasUpdatesToInstall: Bool) -> PowerPause? {
-        func block(_ phase: BatteryGatedPhase) -> PowerStatus.Block? {
+        func block(_ phase: GatedPhase) -> PowerStatus.Block? {
             power.block(for: phase, allowedOnBattery: allowedOnBattery, minimumPercent: minimumPercent)
         }
         let stageBlock = hasUpdatesToDownload ? block(.stage) : nil

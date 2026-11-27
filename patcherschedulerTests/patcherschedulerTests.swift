@@ -718,7 +718,7 @@ struct DeferralFloorTests {
 
 struct PowerStatusTests {
 
-    private let all = Set(BatteryGatedPhase.allCases)
+    private let all = Set(GatedPhase.allCases)
 
     private func status(_ source: PowerStatus.Source, _ pct: Int?) -> PowerStatus {
         PowerStatus(hasInternalBattery: true, source: source, batteryPercent: pct)
@@ -726,7 +726,7 @@ struct PowerStatusTests {
 
     @Test func acPowerNeverBlocks() {
         let s = status(.ac, 5)
-        for phase in BatteryGatedPhase.allCases {
+        for phase in GatedPhase.allCases {
             #expect(s.blockReason(for: phase, allowedOnBattery: [], minimumPercent: 100) == nil)
         }
     }
@@ -797,7 +797,7 @@ struct BatteryPreferenceTests {
 
     @Test func defaultsAllowAllPhasesWithTwentyPercentFloor() {
         let p = Preferences(testPrefs: [:])
-        #expect(p.batteryAllowedPhases == Set(BatteryGatedPhase.allCases))
+        #expect(p.batteryAllowedPhases == Set(GatedPhase.allCases))
         #expect(p.batteryMinimumPercent == 20)
     }
 
@@ -812,7 +812,7 @@ struct BatteryPreferenceTests {
 
     @Test func allTokenAllowsEverything() {
         let p = Preferences(testPrefs: ["BatteryAllowedPhases": "all"])
-        #expect(p.batteryAllowedPhases == Set(BatteryGatedPhase.allCases))
+        #expect(p.batteryAllowedPhases == Set(GatedPhase.allCases))
     }
 
     @Test func minimumPercentIsClamped() {
@@ -823,7 +823,7 @@ struct BatteryPreferenceTests {
 
 struct PowerPauseTests {
 
-    private let all = Set(BatteryGatedPhase.allCases)
+    private let all = Set(GatedPhase.allCases)
     private func battery(_ pct: Int?) -> PowerStatus {
         PowerStatus(hasInternalBattery: true, source: .battery, batteryPercent: pct)
     }
@@ -864,5 +864,131 @@ struct PowerPauseTests {
         let p = PowerPause.evaluate(power: ups, allowedOnBattery: [], minimumPercent: 0,
                                     hasUpdatesToDownload: true, hasUpdatesToInstall: false)
         #expect(p == PowerPause(downloadsPaused: true, installsPaused: false, lowBatteryPercent: nil, onUPS: true))
+    }
+}
+
+
+// MARK: - Metered network gating
+
+struct MeteredPreferenceTests {
+
+    @Test func defaultsBlockOnlyStageWithThirtyDayOverride() {
+        let p = Preferences(testPrefs: [:])
+        #expect(p.meteredAllowedPhases == [.scan, .check, .apply])
+        #expect(p.meteredIncludeLowDataMode)
+        #expect(p.meteredMaxBlockedDays == 30)
+    }
+
+    @Test func allTokenDisablesGating() {
+        #expect(Preferences(testPrefs: ["MeteredAllowedPhases": "all"]).meteredAllowedPhases == Set(GatedPhase.allCases))
+    }
+
+    @Test func emptyStringAllowsNothing() {
+        #expect(Preferences(testPrefs: ["MeteredAllowedPhases": ""]).meteredAllowedPhases.isEmpty)
+    }
+
+    @Test func maxBlockedDaysIsClamped() {
+        #expect(Preferences(testPrefs: ["MeteredMaxBlockedDays": 999]).meteredMaxBlockedDays == 365)
+        #expect(Preferences(testPrefs: ["MeteredMaxBlockedDays": -1]).meteredMaxBlockedDays == 0)
+    }
+}
+
+struct NetworkCostTests {
+
+    @Test func hotspotIsMetered() {
+        let n = NetworkCost(isExpensive: true, isConstrained: false, interface: .wifi)
+        #expect(n.isMetered(includeLowDataMode: false))
+        #expect(n.summary == "Wi-Fi, personal hotspot")
+    }
+
+    @Test func lowDataModeFollowsPreference() {
+        let n = NetworkCost(isExpensive: false, isConstrained: true, interface: .wifi)
+        #expect(n.isMetered(includeLowDataMode: true))
+        #expect(!n.isMetered(includeLowDataMode: false))
+        #expect(n.summary == "Wi-Fi, Low Data Mode")
+    }
+
+    @Test func unknownIsUnmetered() {
+        #expect(!NetworkCost.unknown.isMetered(includeLowDataMode: true))
+    }
+}
+
+struct MeteredGateTests {
+
+    private let defaults: Set<GatedPhase> = [.scan, .check, .apply]
+
+    /// Calendar days back from `now`, so DST changes don't shift the count.
+    private func daysAgo(_ days: Int, from now: Date) -> Date {
+        Calendar.current.date(byAdding: .day, value: -days, to: now)!
+    }
+
+    @Test func unmeteredNeverBlocksOrStartsClock() {
+        var since: Date?
+        #expect(MeteredGate.decide(phase: .stage, metered: false, allowed: [], maxBlockedDays: 30,
+                                   blockedSince: &since, now: Date()) == .run)
+        #expect(since == nil)
+    }
+
+    @Test func allowedPhaseRunsOnMetered() {
+        var since: Date?
+        #expect(MeteredGate.decide(phase: .check, metered: true, allowed: defaults, maxBlockedDays: 30,
+                                   blockedSince: &since, now: Date()) == .run)
+        #expect(since == nil)
+    }
+
+    @Test func firstBlockStartsClock() {
+        var since: Date?
+        let now = Date()
+        #expect(MeteredGate.decide(phase: .stage, metered: true, allowed: defaults, maxBlockedDays: 30,
+                                   blockedSince: &since, now: now) == .blocked(daysBlocked: 0))
+        #expect(since == now)
+    }
+
+    @Test func overrideAfterMaxDays() {
+        let now = Date()
+        var since: Date? = daysAgo(30, from: now)
+        #expect(MeteredGate.decide(phase: .stage, metered: true, allowed: defaults, maxBlockedDays: 30,
+                                   blockedSince: &since, now: now) == .override(daysBlocked: 30))
+        since = daysAgo(29, from: now)
+        #expect(MeteredGate.decide(phase: .stage, metered: true, allowed: defaults, maxBlockedDays: 30,
+                                   blockedSince: &since, now: now) == .blocked(daysBlocked: 29))
+    }
+
+    @Test func zeroMaxDaysNeverOverrides() {
+        let now = Date()
+        var since: Date? = daysAgo(400, from: now)
+        #expect(MeteredGate.decide(phase: .stage, metered: true, allowed: defaults, maxBlockedDays: 0,
+                                   blockedSince: &since, now: now) == .blocked(daysBlocked: 400))
+    }
+}
+
+struct MeteredPauseTests {
+
+    private let hotspot = NetworkCost(isExpensive: true, isConstrained: false, interface: .wifi)
+    private let lowData = NetworkCost(isExpensive: false, isConstrained: true, interface: .wifi)
+    private let defaults: Set<GatedPhase> = [.scan, .check, .apply]
+
+    private func pause(_ network: NetworkCost, since: Date? = nil, download: Bool = true,
+                       install: Bool = true, includeLowDataMode: Bool = true) -> MeteredPause? {
+        MeteredPause.evaluate(network: network, includeLowDataMode: includeLowDataMode,
+                              allowed: defaults, maxBlockedDays: 30, blockedSince: since, now: Date(),
+                              hasUpdatesToDownload: download, hasUpdatesToInstall: install)
+    }
+
+    @Test func hotspotPausesDownloadsOnly() {
+        #expect(pause(hotspot) == MeteredPause(downloadsPaused: true, installsPaused: false, lowDataModeOnly: false))
+    }
+
+    @Test func nothingToDownloadMeansNoNotice() {
+        #expect(pause(hotspot, download: false) == nil)
+    }
+
+    @Test func lowDataModeIsFlaggedAndFollowsPreference() {
+        #expect(pause(lowData)?.lowDataModeOnly == true)
+        #expect(pause(lowData, includeLowDataMode: false) == nil)
+    }
+
+    @Test func noNoticeOnceOverrideReached() {
+        #expect(pause(hotspot, since: Calendar.current.date(byAdding: .day, value: -31, to: Date())!) == nil)
     }
 }

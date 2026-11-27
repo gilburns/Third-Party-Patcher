@@ -124,10 +124,10 @@
     "Download and verify any available updates" : {},
     "Download new Updates" : {},
     "Downloads and installs paused" : {
-      "comment" : "Menu notice title: updates are neither downloaded nor installed because of the Mac's power state (on battery or low battery)."
+      "comment" : "Menu notice title: updates are neither downloaded nor installed for now — the Mac is on battery, its battery is low, or it is on a metered network such as a personal hotspot."
     },
     "Downloads paused" : {
-      "comment" : "Menu notice title: updates are not downloaded because of the Mac's power state (on battery or low battery)."
+      "comment" : "Menu notice title: updates are not downloaded for now — the Mac is on battery, its battery is low, or it is on a metered network such as a personal hotspot."
     },
     "Focus ignored after: %@ (in %@)" : {
       "comment" : "After this date, Focus / Do Not Disturb no longer postpones update prompts. First %@ = a short date such as “Dec 3”; second = days left, such as “5d”."
@@ -146,7 +146,7 @@
       "comment" : "%@ = a date and time, already formatted."
     },
     "Installs paused" : {
-      "comment" : "Menu notice title: downloaded updates are not installed because of the Mac's power state (on battery or low battery)."
+      "comment" : "Menu notice title: downloaded updates are not installed for now — the Mac is on battery, its battery is low, or it is on a metered network such as a personal hotspot."
     },
     "Last Activity" : {},
     "Never" : {
@@ -194,11 +194,17 @@
     "The battery is low (%@). Connect to power to continue." : {
       "comment" : "Menu notice detail. %@ = the battery charge, already formatted as a percentage such as “14%”."
     },
+    "This Mac is on a personal hotspot or cellular connection. Updates will continue on a regular network." : {
+      "comment" : "Menu notice detail: updates wait to save mobile data while the Mac is connected through a phone's hotspot."
+    },
     "This Mac is on battery power. Connect to power to continue." : {
       "comment" : "Menu notice detail: updates wait until the laptop is plugged in."
     },
     "This Mac is running on backup power. Updates will continue when power is restored." : {
       "comment" : "Menu notice detail: the Mac is powered by a UPS during a power outage."
+    },
+    "This network uses Low Data Mode. Updates will continue on another network, or when Low Data Mode is turned off." : {
+      "comment" : "Menu notice detail: updates wait because the current Wi-Fi network has Low Data Mode turned on."
     },
     "Update checks start in about %@" : {
       "comment" : "Shown during the initial deployment delay. %@ = a short duration such as “3 hr” or “45 min”."

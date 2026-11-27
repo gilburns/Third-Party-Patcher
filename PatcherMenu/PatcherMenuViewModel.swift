@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import IOKit.ps
+import Network
 
 @MainActor
 final class PatcherMenuViewModel: ObservableObject {
@@ -25,6 +26,7 @@ final class PatcherMenuViewModel: ObservableObject {
     @Published var activePhase: String?
     @Published var activeLabel: String?
     @Published var powerStatus = PowerStatus.current()
+    @Published var networkCost = NetworkCost.unknown
 
     // MARK: - Data models (local read-only copies)
 
@@ -38,6 +40,7 @@ final class PatcherMenuViewModel: ObservableObject {
         var lastApplyDate: Date?
         var firstPendingDate: Date?
         var deferralCount: Int = 0
+        var meteredBlockedSince: Date?
     }
 
     struct DeferralStateData: Codable {
@@ -261,6 +264,24 @@ final class PatcherMenuViewModel: ObservableObject {
         )
     }
 
+    /// Downloads or installs the scheduler is holding back because the Mac is on a metered
+    /// network (MeteredAllowedPhases), or nil when nothing is waiting. Shown only when the
+    /// power state isn't already pausing updates, which takes priority.
+    var meteredPause: MeteredPause? {
+        guard powerPause == nil else { return nil }
+        let installDue = !preferences.monthlyPatchingCadenceEnabled || deadlineReference != nil
+        return MeteredPause.evaluate(
+            network: networkCost,
+            includeLowDataMode: preferences.meteredIncludeLowDataMode,
+            allowed: preferences.meteredAllowedPhases,
+            maxBlockedDays: preferences.meteredMaxBlockedDays,
+            blockedSince: schedulerState?.meteredBlockedSince,
+            now: Date(),
+            hasUpdatesToDownload: hasDetectedUpdates,
+            hasUpdatesToInstall: hasPendingPatches && installDue
+        )
+    }
+
     /// The "Refreshed …" line under the header title.
     var refreshedText: String {
         if Date().timeIntervalSince(lastRefreshed) < 60 {
@@ -279,6 +300,7 @@ final class PatcherMenuViewModel: ObservableObject {
     private var configDirWatcher: DispatchSourceFileSystemObject?
     private var configDirFD: Int32 = -1
     private var powerSourceObserver: NSObjectProtocol?
+    private let networkMonitor = NWPathMonitor()
 
     init() {
         refresh()
@@ -287,9 +309,11 @@ final class PatcherMenuViewModel: ObservableObject {
         }
         startConfigDirWatch()
         startPowerSourceWatch()
+        startNetworkWatch()
     }
 
     deinit {
+        networkMonitor.cancel()
         configDirWatcher?.cancel()
         if configDirFD >= 0 { close(configDirFD) }
     }
@@ -328,6 +352,20 @@ final class PatcherMenuViewModel: ObservableObject {
                 if self?.powerStatus != status { self?.powerStatus = status }
             }
         }
+    }
+
+    // MARK: - Network watcher
+
+    /// Keeps `networkCost` current as the Mac joins or leaves a hotspot or Low Data Mode
+    /// network, so the metered notice doesn't wait for the 60 s refresh.
+    private func startNetworkWatch() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            let cost = NetworkCost(path: path)
+            Task { @MainActor [weak self] in
+                if self?.networkCost != cost { self?.networkCost = cost }
+            }
+        }
+        networkMonitor.start(queue: DispatchQueue(label: "com.gilburns.PatcherMenu.network"))
     }
 
     // MARK: - Config directory watcher

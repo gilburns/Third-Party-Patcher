@@ -19,12 +19,14 @@ struct StatusReporter {
     let prefs: Preferences
     let now:   Date
     let power: PowerStatus
+    let network: NetworkCost
 
     init() {
-        self.state = SchedulerState.load()
-        self.prefs = Preferences()
-        self.now   = Date()
-        self.power = PowerStatus.current()
+        self.state   = SchedulerState.load()
+        self.prefs   = Preferences()
+        self.now     = Date()
+        self.power   = PowerStatus.current()
+        self.network = NetworkCost.current()
     }
 
     // MARK: - Entry
@@ -144,6 +146,7 @@ struct StatusReporter {
             print(" \(delay)")
         }
         print(" \(powerLine())")
+        print(" \(networkLine())")
         print(String(repeating: "═", count: w))
         print(" \(col("Phase", 7))  \(col("Last Run", 21))  \(col("Interval", 10))  Next Run")
         print(String(repeating: "─", count: w))
@@ -249,6 +252,23 @@ struct StatusReporter {
         if let pct = power.batteryPercent { pd["batteryPercent"] = pct }
         out["power"] = pd
 
+        // Network cost and which phases it currently blocks
+        var nd: [String: Any] = [
+            "interface":              network.interface.rawValue,
+            "expensive":              network.isExpensive,
+            "lowDataMode":            network.isConstrained,
+            "metered":                isMetered,
+            "allowedPhasesOnMetered": prefs.meteredAllowedPhases.sorted().map(\.rawValue),
+            "includeLowDataMode":     prefs.meteredIncludeLowDataMode,
+            "maxBlockedDays":         prefs.meteredMaxBlockedDays,
+            "blockedPhases":          meteredBlockedPhases().map(\.rawValue)
+        ]
+        if let since = state.meteredBlockedSince {
+            nd["blockedSince"] = ISO8601DateFormatter().string(from: since)
+            nd["daysBlocked"]  = MeteredGate.daysBlocked(since: since, now: now)
+        }
+        out["network"] = nd
+
         return out
     }
 
@@ -298,8 +318,8 @@ struct StatusReporter {
     }
 
     /// Phases the current power state would block, in phase order.
-    private func batteryBlockedPhases() -> [BatteryGatedPhase] {
-        BatteryGatedPhase.allCases.filter {
+    private func batteryBlockedPhases() -> [GatedPhase] {
+        GatedPhase.allCases.filter {
             power.blockReason(for: $0, allowedOnBattery: prefs.batteryAllowedPhases,
                               minimumPercent: prefs.batteryMinimumPercent) != nil
         }
@@ -310,6 +330,35 @@ struct StatusReporter {
         let blocked = batteryBlockedPhases()
         guard !blocked.isEmpty else { return "Power: \(power.summary)" }
         return "Power: \(power.summary) — blocked on battery: \(blocked.map(\.rawValue).joined(separator: ", "))"
+    }
+
+    private var isMetered: Bool {
+        network.isMetered(includeLowDataMode: prefs.meteredIncludeLowDataMode)
+    }
+
+    /// Phases the current network would block, in phase order. A phase past the
+    /// MeteredMaxBlockedDays override isn't listed — the scheduler will run it.
+    private func meteredBlockedPhases() -> [GatedPhase] {
+        GatedPhase.allCases.filter {
+            var since = state.meteredBlockedSince
+            if case .blocked = MeteredGate.decide(
+                phase: $0, metered: isMetered, allowed: prefs.meteredAllowedPhases,
+                maxBlockedDays: prefs.meteredMaxBlockedDays, blockedSince: &since, now: now
+            ) { return true }
+            return false
+        }
+    }
+
+    /// e.g. "Network: Wi-Fi, personal hotspot — blocked on metered: stage (3 of 30 days)"
+    private func networkLine() -> String {
+        let blocked = meteredBlockedPhases()
+        guard !blocked.isEmpty else { return "Network: \(network.summary)" }
+        var line = "Network: \(network.summary) — blocked on metered: \(blocked.map(\.rawValue).joined(separator: ", "))"
+        let limit = prefs.meteredMaxBlockedDays
+        if let since = state.meteredBlockedSince, limit > 0 {
+            line += " (\(MeteredGate.daysBlocked(since: since, now: now)) of \(limit) days)"
+        }
+        return line
     }
 
     private func nextMonthlyPatchDate() -> Date? {
