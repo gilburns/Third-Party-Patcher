@@ -277,7 +277,7 @@ indirect enum DialogText: Codable, Equatable {
             return String(localized: "These updates were just attempted.", table: "Dialogs", bundle: b,
                           comment: "Apply window side panel when finished")
         case .skippedForAnotherUser:
-            return String(localized: "Apps marked “In use by another user” are open in another account on this Mac, so they don't appear in your Dock. They'll be updated after they're quit in that account.", table: "Dialogs", bundle: b,
+            return String(localized: "Apps marked “In use by another user” are open in another account on this Mac. They'll be updated after they're quit in that account.", table: "Dialogs", bundle: b,
                           comment: "Apply window side panel when finished, shown when an app was skipped because another user on this Mac has it open")
         case .done:
             return String(localized: "Done", table: "Dialogs", bundle: b,

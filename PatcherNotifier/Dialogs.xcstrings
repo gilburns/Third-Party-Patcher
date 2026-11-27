@@ -269,7 +269,7 @@
       "comment": "Apply window row: skipped, the app is open and can't be updated",
       "extractionState": "manual"
     },
-    "Apps marked “In use by another user” are open in another account on this Mac, so they don't appear in your Dock. They'll be updated after they're quit in that account.": {
+    "Apps marked “In use by another user” are open in another account on this Mac. They'll be updated after they're quit in that account.": {
       "comment": "Apply window side panel when finished, shown when an app was skipped because another user on this Mac has it open",
       "extractionState": "manual"
     },
