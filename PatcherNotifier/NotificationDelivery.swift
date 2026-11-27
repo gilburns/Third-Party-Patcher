@@ -48,7 +48,8 @@ final class NotificationDelivery {
     private func deliverOnce() async -> TimeInterval? {
         let center    = UNUserNotificationCenter.current()
         let defaults  = UserDefaults.standard
-        let pending   = UserNotificationQueue.pendingEvents()
+        let uid       = getuid()
+        let pending   = UserNotificationQueue.pendingEvents().filter { $0.isDeliverable(to: uid) }
         var delivered = Set(defaults.stringArray(forKey: Self.deliveredIDsKey) ?? [])
 
         // When each on-screen notification was posted. Read from Notification Center

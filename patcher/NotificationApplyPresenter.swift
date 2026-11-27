@@ -19,6 +19,17 @@ final class NotificationApplyPresenter: ApplyPresenter {
 
     private static let threadID = "apply"
 
+    /// The user this run's notifications are delivered to and prompts are answered by.
+    let uid: uid_t
+    var promptUID: uid_t? { uid }
+
+    private init(uid: uid_t) { self.uid = uid }
+
+    /// Queues `event` for this run's user only.
+    private func enqueue(_ event: PatcherNotificationEvent) {
+        UserNotificationQueue.enqueue(event.targeted(to: uid))
+    }
+
     /// Labels whose app the user has been prompted to quit. Their notification is
     /// replaced in place as the install progresses, rather than batched at the end.
     private var promptedLabels: Set<String> = []
@@ -41,7 +52,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
             Logger.log("ℹ️ Notifications: PatcherNotifier LaunchAgent is not loaded for uid \(uid).")
             return nil
         }
-        return NotificationApplyPresenter()
+        return NotificationApplyPresenter(uid: uid)
     }
 
     private func notificationID(for item: ApplyItem) -> String { "apply.\(item.label)" }
@@ -59,7 +70,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
     func setInProgress(item: ApplyItem, current: Int, total: Int) {
         // Only the prompted app's user is waiting on this; everything else installs quietly.
         guard promptedLabels.contains(item.label) else { return }
-        UserNotificationQueue.enqueue(PatcherNotificationEvent(
+        enqueue(PatcherNotificationEvent(
             kind:      .applyInProgress,
             title:     .updatingAppTitle(app: item.displayName),
             body:      .appBeingUpdated(app: item.displayName),
@@ -72,7 +83,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
 
     func setSuccess(item: ApplyItem, toVersion: String) {
         if promptedLabels.contains(item.label) {
-            UserNotificationQueue.enqueue(installedEvent(item: item, version: toVersion,
+            enqueue(installedEvent(item: item, version: toVersion,
                                                          kind: .applyInstalled, background: false,
                                                          replaceID: notificationID(for: item)))
         } else {
@@ -81,7 +92,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
     }
 
     func setFailed(item: ApplyItem) {
-        UserNotificationQueue.enqueue(PatcherNotificationEvent(
+        enqueue(PatcherNotificationEvent(
             kind:      .applyFailed,
             title:     .appUpdateFailedTitle(app: item.displayName),
             body:      .updateWillBeRetried(app: item.displayName),
@@ -96,12 +107,13 @@ final class NotificationApplyPresenter: ApplyPresenter {
         // Clear a prompt that is still showing (e.g. the user skipped, or the run ended).
         // Informational "please quit" notices stay up — they're the only record of why.
         if promptedLabels.contains(item.label) {
-            UserNotificationQueue.enqueue(.withdraw(replaceID: notificationID(for: item)))
+            enqueue(.withdraw(replaceID: notificationID(for: item)))
         }
     }
 
     func complete(applied: Int, skipped: Int, failed: Int) {
-        queueInstalledNotifications(installed, kind: .applyInstalled, threadID: Self.threadID, background: false)
+        queueInstalledNotifications(installed, kind: .applyInstalled, threadID: Self.threadID, background: false,
+                                    targetUID: uid)
     }
 
     func handleBlockingProcess(processName: String, item: ApplyItem,
@@ -123,7 +135,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
 
         case .notify:
             Logger.log("ℹ️ BlockingProcessAction=notify — posting notification for '\(processName)'")
-            UserNotificationQueue.enqueue(PatcherNotificationEvent(
+            enqueue(PatcherNotificationEvent(
                 kind:      .blockingNotify,
                 title:     .updatePendingTitle(app: item.displayName),
                 body:      .quitWhenConvenient(app: item.displayName),
@@ -164,7 +176,7 @@ final class NotificationApplyPresenter: ApplyPresenter {
             // PatcherNotifier launch shows a prompt nobody is waiting on.
             lifetime:  TimeInterval(countdownSeconds) + 60
         )
-        UserNotificationQueue.enqueue(event)
+        enqueue(event)
         promptedLabels.insert(item.label)
 
         let deadline = Date().addingTimeInterval(TimeInterval(countdownSeconds))
@@ -197,9 +209,9 @@ final class NotificationApplyPresenter: ApplyPresenter {
                                            processName: processName, date: Date())
                 return .proceed
             }
-            if deferIfScreenLocks, isConsoleScreenLocked {
+            if deferIfScreenLocks, isAwayFromScreen(uid: uid) {
                 // The prompt is withdrawn by setSkipped when the apply loop handles the skip.
-                Logger.log("🔒 Screen locked while prompting for '\(processName)' — skipping \(item.label)")
+                Logger.log("🔒 Screen locked or user switched away while prompting for '\(processName)' — skipping \(item.label)")
                 recordBlockingProcessEvent(label: item.label,
                                            type: LabelHistoryEvent.EventType.blockingProcessScreenLocked,
                                            processName: processName, date: Date())
@@ -247,12 +259,14 @@ private func installedEvent(item: ApplyItem, version: String,
 /// (with the app's icon); three or more are combined into a single summary so a large
 /// pass doesn't flood Notification Center.
 func queueInstalledNotifications(_ installed: [(item: ApplyItem, version: String)],
-                                 kind: PatcherNotificationEvent.Kind, threadID: String, background: Bool) {
+                                 kind: PatcherNotificationEvent.Kind, threadID: String, background: Bool,
+                                 targetUID: uid_t? = nil) {
     guard !installed.isEmpty else { return }
     if installed.count <= 2 {
         for (item, version) in installed {
             UserNotificationQueue.enqueue(installedEvent(item: item, version: version, kind: kind,
-                                                         background: background, threadID: threadID))
+                                                         background: background, threadID: threadID)
+                                            .targeted(to: targetUID))
         }
     } else {
         let lines = installed.map { $0.version.isEmpty ? $0.item.displayName : "\($0.item.displayName) \($0.version)" }
@@ -261,6 +275,6 @@ func queueInstalledNotifications(_ installed: [(item: ApplyItem, version: String
             title:    .appsUpdatedTitle(count: installed.count),
             body:     .appList(lines),
             threadID: threadID
-        ))
+        ).targeted(to: targetUID))
     }
 }

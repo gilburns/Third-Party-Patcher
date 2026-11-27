@@ -1926,8 +1926,10 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 // `ignore` already behave the same for every user.
                 var forceQuitAtDeadline = false
                 if blockingAction == .prompt || blockingAction == .notify {
+                    // Judged against the user this run prompts, fixed at the start of the run,
+                    // so a switch to another user mid-run can't redirect a prompt.
                     let ownership = BlockingProcessOwnership(owners: processOwnerUIDs(runningBlocker),
-                                                             consoleUID: consoleUserUID)
+                                                             consoleUID: dialog?.promptUID ?? consoleUserUID)
                     if ownership.otherUserRunning {
                         if blockingAction == .prompt, hardDeadlineReached {
                             if !ownership.consoleUserRunning {
@@ -1952,12 +1954,14 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                     }
                 }
 
-                // Locked screen: nobody is there to answer a prompt, and letting it time out
-                // would force-quit an app that may hold unsaved work. Skip it (counted as a
-                // blocking-process deferral) and keep installing everything else. At the hard
-                // deadline the prompt runs as normal and may force-quit.
-                if !forceQuitAtDeadline, blockingAction == .prompt, !hardDeadlineReached, isConsoleScreenLocked {
-                    Logger.log("🔒 \(label) — screen is locked — skipping instead of prompting")
+                // Locked screen, or the user this run prompts has switched away: nobody is
+                // there to answer a prompt, and letting it time out would force-quit an app
+                // that may hold unsaved work. Skip it (counted as a blocking-process deferral)
+                // and keep installing everything else. At the hard deadline the prompt runs as
+                // normal and may force-quit.
+                let promptUserAway = dialog?.promptUID.map { isAwayFromScreen(uid: $0) } ?? isConsoleScreenLocked
+                if !forceQuitAtDeadline, blockingAction == .prompt, !hardDeadlineReached, promptUserAway {
+                    Logger.log("🔒 \(label) — screen is locked or the user has switched away — skipping instead of prompting")
                     recordBlockingProcessEvent(label: label,
                                                type: LabelHistoryEvent.EventType.blockingProcessScreenLocked,
                                                processName: runningBlocker, date: Date())
@@ -2143,7 +2147,9 @@ func applyUpdates(labelFilter: String? = nil, suppressDialog: Bool = false, days
                 if silentApply { quietInstalled.append((dialogItem, effectiveToVersion)) }
                 applyFailedAttempts.removeValue(forKey: label)
                 applyBrokenVersions.removeValue(forKey: label)
-                if shouldRelaunchBlockedApp, let uid = consoleUserUID {
+                // Reopen for the user who was prompted (and so owned the app), even if
+                // someone else has since switched in.
+                if shouldRelaunchBlockedApp, let uid = dialog?.promptUID ?? consoleUserUID {
                     relaunchApp(foundInstalls: foundInstalls, uid: uid)
                 }
             } else {

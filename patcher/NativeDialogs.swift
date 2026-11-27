@@ -157,6 +157,8 @@ final class NativeApplyWindow: ApplyPresenter, DeferralPresenter {
     /// How long the compact window holds each result before the next item replaces it.
     private static let compactResultHoldSeconds: TimeInterval = 1.5
 
+    var promptUID: uid_t? { uid }
+
     init(uid: uid_t, size: ApplyDialogSize? = nil) {
         self.uid = uid
         self.sizeOverride = size
