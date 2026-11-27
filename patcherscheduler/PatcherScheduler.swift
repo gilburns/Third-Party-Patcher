@@ -39,20 +39,70 @@ struct PatcherScheduler {
         var dirty   = false
         var scanRan = false
 
+        // ── Metered network ───────────────────────────────────────────────────
+        // Read once per cycle. Back on an unmetered network, the blocked clock resets,
+        // so MeteredMaxBlockedDays counts consecutive days without one.
+        let network   = NetworkCost.current()
+        let onMetered = network.isMetered(includeLowDataMode: prefs.meteredIncludeLowDataMode)
+        if !onMetered, state.meteredBlockedSince != nil {
+            state.meteredBlockedSince = nil
+            Logger.log("📶 On an unmetered network (\(network.summary)) — metered hold cleared.")
+            dirty = true
+        }
+        var meteredOverridden = Set<GatedPhase>()
+
+        /// True (and logs why) when battery or metered-network policy forbids running
+        /// `phase` this cycle. Call only when the phase is otherwise due, so idle cycles
+        /// don't log and the metered clock only starts when something is actually held back.
+        func blocked(_ phase: GatedPhase, _ phaseName: String) -> Bool {
+            if blockedByBattery(phase, phaseName: phaseName) { return true }
+            let hadClock = state.meteredBlockedSince != nil
+            let decision = MeteredGate.decide(
+                phase: phase, metered: onMetered, allowed: prefs.meteredAllowedPhases,
+                maxBlockedDays: prefs.meteredMaxBlockedDays,
+                blockedSince: &state.meteredBlockedSince, now: now
+            )
+            if !hadClock && state.meteredBlockedSince != nil {
+                // Stage with nothing to download is still held (a check this cycle could
+                // find something), but nothing is waiting yet, so don't start the clock.
+                if phase == .stage && !hasUnstagedPendingUpdates() {
+                    state.meteredBlockedSince = nil
+                } else {
+                    dirty = true
+                }
+            }
+            switch decision {
+            case .run:
+                return false
+            case .blocked(let days):
+                let limit = prefs.meteredMaxBlockedDays
+                let override = limit > 0 ? "runs anyway after \(limit) day(s), \(days) so far" : "no override"
+                Logger.log("📶 \(phaseName) skipped — \(network.summary); '\(phase.rawValue)' is not in MeteredAllowedPhases (\(override)). Will retry on an unmetered network.")
+                return true
+            case .override(let days):
+                if !meteredOverridden.contains(phase) {
+                    Logger.log("⚠️ \(phaseName): held back \(days) day(s) on a metered network (\(network.summary)) — MeteredMaxBlockedDays (\(prefs.meteredMaxBlockedDays)) reached, running anyway.")
+                }
+                meteredOverridden.insert(phase)
+                return false
+            }
+        }
+
         // ── Pre-evaluate which network-dependent phases are due ───────────────
         // Computed upfront so we can perform one connectivity check before
         // touching the network, rather than failing mid-run.
-        // A phase the battery policy blocks counts as not due: its timer isn't
-        // reset, so it runs on a later cycle once the Mac is on AC or charged.
+        // A phase the battery or metered-network policy blocks counts as not due: its
+        // timer isn't reset, so it runs on a later cycle once the Mac is on AC, charged,
+        // or on an unmetered network.
         let scanDue      = shouldRunScan(state: state, now: now)
-                           && !blockedByBattery(.scan, phaseName: "Scan")
+                           && !blocked(.scan, "Scan")
         // Light scan is only relevant when full scan won't already cover it this cycle.
         // It needs the network only when it finds newly-installed labels (scanSingleLabel).
         let lightScanDue = !scanDue && shouldRunLightScan(state: state, now: now)
-                           && !blockedByBattery(.scan, phaseName: "Light scan")
+                           && !blocked(.scan, "Light scan")
         // Check is only relevant when scan won't already cover it this cycle.
         let checkDue     = !scanDue && shouldRunCheck(state: state, now: now)
-                           && !blockedByBattery(.check, phaseName: "Check")
+                           && !blocked(.check, "Check")
         let stageDue     = shouldRunStage(state: state, now: now)
         let metadataDue  = shouldRunMetadataSync(state: state, now: now)
 
@@ -67,7 +117,7 @@ struct PatcherScheduler {
         if stageCatchUpNeeded {
             Logger.log("ℹ️ Stage: apply due next cycle with unstaged updates — staging early.")
         }
-        let stageRuns = (stageDue || stageCatchUpNeeded) && !blockedByBattery(.stage, phaseName: "Stage")
+        let stageRuns = (stageDue || stageCatchUpNeeded) && !blocked(.stage, "Stage")
 
         // ── Internet connectivity check ───────────────────────────────────────
         // Performed once, only when at least one phase requires the network.
@@ -186,9 +236,9 @@ struct PatcherScheduler {
             } else if !applySchedule.hardDeadlineReached, !staged.isEmpty,
                       staged.isSubset(of: deferralState.deferredLabels(now: now)) {
                 Logger.log("⏸️ Apply: every pending app is deferred by the user — waiting.")
-            } else if blockedByBattery(.apply, phaseName: "Apply") {
-                // Logged by blockedByBattery. No deferral is recorded and deadlines don't
-                // override it — apply runs on the first cycle the power state allows.
+            } else if blocked(.apply, "Apply") {
+                // Logged by blocked(). No deferral is recorded and deadlines don't override
+                // it — apply runs on the first cycle the power state and network allow.
             } else if prefs.focusCheckEnabled && !applySchedule.focusDeadlineReached && !applySchedule.hardDeadlineReached,
                let blocker = FocusDetector.activeBlocker(ignoredProcesses: prefs.focusIgnoredProcesses) {
                 let focusMins = prefs.deferralTimerFocus
@@ -211,8 +261,8 @@ struct PatcherScheduler {
                 // the lookahead pass may still be in flight. Catch up here so apply still runs
                 // as a full pass rather than silently skipping unstaged items.
                 if hasUnstagedPendingUpdates() {
-                    if blockedByBattery(.stage, phaseName: "Pre-apply stage") {
-                        Logger.log("⚠️ Apply: unstaged updates found but staging isn't allowed on battery — proceeding with apply for what's already staged.")
+                    if blocked(.stage, "Pre-apply stage") {
+                        Logger.log("⚠️ Apply: unstaged updates found but staging isn't allowed right now — proceeding with apply for what's already staged.")
                     } else if isInternetAvailable() {
                         Logger.log("⚠️ Apply: unstaged updates found — staging before apply to avoid a partial pass.")
                         writeActivePhase("stage")
@@ -276,6 +326,24 @@ struct PatcherScheduler {
             dirty = true
         }
 
+        // Once a phase held back on a metered network has run under the
+        // MeteredMaxBlockedDays override, restart the clock: further downloads wait for an
+        // unmetered network (or another full MeteredMaxBlockedDays) rather than all running
+        // on the hotspot from now on.
+        let overrideRan = meteredOverridden.contains { phase in
+            switch phase {
+            case .scan:  return state.lastScanDate == now || state.lastLightScanDate == now
+            case .check: return state.lastCheckDate == now
+            case .stage: return state.lastStageDate == now
+            case .apply: return state.lastApplyDate == now
+            }
+        }
+        if overrideRan {
+            state.meteredBlockedSince = nil
+            Logger.log("📶 Metered override used — hold clock restarted.")
+            dirty = true
+        }
+
         if dirty { state.save() }
     }
 
@@ -287,7 +355,7 @@ struct PatcherScheduler {
     /// fresh on each call, since a long scan or download can drain the battery
     /// before a later phase in the same cycle. Call only when the phase is otherwise
     /// due, so idle cycles don't log.
-    private func blockedByBattery(_ phase: BatteryGatedPhase, phaseName: String) -> Bool {
+    private func blockedByBattery(_ phase: GatedPhase, phaseName: String) -> Bool {
         guard let reason = PowerStatus.current().blockReason(
             for: phase,
             allowedOnBattery: prefs.batteryAllowedPhases,

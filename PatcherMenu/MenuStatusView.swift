@@ -37,6 +37,8 @@ struct MenuStatusView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let pause = vm.powerPause {
                     PowerPauseNotice(pause: pause)
+                } else if let pause = vm.meteredPause {
+                    MeteredPauseNotice(pause: pause)
                 }
                 patchSection
                 if !vm.detectedPatches.isEmpty {
@@ -341,6 +343,80 @@ struct MenuStatusView: View {
         let pause: PowerPause
 
         var body: some View {
+            PauseNoticeBox(symbolName: symbolName, title: title, detail: detail)
+        }
+
+        private var symbolName: String {
+            if pause.onUPS { return "bolt.slash" }
+            if pause.lowBatteryPercent != nil { return "battery.25percent" }
+            return "powerplug"
+        }
+
+        private var title: Text {
+            MenuStatusView.pauseNoticeTitle(downloads: pause.downloadsPaused, installs: pause.installsPaused)
+        }
+
+        private var detail: Text {
+            if pause.onUPS {
+                return Text("This Mac is running on backup power. Updates will continue when power is restored.",
+                            comment: "Menu notice detail: the Mac is powered by a UPS during a power outage.")
+            }
+            if let pct = pause.lowBatteryPercent {
+                return Text("The battery is low (\(Double(pct) / 100, format: .percent)). Connect to power to continue.",
+                            comment: "Menu notice detail. %@ = the battery charge, already formatted as a percentage such as “14%”.")
+            }
+            return Text("This Mac is on battery power. Connect to power to continue.",
+                        comment: "Menu notice detail: updates wait until the laptop is plugged in.")
+        }
+    }
+
+    // MARK: - Paused by metered network
+
+    /// Explains that the scheduler is holding back downloads and/or installs because the
+    /// Mac is on a personal hotspot, cellular, or Low Data Mode network (MeteredAllowedPhases).
+    private struct MeteredPauseNotice: View {
+        let pause: MeteredPause
+
+        var body: some View {
+            PauseNoticeBox(symbolName: "personalhotspot", title: title, detail: detail)
+        }
+
+        private var title: Text {
+            MenuStatusView.pauseNoticeTitle(downloads: pause.downloadsPaused, installs: pause.installsPaused)
+        }
+
+        private var detail: Text {
+            if pause.lowDataModeOnly {
+                return Text("This network uses Low Data Mode. Updates will continue on another network, or when Low Data Mode is turned off.",
+                            comment: "Menu notice detail: updates wait because the current Wi-Fi network has Low Data Mode turned on.")
+            }
+            return Text("This Mac is on a personal hotspot or cellular connection. Updates will continue on a regular network.",
+                        comment: "Menu notice detail: updates wait to save mobile data while the Mac is connected through a phone's hotspot.")
+        }
+    }
+
+    /// Title for the paused-updates notices, whether power or a metered network is the cause.
+    private static func pauseNoticeTitle(downloads: Bool, installs: Bool) -> Text {
+        switch (downloads, installs) {
+        case (true, true):
+            return Text("Downloads and installs paused",
+                        comment: "Menu notice title: updates are neither downloaded nor installed for now — the Mac is on battery, its battery is low, or it is on a metered network such as a personal hotspot.")
+        case (false, true):
+            return Text("Installs paused",
+                        comment: "Menu notice title: downloaded updates are not installed for now — the Mac is on battery, its battery is low, or it is on a metered network such as a personal hotspot.")
+        default:
+            return Text("Downloads paused",
+                        comment: "Menu notice title: updates are not downloaded for now — the Mac is on battery, its battery is low, or it is on a metered network such as a personal hotspot.")
+        }
+    }
+
+    /// Shared layout for the paused-updates notices.
+    private struct PauseNoticeBox: View {
+        let symbolName: String
+        let title: Text
+        let detail: Text
+
+        var body: some View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: symbolName)
                     .font(.title3)
@@ -361,39 +437,6 @@ struct MenuStatusView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             .accessibilityElement(children: .combine)
-        }
-
-        private var symbolName: String {
-            if pause.onUPS { return "bolt.slash" }
-            if pause.lowBatteryPercent != nil { return "battery.25percent" }
-            return "powerplug"
-        }
-
-        private var title: Text {
-            switch (pause.downloadsPaused, pause.installsPaused) {
-            case (true, true):
-                return Text("Downloads and installs paused",
-                            comment: "Menu notice title: updates are neither downloaded nor installed because of the Mac's power state (on battery or low battery).")
-            case (false, true):
-                return Text("Installs paused",
-                            comment: "Menu notice title: downloaded updates are not installed because of the Mac's power state (on battery or low battery).")
-            default:
-                return Text("Downloads paused",
-                            comment: "Menu notice title: updates are not downloaded because of the Mac's power state (on battery or low battery).")
-            }
-        }
-
-        private var detail: Text {
-            if pause.onUPS {
-                return Text("This Mac is running on backup power. Updates will continue when power is restored.",
-                            comment: "Menu notice detail: the Mac is powered by a UPS during a power outage.")
-            }
-            if let pct = pause.lowBatteryPercent {
-                return Text("The battery is low (\(Double(pct) / 100, format: .percent)). Connect to power to continue.",
-                            comment: "Menu notice detail. %@ = the battery charge, already formatted as a percentage such as “14%”.")
-            }
-            return Text("This Mac is on battery power. Connect to power to continue.",
-                        comment: "Menu notice detail: updates wait until the laptop is plugged in.")
         }
     }
 

@@ -44,6 +44,10 @@ struct SchedulerState: Codable {
     var firstPendingDate: Date?
     var deferralCount: Int = 0
 
+    // Metered network: when a phase was first held back by MeteredAllowedPhases.
+    // Cleared on an unmetered network, or after the MeteredMaxBlockedDays override runs.
+    var meteredBlockedSince: Date?
+
     // Webhook report tracking
     var lastWebhookReportDate: Date?
 
