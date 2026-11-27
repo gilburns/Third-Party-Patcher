@@ -149,6 +149,8 @@ func labelEventDetail(_ event: LabelHistoryEvent) -> String {
         return "user clicked Quit App — \(event.blockingProcessName ?? "")"
     case LabelHistoryEvent.EventType.blockingProcessScreenLocked:
         return "skipped, screen locked — \(event.blockingProcessName ?? "")"
+    case LabelHistoryEvent.EventType.blockingProcessOtherUser:
+        return "skipped, open in another user's session — \(event.blockingProcessName ?? "")"
     default:
         return ""
     }

@@ -846,3 +846,54 @@ struct DuplicateLabelsTests {
         #expect(groups?.contains { $0.id == "onedrive" && $0.preferred == "microsoftonedrive" } == true)
     }
 }
+
+
+// MARK: - Fast user switching: blocking-process ownership
+
+struct BlockingProcessOwnershipTests {
+
+    @Test func onlyConsoleUserRunning() {
+        let o = BlockingProcessOwnership(owners: [501], consoleUID: 501)
+        #expect(o == BlockingProcessOwnership(owners: [501], consoleUID: 501))
+        #expect(!o.otherUserRunning)
+        #expect(o.consoleUserRunning)
+    }
+
+    @Test func onlyOtherUserRunning() {
+        let o = BlockingProcessOwnership(owners: [502], consoleUID: 501)
+        #expect(o.otherUserRunning)
+        #expect(!o.consoleUserRunning)
+    }
+
+    @Test func bothUsersRunning() {
+        let o = BlockingProcessOwnership(owners: [501, 502], consoleUID: 501)
+        #expect(o.otherUserRunning)
+        #expect(o.consoleUserRunning)
+    }
+
+    @Test func loginWindowCountsEveryOwnerAsOtherUser() {
+        for console in [nil, uid_t(0)] {
+            let o = BlockingProcessOwnership(owners: [502], consoleUID: console)
+            #expect(o.otherUserRunning)
+            #expect(!o.consoleUserRunning)
+        }
+    }
+
+    @Test func noOwnersMeansNoOtherUser() {
+        #expect(!BlockingProcessOwnership(owners: [], consoleUID: 501).otherUserRunning)
+    }
+
+    @Test func rootOwnedProcessesAreIgnored() {
+        #expect(processOwnerUIDs("launchd").isEmpty)
+    }
+
+    @Test func findsOwnProcess() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        p.arguments = ["30"]
+        try p.run()
+        defer { p.terminate() }
+        Thread.sleep(forTimeInterval: 0.2)
+        #expect(processOwnerUIDs("sleep").contains(getuid()))
+    }
+}
